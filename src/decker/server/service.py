@@ -296,6 +296,15 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
 
     @exposed
     @api_response
+    def plugin_options(self, plugin_id: str, source: str) -> dict:
+        """Return {"ok": bool, "options": [{"label","value"}...], "error": str} for a plugin's dynamic choice source."""
+        if self._context is None:
+            return {"ok": False, "options": [], "error": "no server"}
+        result = self._context.plugin_manager.plugin_options(plugin_id, source)
+        return {"ok": result.ok, "options": [dict(o) for o in result.options], "error": result.error}
+
+    @exposed
+    @api_response
     def variables_list(self) -> list:
         """List every plugin variable (declared names and registered concrete names) with its owner and value."""
         if self._context is None:

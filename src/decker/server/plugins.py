@@ -30,12 +30,16 @@ from decker.plugin.loader import (
     PluginLoader,
     recover_interrupted_installs,
 )
-from decker.plugin.manifest import CardSpec
+from decker.plugin.manifest import CardSpec, PluginManifest
 from decker.plugin.protocol import PROTOCOL_VERSION, Message
 from decker.plugin.runtime.launcher import launch_command, launch_env
 from decker.plugin.runtime.process import PluginProcess
 from decker.plugin.runtime.supervisor import PluginSupervisor, SupervisorPolicy
-from decker.plugin.settings_schema import apply_schema, schema_to_json
+from decker.plugin.settings_schema import (
+    SettingField,
+    apply_schema,
+    schema_to_json,
+)
 from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
 from decker.server.actions import ActionRunner, bound_action
@@ -48,6 +52,7 @@ from decker.server.appearance import (
 )
 from decker.server.contributions import ContributionRegistry
 from decker.server.hardware_sink import StreamDeckHardwareSink, write_face
+from decker.server.options_runner import OptionsResult, OptionsRunner
 from decker.server.page_vars import (
     DeviceLayout,
     VariableChain,
@@ -165,6 +170,15 @@ def _gestures_from(names: Any) -> frozenset[Gesture]:
     return frozenset(Gesture(n) for n in names if n in {g.value for g in Gesture})
 
 
+def _declares_source(manifest: PluginManifest, source: str) -> bool:
+    entries = [*manifest.global_settings]
+    for card in manifest.cards:
+        entries.extend(card.settings)
+    for action in manifest.actions:
+        entries.extend(action.settings)
+    return any(isinstance(e, SettingField) and e.extra.get("options_source") == source for e in entries)
+
+
 class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """Owned by the server: discovers plugins, runs them out of process and routes events both ways."""
 
@@ -208,6 +222,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._variable_runner = VariableRunner(
             self._supervisor, self.variables, **({} if variable_timeout is None else {"timeout": variable_timeout})
         )
+        self._options_runner = OptionsRunner(self._supervisor)
         self._contributions = ContributionRegistry(
             [_CardsHandler(self), _ActionsHandler(self), self.icon_packs, _VariablesHandler(self)]
         )
@@ -254,6 +269,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         for item in live:
             item.recognizer.cancel()
         self._variable_runner.stop_all()
+        self._options_runner.stop_all()
         self._supervisor.stop_all()
         self._settings_store.close()
 
@@ -310,6 +326,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self.variables.undeclare(plugin_id)
         self._supervisor.unregister(plugin_id)
         self._variable_runner.plugin_stopped(plugin_id)
+        self._options_runner.plugin_stopped(plugin_id)
         with self._lock:
             self._hellos.pop(plugin_id, None)
         self.refresh_variable_users(owned)  # "{name}" now stays as typed
@@ -320,6 +337,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def _on_plugin_exit(self, plugin_id: str) -> None:
         self._variable_runner.plugin_stopped(plugin_id)
+        self._options_runner.plugin_stopped(plugin_id)
         self.variables.drop_values(plugin_id)
 
     def _names_owned_by(self, plugin_id: str) -> frozenset[str]:
@@ -334,6 +352,16 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             lambda plugin, spec: self._icon_b64(plugin.plugin_dir, spec.icon or plugin.manifest.icon)
         )
         return [{**item, "plugin_builtin": self.is_builtin(item["plugin_uuid"])} for item in listed]
+
+    def plugin_options(self, plugin_id: str, source: str) -> OptionsResult:
+        """Ask a plugin for the options of a dynamic choice field it declares; blocks up to the runner's timeout."""
+        with self._lock:
+            plugin = self._plugins.get(plugin_id)
+        if plugin is None:
+            return OptionsResult(False, error="unknown plugin")
+        if not _declares_source(plugin.manifest, source):
+            return OptionsResult(False, error="unknown options source")
+        return self._options_runner.fetch(plugin_id, source)
 
     def run_action(self, action_id: str, settings: dict[str, Any]) -> None:
         """Run an action in the background; a failure is announced as an ``action_failed`` event."""
@@ -1046,6 +1074,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._on_set_global_settings(plugin_id, message.payload)
         elif event == "action_result":
             self._action_runner.on_result(plugin_id, message.payload)
+        elif event == "options_result":
+            self._options_runner.on_result(plugin_id, message.payload)
         elif event in _VARIABLE_EVENTS:
             self._route_variable_message(plugin_id, message)
         else:
@@ -1231,6 +1261,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def _on_plugin_failed(self, plugin_id: str, reason: str) -> None:
         logging.error("Plugin %s failed: %s", plugin_id, reason)
         self._variable_runner.plugin_stopped(plugin_id)
+        self._options_runner.plugin_stopped(plugin_id)
         event = PluginLoadFailedEvent(plugin_uuid=plugin_id, error=reason)
         with self._lock:
             self._drop_failure(plugin_id)

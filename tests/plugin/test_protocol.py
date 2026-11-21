@@ -68,7 +68,7 @@ def test_decode_rejects_oversized_line() -> None:
 
 
 def test_protocol_version() -> None:
-    assert_that(PROTOCOL_VERSION).is_equal_to(2)
+    assert_that(PROTOCOL_VERSION).is_equal_to(3)
 
 
 def test_event_sets_match_spec() -> None:
@@ -91,6 +91,7 @@ def test_event_sets_match_spec() -> None:
                 "shutdown",
                 "get_variable",
                 "variables_changed",
+                "get_options",
             }
         )
     )
@@ -113,6 +114,7 @@ def test_event_sets_match_spec() -> None:
                 "unregister_variable",
                 "variable_updated",
                 "variable_value",
+                "options_result",
             }
         )
     )
