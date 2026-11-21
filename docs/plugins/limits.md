@@ -15,6 +15,9 @@
 | Variable name | 64 characters |
 | Variable value | 1024 characters; a longer value is refused and the old one stays |
 | Variable ask (`get_variable`) | the plugin has 5 s to answer; on a timeout the old value stays |
+| Dynamic choice options (`options_source`) | at most 256 options per source; values and labels are cut to 256 characters; a stored value is at most 256 characters |
+| Options source name | 64 characters |
+| Options ask (`get_options`) | the plugin has 5 s to answer; on a timeout the client gets an error and no options |
 | Raster image from `set_image` | at most 4096 x 4096 pixels |
 | Icon file (pack icon or card or action `icon`) | at most 4 MiB; larger files are ignored |
 | Animated GIF (`set_image` bytes or pack icon) | at most 4 MiB, 300 frames, 4096 x 4096 pixels per frame, and 96 million pixels in total (frames x width x height, so 300 frames of 480 x 480 fit but 100 frames of 1024 x 1024 do not; both are enforced from the frame headers and again as frames are read, counting a frame that is bigger than the header's screen at its grown size); frame delays under 20 ms play as 100 ms; a GIF over any limit stays a still first frame |
@@ -26,6 +29,9 @@
 - A plugin that declares [variables](package-and-manifest.md#variables) starts with the server and stays running with no
   key on screen; it still gets crash restarts, back-off and the watchdog. Its values are dropped when the process stops
   and return after a restart. Plugins without variables keep the lazy start above.
+- `get_options` (dynamic choice fields) starts a lazy plugin for the request and releases it afterwards, like an action
+  run. The `plugin_options` RPC is read-only and not restricted to loopback clients, so a remote client may call it; it
+  can start a lazy plugin and holds an RPC thread for up to 5 s.
 - Each plugin runs in its own process group; stopping or killing it also stops helper processes it started.
 - **Crashes**: restart with backoff (0.5 s, 2 s, 5 s). Three crashes within 60 s mark the plugin failed: its keys
   are cleared and labelled "Plugin failed", and clients are notified. Re-saving a key's settings retries it; so

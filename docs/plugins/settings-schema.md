@@ -18,7 +18,7 @@ and stored as `null`), `placeholder`, `help`.
 | `float` | `min`, `max`, `step`, `decimals` | finite number |
 | `text` | `multiline`, `template` (boolean, default `false`: expand `{page_name}`, `{page_index}`, `{page_count}`, `{current_profile}`, `{profile_id}` before delivery; `{{`/`}}` are literal braces, unknown names stay as typed; plugin variables work too, see [Template variables](#template-variables)) | string |
 | `bool` | | boolean |
-| `choice` | `options`: `[{ "label": "...", "value": ... }]` (non-empty) | one of the option values |
+| `choice` | `options`: `[{ "label": "...", "value": ... }]` (non-empty unless `options_source` is set); `options_source`: a name, see [Dynamic choices](#dynamic-choices) | one of the option values; with `options_source`, any string up to 256 characters |
 | `color` | `alpha` (boolean; when `true` the picker has an opacity slider and `#rrggbbaa` is also valid, alpha last) | `#rrggbb` (or `#rrggbbaa`) |
 | `font` | | font family name |
 | `icon` | | an object, see [Icon](#icon); `default` may be partial |
@@ -29,6 +29,38 @@ and stored as `null`), `placeholder`, `help`.
 | `action` | | an action of any installed plugin: stored as its id (`""`: none). The dropdown lists every available action |
 | `action_params` | `action_field` (key of an `action` field of the same schema; the form then shows that action's settings) | an object: the chosen action's settings. Changing the action resets it. Used by the Run Action card |
 | `slots` | | the Switch card's four slots: an object with keys `display`, `press`, `double_press`, `long_press`, each `null` (empty) or `{"kind": "card", "plugin", "card", "settings", "appearance"}` (a card of an installed plugin) or `{"kind": "action", "action", "settings"}` (an action); `display` takes cards only. Built-in Switch only (`com.decker.core.switch`): only that card may declare `behavior: "switch"` (any other card is a manifest error), so the `slots` field type is still accepted but inert outside the Switch, and the shape may change. A slot naming something that is not installed acts as empty but stays stored |
+
+## Dynamic choices
+
+A `choice` field with `options_source` gets part of its list from the plugin when the settings form opens (the audio
+devices of this machine, the players that are running):
+
+```json
+{ "key": "device", "type": "choice", "label": "Output device", "default": "default",
+  "options": [{ "label": "Default output", "value": "default" }],
+  "options_source": "output_devices" }
+```
+
+- `options_source` is a name matching `[a-z][a-z0-9_]*`, at most 64 characters. It belongs to the plugin whose schema
+  declares it: a plugin is only asked for sources one of its own schemas (card, action or `global_settings`) declares.
+  The plugin answers it with [`@options`](sdk-quickstart.md#dynamic-choice-options) or a
+  [`get_options`](protocol.md#dynamic-choice-options) handler.
+- A `choice` field needs `options`, `options_source`, or both. The static `options` come first, then the plugin's, and
+  a value already listed is not repeated. Values and labels are strings of up to 256 characters, and at most 256
+  options are kept (see [limits](limits.md)).
+- The stored value is **any string up to 256 characters**, not only a listed one, so a device that is unplugged keeps
+  its saved value. A value that is not in the list is kept as it is, never replaced by the first option. The
+  `default` of such a field must be a string (anything else refuses the manifest); without one it is the first static
+  option's value, or `""` when there are none (`null` for an `optional` field).
+- Works wherever a settings schema is used: card settings, action settings (including the Run Action card's
+  parameters), `global_settings` and the Switch card's slot forms. It needs the plugin to be reachable; the plugin is
+  started for the request when it is not running.
+- The control is an **editable dropdown** with a refresh button: choose a listed option or type any value. The list
+  loads in the background, so the form opens at once. A saved value that is not listed shows as "unavailable" (a
+  tooltip) and stays selected. If the plugin cannot be reached or fails, the control falls back to the static options
+  plus typing, and the tooltip shows the error. The same fallback applies where the form does not know the owning plugin.
+- A plugin that uses `options_source` must require the Decker version that ships it in its manifest `decker`
+  constraint: an older Decker refuses the field.
 
 ## Template variables
 

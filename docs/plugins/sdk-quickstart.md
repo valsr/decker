@@ -119,6 +119,45 @@ then shows the counter and redraws on each signal.
 - `get_variable` and `has_variable` return `None` and `False` when no runtime is running (for example in unit tests);
   the other functions raise `RuntimeError` then.
 
+## Dynamic choice options
+
+A `choice` field with an [`options_source`](settings-schema.md#dynamic-choices) lists options the plugin supplies when
+the settings form opens. Declare the field in the manifest:
+
+```json
+{ "key": "device", "type": "choice", "label": "Output device", "default": "default",
+  "options": [{ "label": "Default output", "value": "default" }],
+  "options_source": "output_devices" }
+```
+
+and register one function per source name with `@options`:
+
+```python
+from decker_plugin_sdk import CardContext, DeckerPlugin, card, options
+
+
+@options("output_devices")
+def output_devices() -> list:
+    return [
+        {"label": "Speakers (Realtek)", "value": "speakers_realtek"},  # a dict
+        ("Headphones (USB)", "headphones_usb"),                        # a (label, value) tuple
+        "hdmi",                                                        # a string: label and value are the same
+    ]
+
+
+@card("com.example.hello.volume")
+class Volume(DeckerPlugin):
+    def on_press(self, ctx: CardContext) -> None:
+        ctx.set_title(str(ctx.settings.get("device")))
+```
+
+The function takes no arguments, may be `async def`, and runs on the SDK's worker pool, so a slow one does not block
+`ping`. It must return a list (or tuple). An exception, a result that is not a list, or a source nobody registered is
+answered with an error, which the form shows in the control's tooltip. Entries that are not a dict, a pair or a string,
+and entries whose text cannot be encoded as UTF-8, are dropped. The server then cleans the list (see
+[protocol](protocol.md#dynamic-choice-options)); the setting arrives at the card as the stored string, whether or not it
+is still listed. A manifest that uses `options_source` needs the Decker version that ships it in its `decker` constraint.
+
 ## Handlers (override what you need)
 
 `on_will_appear`, `on_will_disappear`, `on_key_down`, `on_key_up`, `on_press`, `on_double_press`, `on_long_press`,
