@@ -82,6 +82,14 @@ def _encodable(entry: dict[str, Any]) -> bool:
     return True
 
 
+def _encodable_text(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _printable(value: Any) -> str:
     return str(value)[:64].encode("utf-8", "backslashreplace").decode("utf-8")
 
@@ -110,7 +118,7 @@ class OptionsHost:
     def answer(self, payload: dict[str, Any]) -> None:
         """Answer a get_options request with exactly one options_result."""
         request = payload.get("request")
-        if not isinstance(request, str):
+        if not isinstance(request, str) or not _encodable_text(request):
             return
         fn = _find(payload.get("source"))
         if fn is None:
@@ -124,13 +132,19 @@ class OptionsHost:
             options_list = normalise(raw)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             text, source = _safe_text(exc), _printable(payload.get("source"))
-            self._log_error(f"options source {source} failed: {text}")
             self._reply(request, False, error=text)
+            self._log_quietly(f"options source {source} failed: {text}")
             return
         try:
             self._reply(request, True, options=options_list)
         except UnicodeEncodeError:
             self._reply(request, False, error="options could not be encoded")
+
+    def _log_quietly(self, message: str) -> None:
+        try:
+            self._log_error(message)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass  # the answer is already sent; a broken log must not surface from the pool task
 
     def _reply(self, request: str, ok: bool, **extra: Any) -> None:
         self._send("options_result", None, {"request": request, "ok": ok, **extra})
