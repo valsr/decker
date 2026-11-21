@@ -88,7 +88,7 @@ An SDK without this feature ignores `get_options`, which the server reports as a
 
 - Server and client stay decoupled; the client reaches plugins only through the server.
 - Pure Python and Qt, all five platform tiers. Manifest `decker` constraint of the version that ships this is needed
-  by a plugin that uses `options_source` (older Decker would reject the field).
+  by a plugin that uses `options_source` (an older Decker refuses the field without `options`, and with `options` ignores `options_source`, so the field becomes a plain static choice that replaces an unlisted saved value; the `decker` constraint is checked when the plugin is installed).
 - Docs: `docs/plugins/` (`settings-schema.md`, `protocol.md`, `sdk-quickstart.md`, `limits.md`), `CLAUDE.md`,
   `README.md` change with it. Run mypy for `--platform win32` and `--platform darwin` too.
 
