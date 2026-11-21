@@ -19,6 +19,7 @@ from decker.plugin.repository_index import IndexPlugin, IndexVersion
 from decker.plugin.target import CardTarget
 from decker.server.appearance import resolve_appearance
 from decker.server.key_assignments import KeyAssignmentStore
+from decker.server.options_runner import OptionsResult
 from decker.server.page_controller import PageController
 from decker.server.pages import PageStore, initial_page_id
 from decker.server.plugin_installer import PluginInstallError
@@ -163,6 +164,33 @@ class TestPluginsActionsList:
         assert_that(result).is_equal_to(
             [{"plugin_uuid": "p", "plugin_name": "P", "card_uuid": "p.a", "card_name": "A"}]
         )
+
+
+class TestPluginOptions:
+    def test_returns_ok_and_options(self, store, manager):
+        manager.plugin_options.return_value = OptionsResult(True, ({"label": "A", "value": "a"},))
+        DeckerService.configure_context(_make_context(manager, store))
+
+        result = json.loads(DeckerService().plugin_options("p", "devices"))
+
+        assert_that(result).is_equal_to({"ok": True, "options": [{"label": "A", "value": "a"}], "error": ""})
+        manager.plugin_options.assert_called_once_with("p", "devices")
+
+    def test_returns_the_error_text(self, store, manager):
+        manager.plugin_options.return_value = OptionsResult(False, error="timed out")
+        DeckerService.configure_context(_make_context(manager, store))
+
+        result = json.loads(DeckerService().plugin_options("p", "devices"))
+
+        assert_that(result).is_equal_to({"ok": False, "options": [], "error": "timed out"})
+
+    def test_without_context_is_not_ok(self):
+        result = json.loads(DeckerService().plugin_options("p", "devices"))
+
+        assert_that(result).is_equal_to({"ok": False, "options": [], "error": "no server"})
+
+    def test_is_listed_by_commands(self, service):
+        assert_that(json.loads(service.commands())).contains_key("plugin.options")
 
 
 class TestVariablesList:

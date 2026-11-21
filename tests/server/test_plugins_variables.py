@@ -133,14 +133,14 @@ def _answer(proc: FakeProcess, name: str, value: Any, index: int = 0) -> None:
     _send(proc, "variable_value", {"request": request, "ok": True, "value": value})
 
 
-def test_hello_protocol_is_2(tmp_path: Path) -> None:
+def test_hello_protocol_is_3(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     procs = _fake_processes(manager)
     try:
         proc = _started(manager, procs, _plugin(tmp_path, "com.t.one", [{"name": "media_volume"}]))
 
         assert_that(proc.sent[0].event).is_equal_to("hello")
-        assert_that(proc.sent[0].payload["protocol"]).is_equal_to(2)
+        assert_that(proc.sent[0].payload["protocol"]).is_equal_to(3)
     finally:
         manager.destroy()
 
