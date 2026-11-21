@@ -2,6 +2,7 @@
 
 from ._context import CardContext
 from ._gestures import Gesture
+from ._options import options
 from ._runtime import DeckerPlugin, action, card, run
 from ._variables import (
     PluginContext,
@@ -26,6 +27,7 @@ __all__ = [
     "has_variable",
     "init",
     "main",
+    "options",
     "register_variable",
     "run",
     "signal_variable_updated",
