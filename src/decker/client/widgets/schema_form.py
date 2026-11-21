@@ -26,6 +26,7 @@ from decker.client.context import AppContext
 from decker.client.widgets.action_edit import ActionEdit, fetch_actions
 from decker.client.widgets.background_edit import BackgroundEdit
 from decker.client.widgets.color_button import ColorButton
+from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.client.widgets.icon_edit import IconEdit
 from decker.client.widgets.page_edit import PageEdit
 from decker.client.widgets.profile_edit import ProfileEdit
@@ -103,6 +104,11 @@ def _text_field(entry: dict[str, Any]) -> _Field:
 def _bool_field(_entry: dict[str, Any]) -> _Field:
     check = QCheckBox()
     return _Field(check, check.isChecked, lambda v: check.setChecked(bool(v)))
+
+
+def _editable_choice_field(entry: dict[str, Any]) -> _Field:
+    edit = DynamicChoiceEdit({**entry, "options_source": ""}, "")
+    return _Field(edit, edit.value, edit.set_value)
 
 
 def _choice_field(entry: dict[str, Any]) -> _Field:
@@ -202,12 +208,20 @@ _BUILDERS: dict[str, Callable[[dict[str, Any]], _Field]] = {
 }
 
 
-def _build_field(entry: dict[str, Any], values: dict[str, Any]) -> _Field | None:
+def _dynamic_choice_field(entry: dict[str, Any], plugin_id: str) -> _Field:
+    edit = DynamicChoiceEdit(entry, plugin_id)
+    return _Field(edit, edit.value, edit.set_value)
+
+
+def _build_field(entry: dict[str, Any], values: dict[str, Any], plugin_id: str = "") -> _Field | None:
     """The filled widget for a schema field, or None for an unknown type."""
     builder = _BUILDERS.get(str(entry.get("type")))
     if builder is None:
         return None
-    field = builder(entry)
+    if entry.get("type") == "choice" and entry.get("options_source"):
+        field = _dynamic_choice_field(entry, plugin_id) if plugin_id else _editable_choice_field(entry)
+    else:
+        field = builder(entry)
     field.set(values.get(entry["key"], entry.get("default")))
     if entry.get("help"):
         field.widget.setToolTip(str(entry["help"]))
@@ -217,7 +231,17 @@ def _build_field(entry: dict[str, Any], values: dict[str, Any]) -> _Field | None
 def _watch(widget: QWidget, slot: Callable[[], None]) -> None:
     """Call ``slot`` once per user edit of ``widget``; controls inside a composite or spin box are not watched twice."""
     if isinstance(
-        widget, (ActionEdit, ActionParamsEdit, BackgroundEdit, IconEdit, PageEdit, ProfileEdit, TextStyleEdit)
+        widget,
+        (
+            ActionEdit,
+            ActionParamsEdit,
+            BackgroundEdit,
+            DynamicChoiceEdit,
+            IconEdit,
+            PageEdit,
+            ProfileEdit,
+            TextStyleEdit,
+        ),
     ):
         widget.value_changed.connect(slot)
     elif isinstance(widget, SlotsEdit):
@@ -251,7 +275,7 @@ class SchemaForm(QWidget):
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._fields: dict[str, _Field] = {}
 
-    def set_schema(self, schema: list[dict[str, Any]], values: dict[str, Any]) -> None:
+    def set_schema(self, schema: list[dict[str, Any]], values: dict[str, Any], plugin_id: str = "") -> None:
         """Rebuild the form for ``schema`` and fill it from ``values`` (missing keys use schema defaults)."""
         while self._layout.rowCount():
             self._layout.removeRow(0)
@@ -260,7 +284,7 @@ class SchemaForm(QWidget):
             if "section" in entry:
                 self._layout.addRow(_section(str(entry["section"])))
                 continue
-            field = _build_field(entry, values)
+            field = _build_field(entry, values, plugin_id)
             if field is None:
                 continue
             self._fields[entry["key"]] = field
@@ -379,13 +403,13 @@ class AppearanceForm(QWidget):
         self._grid.setColumnStretch(1, 1)
         self._fields: dict[str, _Field] = {}
 
-    def set_schema(self, schema: list[dict[str, Any]], values: dict[str, Any]) -> None:
+    def set_schema(self, schema: list[dict[str, Any]], values: dict[str, Any], plugin_id: str = "") -> None:
         """Rebuild the rows for ``schema``; sections are ignored."""
         _clear_layout(self._grid)
         self._fields = {}
         row = 0
         for entry in schema:
-            field = None if "section" in entry else _build_field(entry, values)
+            field = None if "section" in entry else _build_field(entry, values, plugin_id)
             if field is None:
                 continue
             if isinstance(field.widget, ColorButton):
