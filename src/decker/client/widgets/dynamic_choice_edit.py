@@ -66,9 +66,12 @@ class DynamicChoiceEdit(QWidget):  # pylint: disable=too-many-instance-attribute
         self._token = 0
         self._filling = False
         self._error = ""
+        self._literal: str | None = None
+        self._last = ""
         self._thread: threading.Thread | None = None
         self._combo = QComboBox()
         self._combo.setEditable(True)
+        self._combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._refresh = QToolButton()
         self._refresh.setText("↻")
         self._refresh.setToolTip(_REFRESH_TIP)
@@ -76,18 +79,25 @@ class DynamicChoiceEdit(QWidget):  # pylint: disable=too-many-instance-attribute
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._combo, 1)
         layout.addWidget(self._refresh)
+        self._refresh.setVisible(bool(self._source))
         self._mailbox = _Mailbox(self)
         self._mailbox.delivered.connect(self._on_delivered)
         self._fill([])
         self._combo.editTextChanged.connect(self._on_text_changed)
+        self._combo.activated.connect(self._on_activated)
         self._refresh.clicked.connect(self.reload)
         self.reload()
 
     def value(self) -> str:
         """The chosen value: an option's value when the text is its label, otherwise the text as typed."""
+        if self._literal is not None:
+            return self._literal
         text = self._combo.currentText()
-        index = self._combo.findText(text)
-        return str(self._combo.itemData(index)) if index >= 0 else text
+        index = self._combo.currentIndex()
+        if index < 0 or self._combo.itemText(index) != text:
+            index = self._combo.findText(text)
+        data = self._combo.itemData(index) if index >= 0 else None
+        return text if data is None else str(data)
 
     def set_value(self, value: Any) -> None:
         """Show ``value`` (kept even when not listed) without emitting ``value_changed``."""
@@ -148,10 +158,13 @@ class DynamicChoiceEdit(QWidget):  # pylint: disable=too-many-instance-attribute
     def _show(self, value: str) -> None:
         index = self._combo.findData(value)
         if index >= 0:
+            self._literal = None
             self._combo.setCurrentIndex(index)
         else:
+            self._literal = value
             self._combo.setCurrentIndex(-1)
             self._combo.setEditText(value)
+        self._last = self.value()
         self._update_tips()
 
     def _update_tips(self) -> None:
@@ -162,8 +175,18 @@ class DynamicChoiceEdit(QWidget):  # pylint: disable=too-many-instance-attribute
     def _on_text_changed(self, _text: str) -> None:
         if self._filling:
             return
+        self._literal = None
+        self._changed()
+
+    def _on_activated(self, _index: int) -> None:
+        self._literal = None
+        self._changed()
+
+    def _changed(self) -> None:
         self._update_tips()
-        self.value_changed.emit()
+        if self.value() != self._last:
+            self._last = self.value()
+            self.value_changed.emit()
 
 
 def _default_fetch() -> FetchOptions:
