@@ -160,6 +160,12 @@ class PluginSupervisor:  # pylint: disable=too-many-instance-attributes
             entry = self._entries.get(plugin_id)
             return entry is not None and entry.process is not None and entry.ready
 
+    def has_process(self, plugin_id: str) -> bool:
+        """True while a process (ready or still starting) is attached to the plugin."""
+        with self._lock:
+            entry = self._entries.get(plugin_id)
+            return entry is not None and entry.process is not None
+
     def reset_failure(self, plugin_id: str) -> None:
         """Clear the failed state and start the plugin again if it is still in use."""
         failure: str | None = None
