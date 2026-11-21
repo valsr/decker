@@ -14,6 +14,8 @@ _CASES: dict[str, list[Any]] = {
     "long_text": [{"label": "L" * 300, "value": "v" * 300}],
     "duplicates": [{"label": "A", "value": "x"}, {"label": "B", "value": "x"}, {"label": "C", "value": "y"}],
     "duplicates_after_cut": [{"label": "A", "value": "v" * 256 + "1"}, {"label": "B", "value": "v" * 256 + "2"}],
+    "exactly_256": [{"label": "l" * 256, "value": "v" * 256}],
+    "exactly_257": [{"label": "l" * 257, "value": "v" * 257}],
     "over_cap": [{"label": f"l{i}", "value": f"v{i}"} for i in range(1000)],
     "not_dicts": [None, 3, "s", ["a", "b"], {"label": "ok", "value": "ok"}],
     "empty_strings": [{"label": "", "value": ""}, {"label": "", "value": ""}],
