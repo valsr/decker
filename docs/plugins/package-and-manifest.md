@@ -81,8 +81,8 @@ JSON with snake_case keys. Unknown keys are ignored. `format` must be the intege
 | `version` | yes | Semantic version `x.y.z` (pre-release/build suffixes allowed). |
 | `description`, `homepage`, `category` | no | Strings. |
 | `icon` | no | Path inside the package; the extension is optional (looked up as `.svg`, `@2x.png`, `.png`). Values starting with `pack:` are reserved. |
-| `decker` | no (yes for `variables`) | Version specifier for Decker, e.g. `>=0.6` (cards and actions need Decker 0.6). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker would silently treat that field as a plain static choice. |
-| `runtime` | for `actions`, for `variables` and for `cards` that are not static presets or presets of Run Action | See below. |
+| `decker` | no (yes for `variables` and `options_source`) | Version specifier for Decker, e.g. `>=0.6` (cards and actions need Decker 0.6). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker refuses a field without `options`, and on one with `options` it ignores `options_source`, so the field becomes a plain static choice that replaces an unlisted saved value. |
+| `runtime` | for `actions`, for `variables`, for `options_source` fields and for `cards` that are not static presets or presets of Run Action | See below. |
 | `global_settings` | no | [Settings schema](settings-schema.md) for plugin-wide settings, shown in Settings, Plugins. |
 | `permissions` | no | Reserved, ignored in v1. |
 | `platforms` | no | Non-empty list of OS names (`linux`, `windows`, `macos`) the plugin supports. Omitted means all platforms. See [Platforms](#platforms). |

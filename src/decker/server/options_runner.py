@@ -51,8 +51,8 @@ class OptionsRunner:
             if self._closed:
                 return OptionsResult(False, error="the server is stopping")
             self._pending[request] = pending
-        self._supervisor.acquire(plugin_id)  # starts a lazy plugin; the message queues until it is ready
         try:
+            self._supervisor.acquire(plugin_id)  # starts a lazy plugin; the message queues until it is ready
             self._supervisor.send(plugin_id, Message("get_options", None, {"request": request, "source": source}))
             if not pending.done.wait(self._timeout):
                 return OptionsResult(False, error="timed out")

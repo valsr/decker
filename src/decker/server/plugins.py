@@ -16,6 +16,7 @@ from decker.asset.iconpack import IconPackRegistry
 from decker.asset.tint import tint_svg
 from decker.common import config
 from decker.common.manager import Manager
+from decker.common.options import is_valid_source
 from decker.common.platforms import detect_platform, platform_supports
 from decker.common.slots import SLOT_NAMES, normalize_slots
 from decker.common.template import expand_template, template_names
@@ -30,13 +31,12 @@ from decker.plugin.loader import (
     PluginLoader,
     recover_interrupted_installs,
 )
-from decker.plugin.manifest import CardSpec, PluginManifest
+from decker.plugin.manifest import CardSpec, PluginManifest, declared_options_sources
 from decker.plugin.protocol import PROTOCOL_VERSION, Message
 from decker.plugin.runtime.launcher import launch_command, launch_env
 from decker.plugin.runtime.process import PluginProcess
 from decker.plugin.runtime.supervisor import PluginSupervisor, SupervisorPolicy
 from decker.plugin.settings_schema import (
-    SettingField,
     apply_schema,
     schema_to_json,
 )
@@ -168,15 +168,6 @@ def _gestures_from(names: Any) -> frozenset[Gesture]:
     if not isinstance(names, (list, tuple, set, frozenset)):
         return frozenset()
     return frozenset(Gesture(n) for n in names if n in {g.value for g in Gesture})
-
-
-def _declares_source(manifest: PluginManifest, source: str) -> bool:
-    entries = [*manifest.global_settings]
-    for card in manifest.cards:
-        entries.extend(card.settings)
-    for action in manifest.actions:
-        entries.extend(action.settings)
-    return any(isinstance(e, SettingField) and e.extra.get("options_source") == source for e in entries)
 
 
 class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
@@ -337,6 +328,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def _on_plugin_exit(self, plugin_id: str) -> None:
         self._variable_runner.plugin_stopped(plugin_id)
+        # Check-then-act: a restart landing between has_process() and plugin_stopped() would fail a fresh request
+        # (a microsecond window; a generation-tagged on_exit would close it).
         if not self._supervisor.has_process(plugin_id):  # else a fresh process already serves a newer request
             self._options_runner.plugin_stopped(plugin_id)
         self.variables.drop_values(plugin_id)
@@ -356,11 +349,16 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def plugin_options(self, plugin_id: str, source: str) -> OptionsResult:
         """Ask a plugin for the options of a dynamic choice field it declares; blocks up to the runner's timeout."""
+        if type(plugin_id) is not str:  # pylint: disable=unidiomatic-typecheck
+            return OptionsResult(False, error="unknown plugin")  # exact types: a netref can claim to be a str
+        if type(source) is not str or not is_valid_source(source):  # pylint: disable=unidiomatic-typecheck
+            return OptionsResult(False, error="unknown options source")
         with self._lock:
             plugin = self._plugins.get(plugin_id)
         if plugin is None:
             return OptionsResult(False, error="unknown plugin")
-        if not _declares_source(plugin.manifest, source):
+        manifest = plugin.manifest
+        if source not in declared_options_sources(manifest.global_settings, manifest.cards, manifest.actions):
             return OptionsResult(False, error="unknown options source")
         return self._options_runner.fetch(plugin_id, source)
 

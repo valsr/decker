@@ -477,3 +477,34 @@ def test_options_source_is_exported_in_json() -> None:
     assert_that(out[0]["options"]).is_equal_to([])
     assert_that(out[1]["options"]).is_equal_to(static)
     assert_that(out[1]["default"]).is_equal_to("auto")
+
+
+def test_sourced_choice_refuses_non_string_static_values() -> None:
+    static = [{"label": "One", "value": 1}]
+    with pytest.raises(ValueError, match="here.*options_source.*string values"):
+        parse_settings_schema([{**SOURCED, "options": static}], "here")
+
+
+def test_sourced_choice_refuses_overlong_static_values() -> None:
+    static = [{"label": "Long", "value": "x" * 257}]
+    with pytest.raises(ValueError, match="here.*options_source.*256"):
+        parse_settings_schema([{**SOURCED, "options": static}], "here")
+    ok = [{"label": "Long", "value": "x" * 256}]
+    assert_that(parse_settings_schema([{**SOURCED, "options": ok}], "here")).is_length(1)
+
+
+def test_static_choice_without_a_source_still_accepts_int_values() -> None:
+    static = [{"label": "One", "value": 1}, {"label": "Two", "value": 2}]
+    schema = parse_settings_schema([{"key": "n", "type": "choice", "label": "N", "options": static}], "here")
+    assert_that(apply_schema(schema, {"n": 2})).is_equal_to({"n": 2})
+
+
+def test_sourced_choice_refuses_an_overlong_default() -> None:
+    with pytest.raises(ValueError, match="here.*default"):
+        parse_settings_schema([{**SOURCED, "default": "x" * 257}], "here")
+
+
+def test_optional_sourced_choice_without_default_stays_none() -> None:
+    entry = parse_settings_schema([{**SOURCED, "optional": True}], "here")[0]
+    assert isinstance(entry, SettingField)
+    assert_that(entry.default).is_none()

@@ -200,6 +200,9 @@ class PluginManifest:
             _require_variable_prerequisites(runtime, data.get("decker"))
         if not cards and not actions and not packs and not variables:
             raise ManifestValidationError("manifest contributes no cards, actions, icon packs or variables")
+        global_settings = _parse_global_settings(data.get("global_settings", []))
+        if declared_options_sources(global_settings, cards, actions):
+            _require_options_prerequisites(runtime, data.get("decker"))
 
         return cls(
             format=fmt,
@@ -214,7 +217,7 @@ class PluginManifest:
             decker=_optional_str(data.get("decker")),
             runtime=runtime,
             permissions=tuple(str(p) for p in _as_list(data.get("permissions", []), "permissions")),
-            global_settings=_parse_global_settings(data.get("global_settings", [])),
+            global_settings=global_settings,
             cards=cards,
             actions=actions,
             icon_packs=packs,
@@ -444,6 +447,27 @@ def _require_variable_prerequisites(runtime: RuntimeSpec | None, decker: Any) ->
         raise ManifestValidationError(
             'manifest contributes variables, so it must declare a "decker" version constraint'
         )
+
+
+def declared_options_sources(
+    global_settings: tuple[SettingEntry, ...], cards: tuple[CardSpec, ...], actions: tuple[ActionSpec, ...]
+) -> frozenset[str]:
+    """Every `options_source` name used by a settings field of the manifest."""
+    entries: list[SettingEntry] = [*global_settings]
+    for card in cards:
+        entries.extend(card.settings)
+    for action in actions:
+        entries.extend(action.settings)
+    return frozenset(
+        str(e.extra["options_source"]) for e in entries if isinstance(e, SettingField) and e.extra.get("options_source")
+    )
+
+
+def _require_options_prerequisites(runtime: RuntimeSpec | None, decker: Any) -> None:
+    if runtime is None:
+        raise ManifestValidationError("manifest uses options_source but declares no runtime")
+    if not _is_nonempty_str(decker):
+        raise ManifestValidationError('manifest uses options_source, so it must declare a "decker" version constraint')
 
 
 def _parse_state(entry: Any, card_id: str) -> StateSpec:
