@@ -337,7 +337,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def _on_plugin_exit(self, plugin_id: str) -> None:
         self._variable_runner.plugin_stopped(plugin_id)
-        self._options_runner.plugin_stopped(plugin_id)
+        if not self._supervisor.has_process(plugin_id):  # else a fresh process already serves a newer request
+            self._options_runner.plugin_stopped(plugin_id)
         self.variables.drop_values(plugin_id)
 
     def _names_owned_by(self, plugin_id: str) -> frozenset[str]:

@@ -1,0 +1,71 @@
+{
+  "format": 2,
+  "id": "com.decker.opttest",
+  "name": "Options Test",
+  "version": "1.0.0",
+  "author": "Decker",
+  "description": "Test-only plugin that supplies dynamic choice options.",
+  "decker": ">=0.6",
+  "runtime": { "type": "python", "entry": "plugin.py" },
+  "global_settings": [
+    {
+      "type": "choice",
+      "key": "region",
+      "label": "Region",
+      "options_source": "globals",
+      "options": [{ "label": "Default", "value": "default" }],
+      "default": "default"
+    }
+  ],
+  "contributes": {
+    "cards": [
+      {
+        "id": "com.decker.opttest.picker",
+        "name": "Picker",
+        "tooltip": "A card with dynamic choice fields",
+        "settings": [
+          {
+            "type": "choice",
+            "key": "device",
+            "label": "Device",
+            "options_source": "devices",
+            "options": [{ "label": "Default", "value": "default" }],
+            "default": "default"
+          },
+          {
+            "type": "choice",
+            "key": "lazy",
+            "label": "Slow",
+            "options_source": "slow",
+            "options": [{ "label": "Default", "value": "default" }],
+            "default": "default"
+          },
+          {
+            "type": "choice",
+            "key": "fragile",
+            "label": "Fragile",
+            "options_source": "raises",
+            "options": [{ "label": "Default", "value": "default" }],
+            "default": "default"
+          }
+        ]
+      }
+    ],
+    "actions": [
+      {
+        "id": "com.decker.opttest.act",
+        "name": "Act",
+        "settings": [
+          {
+            "type": "choice",
+            "key": "target",
+            "label": "Target",
+            "options_source": "actions_list",
+            "options": [{ "label": "Default", "value": "default" }],
+            "default": "default"
+          }
+        ]
+      }
+    ]
+  }
+}
