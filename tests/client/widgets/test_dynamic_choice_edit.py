@@ -6,6 +6,8 @@ from typing import Any
 import pytest
 from assertpy import assert_that
 from PyQt6 import sip
+from PyQt6.QtCore import Qt
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QComboBox, QToolButton
 
 from decker.client.widgets import dynamic_choice_edit
@@ -169,6 +171,70 @@ class TestDynamicChoiceEdit:  # pylint: disable=protected-access
         assert_that(form.values()).is_equal_to({"voice": "alice"})
         edit.findChild(QComboBox).setEditText("typed")
         assert_that(form.values()).is_equal_to({"voice": "typed"})
+
+
+_TWINS = [{"label": "Alice", "value": "a1"}, {"label": "Alice", "value": "a2"}]
+
+
+def _twins() -> DynamicChoiceEdit:
+    edit = DynamicChoiceEdit({"key": "k", "type": "choice", "options_source": "s"}, "p", _ok(_TWINS))
+    _until(lambda: edit.findChild(QComboBox).count() == 2)
+    return edit
+
+
+def _pick(edit: DynamicChoiceEdit, index: int) -> None:
+    combo = edit.findChild(QComboBox)
+    combo.setCurrentIndex(index)
+    combo.activated.emit(index)
+
+
+class TestLiteralAndDuplicates:  # pylint: disable=protected-access
+    def test_enter_on_typed_text_keeps_it_and_emits_once(self, qapp):  # pylint: disable=unused-argument
+        edit = DynamicChoiceEdit(_ENTRY, "p", _ok([]))
+        _join(edit)
+        combo = edit.findChild(QComboBox)
+        seen: list[str] = []
+        edit.value_changed.connect(lambda: seen.append(edit.value()))
+        line = combo.lineEdit()
+        assert line is not None
+        line.setText("custom")
+        QTest.keyClick(line, Qt.Key.Key_Return)  # type: ignore[call-overload]  # PyQt6 stub declares self
+        assert_that(edit.value()).is_equal_to("custom")
+        assert_that(combo.count()).is_equal_to(2)
+        assert_that(seen).is_equal_to(["custom"])
+
+    def test_same_label_options_return_their_own_values(self, qapp):  # pylint: disable=unused-argument
+        edit = _twins()
+        seen: list[str] = []
+        edit.value_changed.connect(lambda: seen.append(edit.value()))
+        _pick(edit, 1)
+        assert_that(edit.value()).is_equal_to("a2")
+        _pick(edit, 0)
+        assert_that(edit.value()).is_equal_to("a1")
+        assert_that(seen).is_equal_to(["a2", "a1"])
+
+    def test_stored_unlisted_value_equal_to_a_label_stays_as_stored(self, qapp):  # pylint: disable=unused-argument
+        entry = {"key": "k", "type": "choice", "options_source": "s", "options": [{"label": "Alice", "value": "a1"}]}
+        edit = DynamicChoiceEdit(entry, "p", _ok([{"label": "Zed", "value": "z"}]))
+        edit.set_value("Alice")
+        assert_that(edit.value()).is_equal_to("Alice")
+        _until(lambda: ("Zed", "z") in _items(edit))
+        assert_that(edit.value()).is_equal_to("Alice")
+        _pick(edit, 0)
+        assert_that(edit.value()).is_equal_to("a1")
+
+    def test_stored_value_stays_literal_when_a_fetch_lists_its_label(self, qapp):  # pylint: disable=unused-argument
+        edit = DynamicChoiceEdit(_ENTRY, "p", _ok([{"label": "Carol", "value": "c1"}]))
+        edit.set_value("Carol")
+        _until(lambda: ("Carol", "c1") in _items(edit))
+        assert_that(edit.value()).is_equal_to("Carol")
+
+    def test_refresh_button_is_hidden_without_a_source(self, qapp):  # pylint: disable=unused-argument
+        edit = DynamicChoiceEdit({"key": "k", "type": "choice", "options": []}, "")
+        assert_that(edit.findChild(QToolButton).isHidden()).is_true()
+        live = DynamicChoiceEdit(_ENTRY, "p", _ok([]))
+        assert_that(live.findChild(QToolButton).isHidden()).is_false()
+        _join(live)
 
 
 class TestFetchOptions:
