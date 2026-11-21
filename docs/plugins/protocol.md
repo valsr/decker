@@ -28,7 +28,7 @@ discarded.
 
 | Event | Context | Payload |
 |-------|---------|---------|
-| `hello` | | `{"protocol": 2, "decker_version": "0.6.0", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
+| `hello` | | `{"protocol": 3, "decker_version": "0.6.0", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
 | `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "settings": {...}, "state": 0}` |
 | `will_disappear` | yes | none |
 | `key_down`, `key_up` | yes | none (raw key events) |
@@ -39,6 +39,7 @@ discarded.
 | `device_connected` | | `{"device": "<device id>"}` |
 | `get_variable` | | `{"request": "<id>", "name": "<variable>"}`: answer with `variable_value` carrying the same `request` (see [Variables](#variables)) |
 | `variables_changed` | | `{"set": {"name": "value", ...}, "removed": ["name", ...]}`: the global variables that changed; the full set of values is sent once after `ready` |
+| `get_options` | | `{"request": "<id>", "source": "<options source>"}`: answer with `options_result` carrying the same `request` (see [Dynamic choice options](#dynamic-choice-options)) |
 | `ping` | | none; reply with `pong` |
 | `shutdown` | | none; exit promptly |
 
@@ -64,6 +65,7 @@ discarded.
 | `unregister_variable` | | `{"name": "<concrete name>"}`: withdraw it and its value |
 | `variable_updated` | | `{"name": "<variable>"}`: the value changed; the server asks for it with `get_variable` |
 | `variable_value` | | `{"request": "<id>", "ok": true, "value": "text"\|null}` or `{"request": "<id>", "ok": false, "error": "text"}`, answering `get_variable` |
+| `options_result` | | `{"request": "<id>", "ok": true, "options": [{"label": "text", "value": "text"}, ...]}` or `{"request": "<id>", "ok": false, "error": "text"}`, answering `get_options` |
 | `log` | | `{"level": "info", "message": "text"}`; levels `debug`, `info`, `warning`, `error` |
 | `open_url` | | `{"url": "https://..."}`; only `http`/`https` with a host are accepted. Every connected client asks the user before opening it |
 
@@ -112,6 +114,23 @@ does not own and a `variable_value` that matches no open request are ignored (lo
   collapsed into one more ask after it.
 - `variables_changed` goes to every ready plugin whenever any global variable changes, so a plugin can keep a local
   copy. Values of a plugin that stops or crashes are removed (they are never shown stale) and return after a restart.
+
+## Dynamic choice options
+
+A `choice` setting with an `options_source` (see [settings schema](settings-schema.md#dynamic-choices)) asks the plugin
+for its options when a settings form opens. The server sends `get_options` with the source name and waits up to 5 s
+(see [limits](limits.md)) for `options_result` with the same `request`.
+
+- The server only asks for a source that one of the plugin's own schemas declares; the client gets an "unknown options
+  source" error for any other name, without the plugin being asked.
+- The server cleans the answer: entries that are not `{"label": str, "value": str}` are dropped, labels and values are
+  cut to 256 characters, a repeated value is dropped, and at most 256 options are kept.
+- `ok: false` (with an optional `error` text, kept to 256 characters), no answer in time, or the plugin stopping gives
+  the client an error and no options. A source the plugin does not implement should be answered with `ok: false`.
+- A plugin that is not running (a lazy plugin) is started for the request and released afterwards, like an action run;
+  a plugin that is marked failed gives an error at once. The request is queued until the plugin sends `ready`.
+- An SDK from before this feature ignores `get_options`, which the server reports as a timeout. The Python SDK answers
+  with [`@options`](sdk-quickstart.md#dynamic-choice-options).
 
 ## Images
 

@@ -30,6 +30,7 @@ Decker supports the following Elgato Stream Deck models:
 | Switch card (one key with Display, Press, Double press and Long press slots that hold cards or actions) | Supported |
 | Plugins (out of process, `.deckerplugin` packages, repositories, updates) | Supported |
 | Plugin variables (plugins export values that key text uses as `{name}`; plugins that declare them run in the background) | Supported |
+| Dynamic choice fields (a plugin fills a settings dropdown with runtime options such as audio devices; saved values survive the list changing) | Supported |
 | PyQt6 desktop client | Supported |
 | Command line client (`poe cli`) | Supported |
 | Server settings from the client (port, memory and image limits, stop on last client), gated by `--allow-client-reconfiguration`; see [docs/server-reconfiguration.md](docs/server-reconfiguration.md) | Supported |
