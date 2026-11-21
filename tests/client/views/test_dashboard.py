@@ -581,6 +581,8 @@ class TestKeyInteractions:
         panel = view._config_panel  # pylint: disable=protected-access
         assert_that(panel.currentIndex()).is_equal_to(1)
         assert_that(panel._settings_form.values()).is_equal_to({"step": 4})  # pylint: disable=protected-access
+        assert panel._loaded is not None  # pylint: disable=protected-access
+        assert_that(panel._loaded[4]).is_equal_to("com.p")  # pylint: disable=protected-access
 
     def test_selecting_another_key_with_identical_values_drops_unsaved_edits(  # pylint: disable=unused-argument
         self, qapp, tmp_path
