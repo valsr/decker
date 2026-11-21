@@ -153,10 +153,10 @@ class Volume(DeckerPlugin):
 
 The function takes no arguments, may be `async def`, and runs on the SDK's worker pool, so a slow one does not block
 `ping`. It must return a list (or tuple). An exception, a result that is not a list, or a source nobody registered is
-answered with an error, which the form shows in the control's tooltip. Entries that are not a dict, a pair or a string,
+answered with an error, which the form shows in the control's tooltip. Entries that are not a dict, a pair (a tuple or a two-item list) or a string,
 and entries whose text cannot be encoded as UTF-8, are dropped. The server then cleans the list (see
 [protocol](protocol.md#dynamic-choice-options)); the setting arrives at the card as the stored string, whether or not it
-is still listed. A manifest that uses `options_source` needs the Decker version that ships it in its `decker` constraint.
+is still listed. A manifest that uses `options_source` must set its `decker` constraint to the release that supports it (see [Dynamic choices](settings-schema.md#dynamic-choices)).
 
 ## Handlers (override what you need)
 

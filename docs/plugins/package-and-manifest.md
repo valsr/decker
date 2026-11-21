@@ -81,7 +81,7 @@ JSON with snake_case keys. Unknown keys are ignored. `format` must be the intege
 | `version` | yes | Semantic version `x.y.z` (pre-release/build suffixes allowed). |
 | `description`, `homepage`, `category` | no | Strings. |
 | `icon` | no | Path inside the package; the extension is optional (looked up as `.svg`, `@2x.png`, `.png`). Values starting with `pack:` are reserved. |
-| `decker` | no (yes for `variables`) | Version specifier for Decker, e.g. `>=0.6` (cards and actions need Decker 0.6). Install is refused if the running server does not satisfy it. Require the Decker version that ships a feature when you use it, for example `options_source` on a `choice` field. |
+| `decker` | no (yes for `variables`) | Version specifier for Decker, e.g. `>=0.6` (cards and actions need Decker 0.6). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker would silently treat that field as a plain static choice. |
 | `runtime` | for `actions`, for `variables` and for `cards` that are not static presets or presets of Run Action | See below. |
 | `global_settings` | no | [Settings schema](settings-schema.md) for plugin-wide settings, shown in Settings, Plugins. |
 | `permissions` | no | Reserved, ignored in v1. |
