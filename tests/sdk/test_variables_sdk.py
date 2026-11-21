@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import queue
 import threading
 import time
 from collections.abc import Iterator
@@ -13,6 +14,7 @@ import decker_plugin_sdk as sdk
 from decker_plugin_sdk import _variables, run
 
 WAIT = 5.0
+READ_DEADLINE = 5.0
 
 
 class Rig:
@@ -30,6 +32,9 @@ class Rig:
             target=lambda: self.code.append(run({}, self._plugin_in, self._plugin_out, actions or {}))
         )
         self.thread.start()
+        self._lines: queue.Queue[bytes] = queue.Queue()
+        self._reader = threading.Thread(target=self._read_lines, daemon=True)
+        self._reader.start()
 
     def send(self, event: str, payload: dict | None = None) -> None:
         data: dict[str, Any] = {"event": event}
@@ -38,20 +43,32 @@ class Rig:
         self.to_plugin.write(json.dumps(data).encode() + b"\n")
         self.to_plugin.flush()
 
-    def recv_until(self, event: str) -> dict:
+    def _read_lines(self) -> None:
         while True:
             line = self.from_plugin.readline()
-            assert line, "plugin closed stdout"
-            message = json.loads(line)
+            self._lines.put(line)
+            if not line:
+                return
+
+    def _next(self, awaiting: str) -> dict:
+        try:
+            line = self._lines.get(timeout=READ_DEADLINE)
+        except queue.Empty:
+            raise AssertionError(f"no {awaiting} within {READ_DEADLINE}s") from None
+        assert line, f"plugin closed stdout before {awaiting}"
+        message: dict = json.loads(line)
+        return message
+
+    def recv_until(self, event: str) -> dict:
+        while True:
+            message = self._next(event)
             if message["event"] == event:
                 return message
 
     def collect_until_log(self, text: str) -> list[dict]:
         seen: list[dict] = []
         while True:
-            line = self.from_plugin.readline()
-            assert line, "plugin closed stdout"
-            message = json.loads(line)
+            message = self._next(f"log {text!r}")
             seen.append(message)
             if message["event"] == "log" and message["payload"]["message"] == text:
                 return seen
@@ -64,7 +81,9 @@ class Rig:
         if self.thread.is_alive():
             self.send("shutdown")
         self.thread.join(WAIT)
-        for stream in (self.to_plugin, self._plugin_in, self._plugin_out, self.from_plugin):
+        self._plugin_out.close()  # EOF for the reader thread
+        self._reader.join(WAIT)
+        for stream in (self.to_plugin, self._plugin_in, self.from_plugin):
             stream.close()
 
 
@@ -400,3 +419,32 @@ def test_reads_without_runtime_are_empty(rigs: list[Rig]) -> None:
     rig.stop()
     assert_that(sdk.get_variable("x")).is_none()
     assert_that(sdk.has_variable("x")).is_false()
+
+
+def test_unencodable_value_gets_one_error_answer(rigs: list[Rig]) -> None:
+    @sdk.variable("lonely")
+    def lonely() -> str:
+        return "bad\udcff"
+
+    rig = _start(rigs)
+    rig.hello()
+    rig.send("get_variable", {"request": 7, "name": "lonely"})
+
+    payload = rig.recv_until("variable_value")["payload"]
+
+    assert_that(payload).is_equal_to({"request": 7, "ok": False, "error": "value could not be encoded"})
+
+
+def test_error_text_with_a_lone_surrogate_is_escaped_in_the_one_answer(rigs: list[Rig]) -> None:
+    @sdk.variable("raises")
+    def raises() -> str:
+        raise ValueError("x\udcff")
+
+    rig = _start(rigs)
+    rig.hello()
+    rig.send("get_variable", {"request": 8, "name": "raises"})
+
+    payload = rig.recv_until("variable_value")["payload"]
+
+    assert_that(payload["ok"]).is_false()
+    assert_that(payload["error"]).is_equal_to("ValueError: x\\udcff")

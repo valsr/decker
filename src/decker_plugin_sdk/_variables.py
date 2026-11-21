@@ -10,6 +10,7 @@ from typing import Any, TypeVar, overload
 from ._context import Sender
 
 MAX_VALUE_LENGTH = 1024
+_MAX_ERROR_TEXT = 256
 DEFAULT_INTERVAL = 2.0
 
 # The name rules below mirror decker.common.variables (the SDK cannot import the server package); keep in sync.
@@ -211,6 +212,15 @@ class PluginContext:
         self._host.send("log", None, {"level": level, "message": message})
 
 
+def safe_error_text(exc: BaseException) -> str:
+    """The exception as `Type: message`, always encodable and at most 256 characters."""
+    try:
+        text = f"{type(exc).__name__}: {exc}"
+    except Exception:  # pylint: disable=broad-exception-caught
+        text = f"{type(exc).__name__}: {type(exc).__name__}"
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")[:_MAX_ERROR_TEXT]
+
+
 class VariableHost:
     """Runs the lifecycle thread and serves variable requests for one runtime."""
 
@@ -295,11 +305,12 @@ class VariableHost:
         try:
             value = self.evaluate(str(payload.get("name")))
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            self.send(
-                "variable_value", None, {"request": request, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
-            )
+            self.send("variable_value", None, {"request": request, "ok": False, "error": safe_error_text(exc)})
             return
-        self.send("variable_value", None, {"request": request, "ok": True, "value": value})
+        try:
+            self.send("variable_value", None, {"request": request, "ok": True, "value": value})
+        except UnicodeEncodeError:  # a lone surrogate in the value: answer anyway, or the server waits out its timeout
+            self.send("variable_value", None, {"request": request, "ok": False, "error": "value could not be encoded"})
 
     def changed(self, payload: dict[str, Any]) -> None:
         """Apply a variables_changed event to the local copy."""
