@@ -416,3 +416,64 @@ def test_slots_field_parses_and_apply_returns_four_keys() -> None:
     result = apply_schema(schema, {"slots": {"press": {"kind": "action", "action": "a.b", "settings": {}}}})
     assert_that(result["slots"]["press"]).is_equal_to({"kind": "action", "action": "a.b", "settings": {}})
     assert_that(result["slots"]["display"]).is_none()
+
+
+SOURCED: dict[str, Any] = {"key": "dev", "type": "choice", "label": "Device", "options_source": "output_devices"}
+
+
+def test_choice_with_options_source_and_no_options_parses() -> None:
+    (entry,) = parse_settings_schema([SOURCED], "here")
+    assert isinstance(entry, SettingField)
+    assert_that(entry.extra["options_source"]).is_equal_to("output_devices")
+    assert_that(entry.extra["options"]).is_equal_to(())
+    assert_that(entry.default).is_equal_to("")
+
+
+def test_choice_without_options_or_source_still_rejected() -> None:
+    with pytest.raises(ValueError, match="options"):
+        parse_settings_schema([{"key": "a", "type": "choice"}], "here")
+    with pytest.raises(ValueError, match="options"):
+        parse_settings_schema([{"key": "a", "type": "choice", "options": []}], "here")
+
+
+def test_invalid_options_source_rejected() -> None:
+    for bad in ("Bad Name", 5, ""):
+        with pytest.raises(ValueError, match="here.*options_source"):
+            parse_settings_schema([{**SOURCED, "options_source": bad}], "here")
+    with pytest.raises(ValueError, match="here.*options_source"):
+        parse_settings_schema([{"key": "a", "type": "text", "options_source": "x"}], "here")
+
+
+def test_options_source_choice_accepts_any_string_and_keeps_it() -> None:
+    schema = parse_settings_schema([{**SOURCED, "default": "dflt"}], "here")
+    assert_that(apply_schema(schema, {"dev": "usb_headset"})).is_equal_to({"dev": "usb_headset"})
+    assert_that(apply_schema(schema, {"dev": ""})).is_equal_to({"dev": ""})
+    assert_that(apply_schema(schema, {"dev": "x" * 256})).is_equal_to({"dev": "x" * 256})
+    assert_that(apply_schema(schema, {"dev": "x" * 257})).is_equal_to({"dev": "dflt"})
+    assert_that(apply_schema(schema, {"dev": 3})).is_equal_to({"dev": "dflt"})
+    assert_that(apply_schema(schema, {"dev": True})).is_equal_to({"dev": "dflt"})
+
+
+def test_options_source_choice_default_rules() -> None:
+    explicit = parse_settings_schema([{**SOURCED, "default": "d"}], "here")[0]
+    static = [{"label": "Auto", "value": "auto"}, {"label": "Two", "value": "two"}]
+    first = parse_settings_schema([{**SOURCED, "options": static}], "here")[0]
+    empty = parse_settings_schema([{**SOURCED, "options": []}], "here")[0]
+    assert isinstance(explicit, SettingField) and isinstance(first, SettingField) and isinstance(empty, SettingField)
+    assert_that(explicit.default).is_equal_to("d")
+    assert_that(first.default).is_equal_to("auto")
+    assert_that(empty.default).is_equal_to("")
+    with pytest.raises(ValueError, match="here.*default"):
+        parse_settings_schema([{**SOURCED, "default": 3}], "here")
+    optional = parse_settings_schema([{**SOURCED, "optional": True}], "here")[0]
+    assert isinstance(optional, SettingField)
+    assert_that(optional.default).is_none()
+
+
+def test_options_source_is_exported_in_json() -> None:
+    static = [{"label": "Auto", "value": "auto"}]
+    out = schema_to_json(parse_settings_schema([SOURCED, {**SOURCED, "key": "b", "options": static}], "here"))
+    assert_that(out[0]["options_source"]).is_equal_to("output_devices")
+    assert_that(out[0]["options"]).is_equal_to([])
+    assert_that(out[1]["options"]).is_equal_to(static)
+    assert_that(out[1]["default"]).is_equal_to("auto")
