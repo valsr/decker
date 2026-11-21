@@ -5,6 +5,8 @@ from assertpy import assert_that
 from PyQt6.QtCore import QByteArray, QMimeData, QPointF, Qt
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
+from decker.client.widgets import dynamic_choice_edit
+from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.client.widgets.slots_edit import SlotsEdit, _SlotButton
 from decker.common.slots import SWITCH_CARD_ID
 
@@ -286,3 +288,33 @@ class TestDropPinning:  # pylint: disable=protected-access
         assert_that(edit.slot_value("press")).is_equal_to(
             {"kind": "card", "plugin": "p", "card": "preset-card", "settings": {}, "appearance": {}}
         )
+
+
+_VOICE = [{"key": "voice", "type": "choice", "label": "Voice", "options_source": "voices", "options": []}]
+
+
+class TestSlotConfigPluginId:  # pylint: disable=protected-access
+    def _field(self, value: dict[str, Any], monkeypatch) -> DynamicChoiceEdit:
+        monkeypatch.setattr(dynamic_choice_edit, "_default_fetch", lambda: lambda _p, _s: (True, [], ""))
+        cards = [{**_CARDS[0], "settings_schema": _VOICE}]
+        actions = [{**_ACTIONS[0], "plugin_uuid": "com.t.x", "settings_schema": _VOICE}]
+        edit = SlotsEdit(catalog=lambda: (cards, actions))
+        edit.set_value({"press": value})
+        edit._select("press")
+        field = edit._config.settings_form._fields["voice"].widget
+        assert isinstance(field, DynamicChoiceEdit)
+        if field._thread is not None:
+            field._thread.join(5)
+        return field
+
+    def test_slot_config_uses_the_slots_plugin_id_for_a_card_slot(
+        self, qapp, monkeypatch
+    ):  # pylint: disable=unused-argument
+        value = {"kind": "card", "plugin": "p", "card": "c", "settings": {}, "appearance": {}}
+        assert_that(self._field(value, monkeypatch)._plugin_id).is_equal_to("p")
+
+    def test_slot_config_uses_the_slots_plugin_id_for_an_action_slot(
+        self, qapp, monkeypatch
+    ):  # pylint: disable=unused-argument
+        value = {"kind": "action", "action": "http", "settings": {}}
+        assert_that(self._field(value, monkeypatch)._plugin_id).is_equal_to("com.t.x")

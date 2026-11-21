@@ -204,7 +204,11 @@ class _SlotConfig(QWidget):
         self.setVisible(False)
 
     def show_forms(
-        self, schema: list[dict[str, Any]] | None, value: dict[str, Any] | None, defaults: dict[str, Any]
+        self,
+        schema: list[dict[str, Any]] | None,
+        value: dict[str, Any] | None,
+        defaults: dict[str, Any],
+        plugin_id: str = "",
     ) -> None:
         """Fill the forms from slot ``value`` and the card's appearance ``defaults`` (no schema or value hides them)."""
         self._defaults = fold_legacy_title(defaults)
@@ -218,7 +222,7 @@ class _SlotConfig(QWidget):
             self._baseline = self._form_baseline(is_card)
             shown = _with_defaults(value.get("appearance", {}), self._defaults) if is_card else {}
             self.appearance_form.set_schema(APPEARANCE_SCHEMA if is_card else [], shown)
-            self.settings_form.set_schema(schema, value["settings"])
+            self.settings_form.set_schema(schema, value["settings"], plugin_id)
         for form in (self.settings_form, self.appearance_form):
             form.blockSignals(False)
         self.appearance_form.setVisible(value is not None and value["kind"] == "card")
@@ -327,7 +331,9 @@ class SlotsEdit(QWidget):
         entry = self._config_entry(value)
         schema = None if entry is None else list(entry.get("settings_schema") or [])
         defaults = dict(entry.get("appearance") or {}) if entry is not None and value is not None else {}
-        self._config.show_forms(schema, value, defaults if value and value["kind"] == "card" else {})
+        is_card = bool(value and value["kind"] == "card")
+        plugin_id = str((value["plugin"] if is_card else (entry or {}).get("plugin_uuid")) or "") if value else ""
+        self._config.show_forms(schema, value, defaults if is_card else {}, plugin_id)
 
     def _config_entry(self, value: dict[str, Any] | None) -> dict[str, Any] | None:
         if value is None:

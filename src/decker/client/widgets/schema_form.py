@@ -360,13 +360,15 @@ class ActionParamsEdit(QWidget):
         self._action = action_id
         self._pending = dict(values)
         schema: list[dict[str, Any]] = []
+        plugin_id = ""
         known = False
         for action in fetch_actions(AppContext.get().connection_manager) or []:
             if str(action.get("action_uuid")) == action_id:
                 schema, known = list(action.get("settings_schema") or []), True
+                plugin_id = str(action.get("plugin_uuid") or "")
         self._known = known
         self._form.blockSignals(True)
-        self._form.set_schema(schema, self._pending)
+        self._form.set_schema(schema, self._pending, plugin_id)
         self._form.blockSignals(False)
         if not action_id:
             self._hint.setText("Choose an action first")

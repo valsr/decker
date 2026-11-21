@@ -582,3 +582,27 @@ class TestDynamicChoiceInForm:  # pylint: disable=protected-access
         form.set_schema(self._SCHEMA, {}, "plug")
         assert_that(form._fields["voice"].widget).is_instance_of(DynamicChoiceEdit)
         _join(form._fields["voice"].widget)
+
+
+class TestActionParamsPluginId:  # pylint: disable=protected-access
+    def test_action_params_use_the_actions_plugin_id(self, qapp, monkeypatch):  # pylint: disable=unused-argument
+        from decker.client.widgets import (  # pylint: disable=import-outside-toplevel
+            dynamic_choice_edit,
+            schema_form,
+        )
+
+        monkeypatch.setattr(dynamic_choice_edit, "_default_fetch", lambda: lambda _p, _s: (True, [], ""))
+        schema = [{"key": "voice", "type": "choice", "label": "Voice", "options_source": "voices", "options": []}]
+        actions = [
+            {"action_uuid": "other", "plugin_uuid": "com.decker.core", "settings_schema": []},
+            {"action_uuid": "com.t.say", "plugin_uuid": "com.t.x", "settings_schema": schema},
+        ]
+        monkeypatch.setattr(schema_form, "fetch_actions", lambda _rpc: actions)
+        edit = schema_form.ActionParamsEdit()
+
+        edit.set_action("com.t.say", {})
+
+        field = edit._form._fields["voice"].widget
+        assert isinstance(field, DynamicChoiceEdit)
+        assert_that(field._plugin_id).is_equal_to("com.t.x")
+        _join(field)
