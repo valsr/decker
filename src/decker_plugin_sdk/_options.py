@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from ._context import Sender
-from ._variables import _call
+from ._variables import _call, safe_error_text
 
 # The limits and cleaning rules mirror decker.common.options (the SDK cannot import the server package); keep in sync.
 MAX_OPTIONS = 256
@@ -94,14 +94,6 @@ def _printable(value: Any) -> str:
     return str(value)[:64].encode("utf-8", "backslashreplace").decode("utf-8")
 
 
-def _safe_text(exc: BaseException) -> str:
-    try:
-        text = f"{type(exc).__name__}: {exc}"
-    except Exception:  # pylint: disable=broad-exception-caught
-        text = f"{type(exc).__name__}: {type(exc).__name__}"
-    return text.encode("utf-8", "backslashreplace").decode("utf-8")[:MAX_TEXT]
-
-
 def normalise(result: list[Any] | tuple[Any, ...]) -> list[dict[str, str]]:
     """Turn a supplier's list of dicts, pairs or strings into cleaned options."""
     entries = (_entry(item) for item in result)
@@ -131,7 +123,7 @@ class OptionsHost:
                 return
             options_list = normalise(raw)
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            text, source = _safe_text(exc), _printable(payload.get("source"))
+            text, source = safe_error_text(exc), _printable(payload.get("source"))
             self._reply(request, False, error=text)
             self._log_quietly(f"options source {source} failed: {text}")
             return

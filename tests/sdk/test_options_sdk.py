@@ -251,13 +251,36 @@ def test_final_send_failure_falls_back_to_not_ok(rig: Rig, monkeypatch: pytest.M
     )
 
 
-def test_non_encodable_request_id_is_ignored(rig: Rig) -> None:
+def test_non_encodable_request_id_is_ignored() -> None:
+    sent: list[tuple[str, Any]] = []
+    host = _options.OptionsHost(lambda event, context, payload: sent.append((event, payload)), lambda message: None)
+    _options.reset()
+
     @sdk.options("fine")
     def fine() -> list[str]:
         return ["a"]
 
-    rig.send("get_options", {"request": "\udcff", "source": "fine"})
-    assert_that(rig.ask("s7", "fine")["request"]).is_equal_to("s7")
+    host.answer({"request": "\udcff", "source": "fine"})
+
+    assert_that(sent).is_empty()
+
+
+def test_a_raising_supplier_sends_one_result_and_logs_once() -> None:
+    sent: list[tuple[str, Any]] = []
+    logged: list[str] = []
+    host = _options.OptionsHost(lambda event, context, payload: sent.append((event, payload)), logged.append)
+    _options.reset()
+
+    @sdk.options("broken")
+    def broken() -> list[str]:
+        raise RuntimeError("boom")
+
+    host.answer({"request": "r1", "source": "broken"})
+
+    assert_that(sent).is_length(1)
+    assert_that(sent[0][0]).is_equal_to("options_result")
+    assert_that(sent[0][1]).is_equal_to({"request": "r1", "ok": False, "error": "RuntimeError: boom"})
+    assert_that(logged).is_length(1)
 
 
 def test_reply_is_sent_even_when_logging_raises() -> None:
