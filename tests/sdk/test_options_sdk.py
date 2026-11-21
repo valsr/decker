@@ -1,6 +1,8 @@
 import json
 import os
+import queue
 import threading
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -11,6 +13,7 @@ import decker_plugin_sdk as sdk
 from decker_plugin_sdk import _options, _variables, run
 
 WAIT = 5.0
+READ_DEADLINE = 5.0
 
 
 class Rig:
@@ -26,6 +29,9 @@ class Rig:
         self.code: list[int] = []
         self.thread = threading.Thread(target=lambda: self.code.append(run({}, self._plugin_in, self._plugin_out, {})))
         self.thread.start()
+        self._lines: queue.Queue[bytes] = queue.Queue()
+        self._reader = threading.Thread(target=self._read_lines, daemon=True)
+        self._reader.start()
 
     def send(self, event: str, payload: dict | None = None) -> None:
         data: dict[str, Any] = {"event": event}
@@ -34,10 +40,21 @@ class Rig:
         self.to_plugin.write(json.dumps(data).encode() + b"\n")
         self.to_plugin.flush()
 
-    def recv_until(self, event: str) -> dict:
+    def _read_lines(self) -> None:
         while True:
             line = self.from_plugin.readline()
-            assert line, "plugin closed stdout"
+            self._lines.put(line)
+            if not line:
+                return
+
+    def recv_until(self, event: str) -> dict:
+        deadline = time.monotonic() + READ_DEADLINE
+        while True:
+            try:
+                line = self._lines.get(timeout=max(0.0, deadline - time.monotonic()))
+            except queue.Empty:
+                raise AssertionError(f"no {event} within {READ_DEADLINE}s") from None
+            assert line, f"plugin closed stdout before {event}"
             message = json.loads(line)
             if message["event"] == event:
                 return message
@@ -47,10 +64,15 @@ class Rig:
         return self.recv_until("options_result")["payload"]
 
     def stop(self) -> None:
-        if self.thread.is_alive():
-            self.send("shutdown")
+        try:
+            if self.thread.is_alive():
+                self.send("shutdown")
+        except OSError:
+            pass
         self.thread.join(WAIT)
-        for stream in (self.to_plugin, self._plugin_in, self._plugin_out, self.from_plugin):
+        self._plugin_out.close()  # EOF for the reader thread
+        self._reader.join(WAIT)
+        for stream in (self.to_plugin, self._plugin_in, self.from_plugin):
             stream.close()
 
 
@@ -115,13 +137,13 @@ def test_exception_answers_not_ok_and_logs(rig: Rig) -> None:
         raise RuntimeError("x" * 400)
 
     rig.send("get_options", {"request": "r6", "source": "broken"})
-    log = rig.recv_until("log")["payload"]
-    assert_that(log["level"]).is_equal_to("error")
-    assert_that(log["message"]).contains("RuntimeError")
     payload = rig.recv_until("options_result")["payload"]
     assert_that(payload["ok"]).is_false()
     assert_that(payload["error"]).starts_with("RuntimeError: xxx")
     assert_that(len(payload["error"])).is_equal_to(256)
+    log = rig.recv_until("log")["payload"]
+    assert_that(log["level"]).is_equal_to("error")
+    assert_that(log["message"]).contains("RuntimeError")
     assert_that(rig.ask("r7", "ghost")["ok"]).is_false()  # the runtime survived
 
 
@@ -227,3 +249,33 @@ def test_final_send_failure_falls_back_to_not_ok(rig: Rig, monkeypatch: pytest.M
     assert_that(rig.ask("s6", "slip")).is_equal_to(
         {"request": "s6", "ok": False, "error": "options could not be encoded"}
     )
+
+
+def test_non_encodable_request_id_is_ignored(rig: Rig) -> None:
+    @sdk.options("fine")
+    def fine() -> list[str]:
+        return ["a"]
+
+    rig.send("get_options", {"request": "\udcff", "source": "fine"})
+    assert_that(rig.ask("s7", "fine")["request"]).is_equal_to("s7")
+
+
+def test_reply_is_sent_even_when_logging_raises() -> None:
+    sent: list[tuple[str, Any]] = []
+
+    def log_error(message: str) -> None:
+        raise OSError("stderr is broken")
+
+    host = _options.OptionsHost(lambda event, context, payload: sent.append((event, payload)), log_error)
+    _options.reset()
+
+    @sdk.options("broken")
+    def broken() -> list[str]:
+        raise RuntimeError("boom")
+
+    try:
+        host.answer({"request": "s8", "source": "broken"})
+    finally:
+        _options.reset()
+    assert_that(sent).is_length(1)
+    assert_that(sent[0][1]).is_equal_to({"request": "s8", "ok": False, "error": "RuntimeError: boom"})
