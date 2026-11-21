@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from decker.client.widgets.color_button import ColorButton
+from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.client.widgets.schema_form import AppearanceForm, SchemaForm
 from decker.client.widgets.text_style_edit import TextStyleEdit
 from decker.common.model import DeviceHardwareInfo
@@ -531,3 +532,53 @@ class TestSlotsField:  # pylint: disable=unused-argument
 
         assert_that(changes).is_length(1)
         assert_that(form.values()["slots"]["press"]).is_none()
+
+
+def _join(widget: Any) -> None:
+    widget._thread.join(5)  # pylint: disable=protected-access
+
+
+class TestDynamicChoiceInForm:  # pylint: disable=protected-access
+    _SCHEMA = [
+        {
+            "key": "voice",
+            "type": "choice",
+            "label": "Voice",
+            "options_source": "voices",
+            "options": [{"label": "Default", "value": ""}],
+        }
+    ]
+
+    def _patch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from decker.client.widgets import (
+            dynamic_choice_edit,  # pylint: disable=import-outside-toplevel
+        )
+
+        monkeypatch.setattr(
+            dynamic_choice_edit, "_default_fetch", lambda: lambda _p, _s: (True, [{"label": "Bob", "value": "bob"}], "")
+        )
+
+    def test_schema_form_builds_the_dynamic_field_when_plugin_id_is_given(
+        self, qapp, monkeypatch
+    ):  # pylint: disable=unused-argument
+        self._patch(monkeypatch)
+        form = SchemaForm()
+        form.set_schema(self._SCHEMA, {}, "plug")
+        assert_that(form._fields["voice"].widget).is_instance_of(DynamicChoiceEdit)
+        _join(form._fields["voice"].widget)
+
+    def test_schema_form_value_round_trip_for_an_unlisted_value(
+        self, qapp, monkeypatch
+    ):  # pylint: disable=unused-argument
+        self._patch(monkeypatch)
+        form = SchemaForm()
+        form.set_schema(self._SCHEMA, {"voice": "gone"}, "plug")
+        assert_that(form.values()).is_equal_to({"voice": "gone"})
+        _join(form._fields["voice"].widget)
+
+    def test_appearance_form_passes_the_plugin_id(self, qapp, monkeypatch):  # pylint: disable=unused-argument
+        self._patch(monkeypatch)
+        form = AppearanceForm()
+        form.set_schema(self._SCHEMA, {}, "plug")
+        assert_that(form._fields["voice"].widget).is_instance_of(DynamicChoiceEdit)
+        _join(form._fields["voice"].widget)
