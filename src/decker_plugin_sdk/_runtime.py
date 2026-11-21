@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, BinaryIO, TypeVar
 
-from . import _variables
+from . import _options, _variables
 from ._context import MAX_LINE_BYTES, CardContext, encode_line
 from ._gestures import Gesture
 
@@ -123,6 +123,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._global_settings: dict[str, Any] = {}
         self._stopping = False
         self._vars = _variables.VariableHost(self.send, self.log_error)
+        self._opts = _options.OptionsHost(self.send, self.log_error)
 
     @property
     def variables(self) -> _variables.VariableHost:
@@ -184,6 +185,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self._on_global_settings(payload)
         elif event == "get_variable":
             self._submit(self._vars.answer, payload)
+        elif event == "get_options":
+            self._submit(self._opts.answer, payload)
         elif event == "variables_changed":
             self._vars.changed(payload)
         elif event == "run_action":
