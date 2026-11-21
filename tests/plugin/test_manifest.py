@@ -9,6 +9,7 @@ from decker.common.platforms import PlatformSpec
 from decker.plugin.manifest import (
     ManifestValidationError,
     PluginManifest,
+    declared_options_sources,
 )
 from decker.plugin.settings_schema import SettingField
 
@@ -495,3 +496,60 @@ def test_plugin_contributing_nothing_is_rejected() -> None:
 def test_null_or_mistyped_variable_values_rejected(entry: Any) -> None:
     with pytest.raises(ManifestValidationError):
         PluginManifest.from_dict(_variables([entry]))
+
+
+_SOURCED_FIELD = {"key": "dev", "type": "choice", "label": "Device", "options_source": "devices"}
+
+
+def _sourced(where: str, **extra: Any) -> dict[str, Any]:
+    contributes: dict[str, Any] = {
+        "cards": [{"id": "com.acme.demo.card", "name": "C", "settings": [_SOURCED_FIELD] if where == "card" else []}],
+        "actions": [
+            {"id": "com.acme.demo.act", "name": "A", "settings": [_SOURCED_FIELD] if where == "action" else []}
+        ],
+    }
+    data = _minimal(2, contributes)
+    data["runtime"] = {"type": "python", "entry": "plugin.py"}
+    data["decker"] = ">=0.6"
+    if where == "global":
+        data["global_settings"] = [_SOURCED_FIELD]
+    data.update(extra)
+    return data
+
+
+@pytest.mark.parametrize("where", ["card", "action", "global"])
+def test_options_source_requires_a_decker_constraint(where: str) -> None:
+    data = _sourced(where)
+    del data["decker"]
+    with pytest.raises(ManifestValidationError, match='options_source.*"decker"'):
+        PluginManifest.from_dict(data)
+    data["decker"] = "  "
+    with pytest.raises(ManifestValidationError, match='options_source.*"decker"'):
+        PluginManifest.from_dict(data)
+
+
+def test_options_source_requires_a_runtime() -> None:
+    data = _minimal(2, {"icon_packs": [{"id": "com.acme.demo.icons", "name": "I", "path": "icons"}]})
+    data["global_settings"] = [_SOURCED_FIELD]
+    data["decker"] = ">=0.6"
+    with pytest.raises(ManifestValidationError, match="options_source.*no runtime"):
+        PluginManifest.from_dict(data)
+
+
+@pytest.mark.parametrize("where", ["card", "action", "global"])
+def test_options_source_loads_with_decker_and_runtime(where: str) -> None:
+    assert_that(PluginManifest.from_dict(_sourced(where)).id).is_equal_to("com.acme.demo")
+
+
+def test_declared_options_sources_lists_every_scope() -> None:
+    manifest = PluginManifest.from_dict(_sourced("global"))
+    assert_that(declared_options_sources(manifest.global_settings, manifest.cards, manifest.actions)).is_equal_to(
+        frozenset({"devices"})
+    )
+
+
+def test_manifest_without_options_source_needs_no_decker() -> None:
+    data = _sourced("card")
+    data["contributes"]["cards"][0]["settings"] = [{"key": "a", "type": "text", "label": "A"}]
+    del data["decker"]
+    assert_that(PluginManifest.from_dict(data).decker).is_none()

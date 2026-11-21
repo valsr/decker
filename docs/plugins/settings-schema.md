@@ -45,10 +45,11 @@ devices of this machine, the players that are running):
   declares it: a plugin is only asked for sources one of its own schemas (card, action or `global_settings`) declares.
   The plugin answers it with [`@options`](sdk-quickstart.md#dynamic-choice-options) or a
   [`get_options`](protocol.md#dynamic-choice-options) handler.
-- A `choice` field needs `options`, `options_source`, or both. The static `options` come first, then the plugin's, and
-  a value already listed is not repeated. The plugin must supply values and labels that are strings of up to 256 characters, and at most 256
-  options are kept (see [limits](limits.md)). The parser does not check the static `options` of a field that has an
-  `options_source`, so keep their values and labels strings too: the first static value becomes the default as it is.
+- A `choice` field needs `options`, `options_source`, or both. The static `options` come first, then the plugin's, and a
+  value already listed is not repeated. The plugin must supply values and labels that are strings of up to 256
+  characters, and at most 256 options are kept (see [limits](limits.md)). Static option values of a field that has an
+  `options_source` must be strings of up to 256 characters (anything else refuses the manifest); the first static value
+  becomes the default as it is.
 - The stored value is **any string up to 256 characters**, not only a listed one, so a device that is unplugged keeps
   its saved value. A value that is not in the list is kept as it is, never replaced by the first option. The
   `default` of such a field must be a string (anything else refuses the manifest); without one it is the first static
@@ -60,12 +61,12 @@ devices of this machine, the players that are running):
   loads in the background, so the form opens at once. A saved value that is not listed shows as "unavailable" (a
   tooltip) and stays selected. If the plugin cannot be reached or fails, the control falls back to the static options
   plus typing, and the tooltip shows the error. The same fallback applies where the form does not know the owning plugin.
-- A plugin that uses `options_source` must set its manifest `decker` constraint to the release that supports it. An older
-  Decker refuses a field without `options`, and on one with `options` it ignores `options_source`, so the field becomes
-  a plain static choice that replaces an unlisted saved value. The constraint is what keeps such a Decker from
-  installing the plugin: the installer (and installing from a repository) refuses a package whose `decker` constraint
-  the running server does not satisfy. It is checked at install time only; a plugin already installed is not checked
-  again when the server starts.
+- A plugin that uses `options_source` must declare a manifest `decker` constraint (the manifest is refused without one)
+  and set it to the release that supports it, and it needs a `runtime`. An older Decker refuses a field without
+  `options`, and on one with `options` it ignores `options_source`, so the field becomes a plain static choice that
+  replaces an unlisted saved value. The constraint is what keeps such a Decker from installing the plugin: the installer
+  (and installing from a repository) refuses a package whose `decker` constraint the running server does not satisfy. It
+  is checked at install time only; a plugin already installed is not checked again when the server starts.
 
 ## Template variables
 

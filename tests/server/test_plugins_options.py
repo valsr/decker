@@ -185,3 +185,75 @@ def test_destroy_wakes_pending_fetches(tmp_path: Path) -> None:
 
     assert_that(thread.is_alive()).is_false()
     assert_that(results[0].ok).is_false()
+
+
+class _AlwaysEqual:
+    __hash__ = None  # type: ignore[assignment]
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+
+def test_a_source_that_equals_everything_is_refused_without_a_request(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    procs = _fake_processes(manager)
+    try:
+        proc = _started(manager, procs, _options_plugin(tmp_path, card="devices"))
+
+        result = manager.plugin_options(_PLUGIN_ID, _AlwaysEqual())  # type: ignore[arg-type]
+
+        assert_that(result).is_equal_to(OptionsResult(False, error="unknown options source"))
+        assert_that(_asks(proc)).is_empty()
+    finally:
+        manager.destroy()
+
+
+def test_an_unhashable_plugin_id_is_refused_without_raising(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    try:
+        result = manager.plugin_options(["x"], "devices")  # type: ignore[arg-type]
+
+        assert_that(result).is_equal_to(OptionsResult(False, error="unknown plugin"))
+    finally:
+        manager.destroy()
+
+
+def test_a_malformed_source_name_is_refused(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    procs = _fake_processes(manager)
+    try:
+        proc = _started(manager, procs, _options_plugin(tmp_path, card="devices"))
+
+        result = manager.plugin_options(_PLUGIN_ID, "Bad-Name")
+
+        assert_that(result).is_equal_to(OptionsResult(False, error="unknown options source"))
+        assert_that(_asks(proc)).is_empty()
+    finally:
+        manager.destroy()
+
+
+def test_a_plugin_cannot_be_asked_for_another_plugins_source(tmp_path: Path) -> None:
+    manager = _manager(tmp_path)
+    procs = _fake_processes(manager)
+    try:
+        proc_a = _started(manager, procs, _options_plugin(tmp_path, card="only_a"))
+        other_id = "com.t.other"
+        data = {
+            "format": 2,
+            "id": other_id,
+            "name": "P",
+            "version": "1.0.0",
+            "author": "a",
+            "decker": ">=0.6",
+            "runtime": {"type": "python", "entry": "plugin.py"},
+            "contributes": {"cards": [{"id": f"{other_id}.card", "name": "C", "settings": [_choice("only_b")]}]},
+        }
+        proc_b = _started(manager, procs, InstalledPlugin(PluginManifest.from_dict(data), tmp_path))
+
+        result = manager.plugin_options(other_id, "only_a")
+
+        assert_that(result).is_equal_to(OptionsResult(False, error="unknown options source"))
+        assert_that(_asks(proc_a)).is_empty()
+        assert_that(_asks(proc_b)).is_empty()
+    finally:
+        manager.destroy()

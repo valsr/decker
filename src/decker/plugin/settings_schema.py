@@ -109,7 +109,12 @@ def _parse_options(raw: Any, where: str, has_source: bool = False) -> tuple[Mapp
     for option in raw:
         if not isinstance(option, dict) or "value" not in option or not isinstance(option.get("label"), str):
             raise ValueError(f"{where}: each option needs a 'label' string and a 'value'")
-        options.append(MappingProxyType({"label": option["label"], "value": option["value"]}))
+        value = option["value"]
+        if has_source and not (isinstance(value, str) and len(value) <= MAX_TEXT):
+            raise ValueError(
+                f"{where}: options of a choice with 'options_source' need string values of at most {MAX_TEXT} characters"
+            )
+        options.append(MappingProxyType({"label": option["label"], "value": value}))
     return tuple(options)
 
 

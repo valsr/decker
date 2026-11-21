@@ -263,3 +263,35 @@ def test_pending_map_is_empty_after_every_outcome() -> None:
     assert_that(rig.runner._pending).is_empty()
     assert_that(rig.results["timeout"].error).is_equal_to("timed out")
     assert_that(rig.refs("p")).is_equal_to(1)  # only the rig's own acquire remains
+
+
+class _RaisingAcquireSupervisor:
+    def __init__(self) -> None:
+        self.acquired: int = 0
+        self.released: int = 0
+
+    def is_failed(self, _plugin_id: str) -> bool:
+        return False
+
+    def acquire(self, _plugin_id: str) -> None:
+        self.acquired += 1
+        raise RuntimeError("acquire failed")
+
+    def release(self, _plugin_id: str) -> None:
+        self.released += 1
+
+
+def test_a_raising_acquire_releases_once_and_leaves_nothing_pending() -> None:
+    supervisor = _RaisingAcquireSupervisor()
+    runner = OptionsRunner(supervisor, timeout=1.0)  # type: ignore[arg-type]
+
+    try:
+        runner.fetch("p", "src")
+        raised = False
+    except RuntimeError:
+        raised = True
+
+    assert_that(raised).is_true()
+    assert_that(supervisor.acquired).is_equal_to(1)
+    assert_that(supervisor.released).is_equal_to(1)
+    assert_that(runner._pending).is_empty()  # pylint: disable=protected-access
