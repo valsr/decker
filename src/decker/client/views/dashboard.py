@@ -688,6 +688,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             slot.get("appearance_defaults", {}),
             self._make_save_callback(index),
             title=str((card or {}).get("card_name") or ""),
+            plugin_id=str(slot.get("plugin_uuid") or ""),
         )
 
     def _sync_slot(self, key_index: int, state: dict[str, Any]) -> None:

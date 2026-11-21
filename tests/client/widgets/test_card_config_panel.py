@@ -14,7 +14,9 @@ from PyQt6.QtWidgets import (
 )
 
 import decker.client.widgets.card_config_panel as panel_module
+from decker.client.widgets import dynamic_choice_edit
 from decker.client.widgets.card_config_panel import CardConfigPanel
+from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.common.text_style import TEXT_STYLE_DEFAULTS
 
 _COUNTER_SCHEMA: list[dict[str, Any]] = [
@@ -623,3 +625,42 @@ class TestFrozenTop:  # pylint: disable=protected-access
         _show(panel)
 
         assert_that(list(panel._appearance_form._fields)).is_equal_to(["title", "background", "icon"])
+
+
+_DYNAMIC_SCHEMA: list[dict[str, Any]] = [
+    {"key": "voice", "type": "choice", "label": "Voice", "options_source": "voices", "options": []}
+]
+
+
+def _show_dynamic(panel: CardConfigPanel, plugin_id: str) -> Any:
+    panel.show_card_config(
+        _DYNAMIC_SCHEMA, {}, dict(_DEFAULTS), dict(_DEFAULTS), lambda s, a: None, plugin_id=plugin_id
+    )
+    field = panel._settings_form._fields["voice"].widget
+    assert isinstance(field, DynamicChoiceEdit)
+    if field._thread is not None:
+        field._thread.join(5)
+    return field
+
+
+def test_card_config_panel_passes_the_plugin_id_to_the_settings_form(
+    qapp, monkeypatch
+):  # pylint: disable=unused-argument
+    monkeypatch.setattr(dynamic_choice_edit, "_default_fetch", lambda: lambda _p, _s: (True, [], ""))
+    panel = CardConfigPanel()
+
+    field = _show_dynamic(panel, "com.t.x")
+
+    assert_that(field._plugin_id).is_equal_to("com.t.x")
+
+
+def test_card_config_panel_rebuilds_for_another_plugin_with_identical_schema(
+    qapp, monkeypatch
+):  # pylint: disable=unused-argument
+    monkeypatch.setattr(dynamic_choice_edit, "_default_fetch", lambda: lambda _p, _s: (True, [], ""))
+    panel = CardConfigPanel()
+    _show_dynamic(panel, "com.t.x")
+
+    second = _show_dynamic(panel, "com.t.y")
+
+    assert_that(second._plugin_id).is_equal_to("com.t.y")

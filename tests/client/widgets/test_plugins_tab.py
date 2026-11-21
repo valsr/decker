@@ -17,7 +17,8 @@ from decker.client.events import (
     PluginUpdatesAvailableEvent,
 )
 from decker.client.events.event_manager import EventManager
-from decker.client.widgets import plugins_tab
+from decker.client.widgets import dynamic_choice_edit, plugins_tab
+from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.client.widgets.plugins_tab import PluginsTab, install_package_file
 
 # pylint: disable=protected-access,redefined-outer-name,unused-argument
@@ -45,8 +46,11 @@ _PLUGINS = [
         "icon_packs": 0,
         "variables": 2,
         "icon_b64": "",
-        "global_settings_schema": [{"key": "token", "type": "text", "label": "Token", "default": ""}],
-        "global_settings": {"token": "abc"},
+        "global_settings_schema": [
+            {"key": "token", "type": "text", "label": "Token", "default": ""},
+            {"key": "voice", "type": "choice", "label": "Voice", "options_source": "voices", "options": []},
+        ],
+        "global_settings": {"token": "abc", "voice": ""},
     },
 ]
 
@@ -172,11 +176,13 @@ def test_global_settings_form_applies(tab, manager):
     assert_that(tab._apply_settings_btn.isHidden()).is_true()
     _select(tab, "com.acme.extra")
     assert_that(tab._apply_settings_btn.isHidden()).is_false()
-    assert_that(tab._settings_form.values()).is_equal_to({"token": "abc"})
+    assert_that(tab._settings_form.values()).is_equal_to({"token": "abc", "voice": ""})
 
     tab._apply_settings_btn.click()
 
-    manager.call.assert_any_call("plugin_update_global_settings", "com.acme.extra", json.dumps({"token": "abc"}))
+    manager.call.assert_any_call(
+        "plugin_update_global_settings", "com.acme.extra", json.dumps({"token": "abc", "voice": ""})
+    )
 
 
 def test_install_button_uses_file_dialog_and_confirms(tab, manager, tmp_path):
@@ -366,3 +372,15 @@ def test_update_failure_reports_the_server_error(tab, manager):
     tab._update_btn.click()
 
     assert_that(tab._status_label.text()).contains("Could not update Extra", "error: nope")
+
+
+def test_plugins_tab_global_settings_use_the_plugin_id(tab, monkeypatch):
+    monkeypatch.setattr(dynamic_choice_edit, "_default_fetch", lambda: lambda _p, _s: (True, [], ""))
+    _select(tab, "com.acme.extra")
+
+    field = tab._settings_form._fields["voice"].widget
+
+    assert isinstance(field, DynamicChoiceEdit)
+    assert_that(field._plugin_id).is_equal_to("com.acme.extra")
+    if field._thread is not None:
+        field._thread.join(5)

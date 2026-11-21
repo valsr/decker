@@ -272,7 +272,7 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         if plugin is None or not schema:
             self._set_settings_visible(False)
             return
-        self._settings_form.set_schema(schema, plugin.get("global_settings") or {})
+        self._settings_form.set_schema(schema, plugin.get("global_settings") or {}, str(plugin["id"]))
         self._set_settings_visible(True)
 
     def _show_update_button(self, plugin: dict[str, Any] | None) -> None:
