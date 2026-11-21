@@ -9,6 +9,7 @@ from typing import Any
 
 from decker.common.background import BACKGROUND_DEFAULT, normalize_background
 from decker.common.icon_ref import normalize_icon_value
+from decker.common.options import MAX_TEXT, is_valid_source
 from decker.common.slots import SLOT_NAMES, normalize_slots
 from decker.common.text_style import TEXT_STYLE_DEFAULTS, normalize_text_style
 
@@ -43,7 +44,7 @@ _EXTRA_KEYS: dict[str, tuple[str, ...]] = {
     "color": ("alpha",),
     "page": ("profile_field",),
     "action_params": ("action_field",),
-    "choice": ("options",),
+    "choice": ("options", "options_source"),
 }
 _ZERO_VALUES: dict[str, Any] = {
     "int": 0,
@@ -99,8 +100,10 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _parse_options(raw: Any, where: str) -> tuple[Mapping[str, Any], ...]:
-    if not isinstance(raw, list) or not raw:
+def _parse_options(raw: Any, where: str, has_source: bool = False) -> tuple[Mapping[str, Any], ...]:
+    if has_source and raw is None:
+        return ()
+    if not isinstance(raw, list) or not (raw or has_source):
         raise ValueError(f"{where}: choice requires a non-empty 'options' list")
     options: list[Mapping[str, Any]] = []
     for option in raw:
@@ -117,8 +120,14 @@ def _parse_extra(type_: str, data: dict[str, Any], where: str) -> dict[str, Any]
             extra[name] = data[name]
     if "template" in data and type_ not in ("text", "text_style"):
         raise ValueError(f"{where}: 'template' is only valid on text and text_style fields")
+    if "options_source" in data and type_ != "choice":
+        raise ValueError(f"{where}: 'options_source' is only valid on choice fields")
+    if "options_source" in extra and not (
+        isinstance(extra["options_source"], str) and is_valid_source(extra["options_source"])
+    ):
+        raise ValueError(f"{where}: 'options_source' must be a lowercase source name like 'output_devices'")
     if type_ == "choice":
-        extra["options"] = _parse_options(data.get("options"), where)
+        extra["options"] = _parse_options(data.get("options"), where, "options_source" in extra)
     for name in ("min", "max", "step", "decimals"):
         if name in extra and not _is_number(extra[name]):
             raise ValueError(f"{where}: '{name}' must be a number")
@@ -162,6 +171,8 @@ def _coerce(type_: str, value: Any, extra: Mapping[str, Any]) -> Any:
     elif type_ == "color":
         pattern = _RGBA_PATTERN if extra.get("alpha") else _COLOR_PATTERN
         result = value if isinstance(value, str) and pattern.match(value) else _MISSING
+    elif type_ == "choice" and "options_source" in extra:
+        result = value if isinstance(value, str) and len(value) <= MAX_TEXT else _MISSING
     elif type_ == "choice":
         allowed = [o["value"] for o in extra["options"]]
         result = next((o for o in allowed if type(o) is type(value) and o == value), _MISSING)
@@ -209,7 +220,9 @@ def _parse_default(type_: str, data: dict[str, Any], optional: bool, extra: Mapp
     if data.get("default") is None:
         if optional:
             return None
-        return extra["options"][0]["value"] if type_ == "choice" else _copy(_ZERO_VALUES[type_])
+        if type_ == "choice":
+            return extra["options"][0]["value"] if extra["options"] else ""
+        return _copy(_ZERO_VALUES[type_])
     raw = data["default"]
     if type_ in _OBJECT_NORMALIZERS:
         if not isinstance(raw, dict) and not (type_ == "background" and isinstance(raw, str)):
