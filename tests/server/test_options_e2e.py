@@ -74,9 +74,11 @@ class _Env:
 
     def close(self) -> None:
         pid = self.pid()
-        self.manager.destroy()
-        if pid is not None and psutil.pid_exists(pid):
-            psutil.Process(pid).kill()
+        try:
+            self.manager.destroy()
+        finally:
+            if pid is not None and psutil.pid_exists(pid):
+                psutil.Process(pid).kill()
 
     def pid(self) -> int | None:
         entry = self.manager._supervisor._entries.get(_PLUGIN)  # pylint: disable=protected-access
@@ -92,17 +94,10 @@ class _Env:
 @pytest.fixture(name="env")
 def env_fixture(tmp_path: Path) -> Iterator[_Env]:
     environment = _Env(tmp_path)
-    seen: list[int] = []
     try:
         yield environment
     finally:
-        pid = environment.pid()
-        if pid is not None:
-            seen.append(pid)
         environment.close()
-        for old in seen:
-            if psutil.pid_exists(old):
-                psutil.Process(old).kill()
 
 
 @pytest.fixture(name="short_env")
@@ -214,7 +209,11 @@ def test_stale_exit_notice_does_not_fail_a_request_served_by_a_new_process(short
     worker = threading.Thread(target=lambda: answers.append(short_env.options("slow")), daemon=True)
     worker.start()
     try:
-        assert_that(_wait(lambda: bool(runner._pending))).is_true()  # pylint: disable=protected-access
+        supervisor = short_env.manager._supervisor  # pylint: disable=protected-access
+        ready = _wait(
+            lambda: bool(runner._pending) and supervisor.has_process(_PLUGIN)
+        )  # pylint: disable=protected-access
+        assert_that(ready).is_true()
 
         # The idle stop of the previous process reports its exit after a new request already started a new one.
         short_env.manager._on_plugin_exit(_PLUGIN)  # pylint: disable=protected-access

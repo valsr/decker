@@ -606,3 +606,31 @@ class TestActionParamsPluginId:  # pylint: disable=protected-access
         assert isinstance(field, DynamicChoiceEdit)
         assert_that(field._plugin_id).is_equal_to("com.t.x")
         _join(field)
+
+    def test_switching_to_another_plugins_action_rebuilds_with_the_new_plugin_id(
+        self, qapp, monkeypatch
+    ):  # pylint: disable=unused-argument
+        from decker.client.widgets import (  # pylint: disable=import-outside-toplevel
+            dynamic_choice_edit,
+            schema_form,
+        )
+
+        monkeypatch.setattr(dynamic_choice_edit, "_default_fetch", lambda: lambda _p, _s: (True, [], ""))
+        schema = [{"key": "voice", "type": "choice", "label": "Voice", "options_source": "voices", "options": []}]
+        actions = [
+            {"action_uuid": "com.t.say", "plugin_uuid": "com.t.x", "settings_schema": schema},
+            {"action_uuid": "com.u.talk", "plugin_uuid": "com.u.y", "settings_schema": schema},
+        ]
+        monkeypatch.setattr(schema_form, "fetch_actions", lambda _rpc: actions)
+        edit = schema_form.ActionParamsEdit()
+        edit.set_action("com.t.say", {})
+        first = edit._form._fields["voice"].widget
+        assert isinstance(first, DynamicChoiceEdit)
+        _join(first)
+
+        edit.set_action("com.u.talk", {})
+
+        field = edit._form._fields["voice"].widget
+        assert isinstance(field, DynamicChoiceEdit)
+        assert_that(field._plugin_id).is_equal_to("com.u.y")
+        _join(field)

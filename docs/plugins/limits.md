@@ -31,7 +31,9 @@
   and return after a restart. Plugins without variables keep the lazy start above.
 - `get_options` (dynamic choice fields) starts a lazy plugin for the request and releases it afterwards, like an action
   run. The `plugin_options` RPC is read-only and not restricted to loopback clients, so a remote client may call it; it
-  can start a lazy plugin and holds an RPC thread for up to 5 s.
+  can start a lazy plugin and holds an RPC thread for up to 5 s. Sustained high rates can also hit the plugin's message
+  rate limit (see Flood below): a plugin that stays above about 100 messages per second for 5 s is killed, and three
+  kills within 60 s mark it failed.
 - Each plugin runs in its own process group; stopping or killing it also stops helper processes it started.
 - **Crashes**: restart with backoff (0.5 s, 2 s, 5 s). Three crashes within 60 s mark the plugin failed: its keys
   are cleared and labelled "Plugin failed", and clients are notified. Re-saving a key's settings retries it; so
