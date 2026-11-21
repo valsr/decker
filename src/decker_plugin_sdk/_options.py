@@ -72,10 +72,32 @@ def clean(raw: Any) -> list[dict[str, str]]:
     return result
 
 
+def _encodable(entry: dict[str, Any]) -> bool:
+    try:
+        for key in ("label", "value"):
+            if isinstance(entry.get(key), str):
+                entry[key].encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def _printable(value: Any) -> str:
+    return str(value)[:64].encode("utf-8", "backslashreplace").decode("utf-8")
+
+
+def _safe_text(exc: BaseException) -> str:
+    try:
+        text = f"{type(exc).__name__}: {exc}"
+    except Exception:  # pylint: disable=broad-exception-caught
+        text = f"{type(exc).__name__}: {type(exc).__name__}"
+    return text.encode("utf-8", "backslashreplace").decode("utf-8")[:MAX_TEXT]
+
+
 def normalise(result: list[Any] | tuple[Any, ...]) -> list[dict[str, str]]:
     """Turn a supplier's list of dicts, pairs or strings into cleaned options."""
     entries = (_entry(item) for item in result)
-    return clean([entry for entry in entries if entry is not None])
+    return clean([entry for entry in entries if entry is not None and _encodable(entry)])
 
 
 class OptionsHost:
@@ -86,7 +108,7 @@ class OptionsHost:
         self._log_error = log_error
 
     def answer(self, payload: dict[str, Any]) -> None:
-        """Answer a get_options request with options_result."""
+        """Answer a get_options request with exactly one options_result."""
         request = payload.get("request")
         if not isinstance(request, str):
             return
@@ -101,10 +123,14 @@ class OptionsHost:
                 return
             options_list = normalise(raw)
         except Exception as exc:  # pylint: disable=broad-exception-caught
-            self._log_error(f"options source {payload.get('source')} failed: {type(exc).__name__}: {exc}")
-            self._reply(request, False, error=f"{type(exc).__name__}: {exc}"[:MAX_TEXT])
+            text, source = _safe_text(exc), _printable(payload.get("source"))
+            self._log_error(f"options source {source} failed: {text}")
+            self._reply(request, False, error=text)
             return
-        self._reply(request, True, options=options_list)
+        try:
+            self._reply(request, True, options=options_list)
+        except UnicodeEncodeError:
+            self._reply(request, False, error="options could not be encoded")
 
     def _reply(self, request: str, ok: bool, **extra: Any) -> None:
         self._send("options_result", None, {"request": request, "ok": ok, **extra})

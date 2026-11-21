@@ -174,3 +174,56 @@ def test_decorator_registers_per_source_and_reset_clears(rig: Rig) -> None:
     assert_that(rig.ask("r2", "b")["options"][0]["value"]).is_equal_to("3")
     _options.reset()
     assert_that(rig.ask("r3", "a")["ok"]).is_false()
+
+
+def test_unencodable_entries_are_dropped(rig: Rig) -> None:
+    @sdk.options("files")
+    def files() -> list[Any]:
+        return ["ok", "bad\udcff", ("fine", "x\udcff")]
+
+    payload = rig.ask("s1", "files")
+    assert_that(payload).is_equal_to({"request": "s1", "ok": True, "options": [{"label": "ok", "value": "ok"}]})
+
+
+def test_all_unencodable_answers_empty(rig: Rig) -> None:
+    @sdk.options("files")
+    def files() -> list[str]:
+        return ["a\udcff", "\udc80"]
+
+    assert_that(rig.ask("s2", "files")).is_equal_to({"request": "s2", "ok": True, "options": []})
+
+
+def test_exception_with_surrogate_answers_sanitised_error(rig: Rig) -> None:
+    @sdk.options("broken")
+    def broken() -> list[str]:
+        raise RuntimeError("bad\udcffname")
+
+    payload = rig.ask("s3", "broken")
+    assert_that(payload["ok"]).is_false()
+    assert_that(payload["error"]).contains("RuntimeError").contains("bad")
+    payload["error"].encode("utf-8")
+    assert_that(rig.ask("s4", "ghost")["ok"]).is_false()
+
+
+def test_exception_whose_str_raises_still_answers(rig: Rig) -> None:
+    class Nasty(Exception):
+        def __str__(self) -> str:
+            raise ValueError("no str")
+
+    @sdk.options("nasty")
+    def nasty() -> list[str]:
+        raise Nasty()
+
+    payload = rig.ask("s5", "nasty")
+    assert_that(payload).is_equal_to({"request": "s5", "ok": False, "error": "Nasty: Nasty"})
+
+
+def test_final_send_failure_falls_back_to_not_ok(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
+    @sdk.options("slip")
+    def slip() -> list[str]:
+        return ["a"]
+
+    monkeypatch.setattr(_options, "normalise", lambda result: [{"label": "x\udcff", "value": "y"}])
+    assert_that(rig.ask("s6", "slip")).is_equal_to(
+        {"request": "s6", "ok": False, "error": "options could not be encoded"}
+    )
