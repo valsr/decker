@@ -8,8 +8,11 @@ from unittest.mock import MagicMock
 import pytest
 from assertpy import assert_that
 
+from decker.plugin.bindings import NOTHING_ACTION_ID
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import PluginManifest
+from decker.server import actions as actions_module
+from decker.server.action_calls import ActionCall
 from decker.server.actions import ActionRunner
 from decker.server.builtin_actions import ActionError, http_request
 
@@ -35,34 +38,45 @@ def _plugin(runtime: bool, actions: list[dict[str, Any]]) -> InstalledPlugin:
 _ECHO = {"id": "com.t.act.echo", "name": "Echo", "settings": [{"key": "n", "type": "int", "label": "N", "default": 1}]}
 
 
-def _runner(supervisor: Any = None, builtin: Any = None, timeout: float = 2.0) -> tuple[ActionRunner, list]:
+def _call(action: str, args: dict[str, Any] | None = None, **kwargs: Any) -> ActionCall:
+    return ActionCall(action, args or {}, kwargs.pop("input", "press"), **kwargs)
+
+
+def _runner(
+    supervisor: Any = None, builtin: Any = None, timeout: float = 2.0, resolve: Any = None, monkeypatch: Any = None
+) -> tuple[ActionRunner, list]:
     failures: list[tuple[str, str]] = []
+    if builtin is not None:
+        monkeypatch.setattr(actions_module, "BUILTIN_ACTIONS", builtin)
     runner = ActionRunner(
-        supervisor or MagicMock(), lambda a, e: failures.append((a, e)), builtin=builtin or {}, timeout=timeout
+        supervisor or MagicMock(),
+        lambda a, e: failures.append((a, e)),
+        resolve or (lambda _spec, args, _device: dict(args)),
+        timeout=timeout,
     )
     return runner, failures
 
 
 class TestBuiltinExecution:
-    def test_a_builtin_action_gets_validated_settings_and_succeeds(self):
+    def test_a_builtin_action_gets_validated_settings_and_succeeds(self, monkeypatch):
         calls: list[Any] = []
-        runner, failures = _runner(builtin={"com.t.act.echo": calls.append})
+        runner, failures = _runner(builtin={"com.t.act.echo": calls.append}, monkeypatch=monkeypatch)
         runner.register(_plugin(False, [_ECHO]))
 
-        result = runner.execute("com.t.act.echo", {"n": "7"})
+        result = runner.execute(_call("com.t.act.echo", {"n": "7"}))
 
         assert_that(result.ok).is_true()
         assert_that(calls).is_equal_to([{"n": 7}])
         assert_that(failures).is_empty()
 
-    def test_a_failing_builtin_reports_its_message(self):
+    def test_a_failing_builtin_reports_its_message(self, monkeypatch):
         def boom(_settings: Any) -> None:
             raise ActionError("no route")
 
-        runner, failures = _runner(builtin={"com.t.act.echo": boom})
+        runner, failures = _runner(builtin={"com.t.act.echo": boom}, monkeypatch=monkeypatch)
         runner.register(_plugin(False, [_ECHO]))
 
-        result = runner.execute("com.t.act.echo", {})
+        result = runner.execute(_call("com.t.act.echo"))
 
         assert_that((result.ok, result.error)).is_equal_to((False, "no route"))
         assert_that(failures).is_equal_to([("com.t.act.echo", "no route")])
@@ -70,7 +84,7 @@ class TestBuiltinExecution:
     def test_an_unknown_action_fails_cleanly(self):
         runner, failures = _runner()
 
-        result = runner.execute("com.t.act.none", {})
+        result = runner.execute(_call("com.t.act.none"))
 
         assert_that(result.error).contains("unknown action")
         assert_that(failures).is_length(1)
@@ -79,7 +93,7 @@ class TestBuiltinExecution:
         runner, _ = _runner()
         runner.register(_plugin(False, [_ECHO]))
 
-        assert_that(runner.execute("com.t.act.echo", {}).error).contains("no code")
+        assert_that(runner.execute(_call("com.t.act.echo")).error).contains("no code")
 
     def test_unregistering_removes_the_actions(self):
         runner, _ = _runner()
@@ -111,11 +125,11 @@ class TestPluginExecution:
         box.append(runner)
         runner.register(_plugin(True, [_ECHO]))
 
-        result = runner.execute("com.t.act.echo", {"n": 4})
+        result = runner.execute(_call("com.t.act.echo", {"n": 4}))
 
         assert_that(result.ok).is_true()
         sent = supervisor.send.call_args.args[1]
-        assert_that((sent.event, sent.payload["action"], sent.payload["settings"])).is_equal_to(
+        assert_that((sent.event, sent.payload["action"], sent.payload["args"])).is_equal_to(
             ("run_action", "com.t.act.echo", {"n": 4})
         )
         supervisor.acquire.assert_called_once_with("com.t.act")
@@ -128,7 +142,7 @@ class TestPluginExecution:
         runner, failures = _runner(supervisor, timeout=0.05)
         runner.register(_plugin(True, [_ECHO]))
 
-        result = runner.execute("com.t.act.echo", {})
+        result = runner.execute(_call("com.t.act.echo"))
 
         assert_that(result.error).is_equal_to("timed out")
         supervisor.release.assert_called_once_with("com.t.act")
@@ -140,12 +154,87 @@ class TestPluginExecution:
         runner, _ = _runner(supervisor)
         runner.register(_plugin(True, [_ECHO]))
 
-        assert_that(runner.execute("com.t.act.echo", {}).error).contains("failed")
+        assert_that(runner.execute(_call("com.t.act.echo")).error).contains("failed")
         supervisor.send.assert_not_called()
 
     def test_an_answer_from_another_plugin_or_for_an_unknown_request_is_ignored(self):
         runner, _ = _runner()
         runner.on_result("com.other", {"request": "nope", "ok": True})  # must not raise
+
+
+class TestProtocol4:
+    def _plugin_runner(self, resolve: Any = None) -> tuple[ActionRunner, MagicMock, list]:
+        box: list = []
+        supervisor = TestPluginExecution()._supervisor(box)
+        runner, failures = _runner(supervisor, resolve=resolve)
+        box.append(runner)
+        runner.register(_plugin(True, [_ECHO]))
+        return runner, supervisor, failures
+
+    def test_nothing_runs_nothing_and_succeeds(self):
+        runner, supervisor, failures = self._plugin_runner()
+
+        result = runner.execute(_call(NOTHING_ACTION_ID))
+
+        assert_that(result.ok).is_true()
+        supervisor.send.assert_not_called()
+        assert_that(failures).is_empty()
+
+    def test_invalid_args_fail_without_reaching_the_plugin(self):
+        runner, supervisor, failures = self._plugin_runner()
+
+        result = runner.execute(_call("com.t.act.echo", {"n": "abc"}))
+
+        assert_that(result.ok).is_false()
+        assert_that(result.error).starts_with("invalid arguments:").contains("n")
+        supervisor.send.assert_not_called()
+        assert_that(failures).is_length(1)
+
+    def test_args_are_resolved_for_the_device_before_sending(self):
+        seen: list[Any] = []
+
+        def resolve(spec: Any, args: Any, device: Any) -> dict[str, Any]:
+            seen.append((spec.id, dict(args), device))
+            return {"n": 99}
+
+        runner, supervisor, _ = self._plugin_runner(resolve)
+
+        runner.execute(_call("com.t.act.echo", {"n": 5}, device="dev-1"))
+
+        assert_that(seen).is_equal_to([("com.t.act.echo", {"n": 5}, "dev-1")])
+        assert_that(supervisor.send.call_args.args[1].payload["args"]).is_equal_to({"n": 99})
+
+    def test_run_action_message_carries_input_card_and_chain(self):
+        runner, supervisor, _ = self._plugin_runner()
+        call = _call("com.t.act.echo", input="long_press", card={"id": "k"}, caller="com.o", depth=3)
+
+        runner.execute(call)
+
+        payload = supervisor.send.call_args.args[1].payload
+        assert_that(
+            (payload["input"], payload["card"], payload["chain"], payload["caller"], payload["depth"])
+        ).is_equal_to(("long_press", {"id": "k"}, call.chain, "com.o", 3))
+
+    def test_a_builtin_runs_resolved_args_in_process(self, monkeypatch):
+        calls: list[Any] = []
+        runner, _ = _runner(
+            builtin={"com.t.act.echo": calls.append}, resolve=lambda *_: {"n": 8}, monkeypatch=monkeypatch
+        )
+        runner.register(_plugin(False, [_ECHO]))
+
+        assert_that(runner.execute(_call("com.t.act.echo")).ok).is_true()
+        assert_that(calls).is_equal_to([{"n": 8}])
+
+    def test_listing_reports_scope_and_returns(self):
+        runner, _ = _runner()
+        spec = {**_ECHO, "scope": "global", "returns": "number"}
+        runner.register(_plugin(True, [spec]))
+
+        listed = runner.listing(lambda _p, _s: "")
+
+        assert_that((listed[0]["scope"], listed[0]["returns"])).is_equal_to(("global", "number"))
+        assert_that(runner.scope_of("com.t.act.echo")).is_equal_to(("com.t.act", "global"))
+        assert_that(runner.scope_of("nope")).is_none()
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):

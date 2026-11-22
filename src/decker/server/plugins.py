@@ -20,6 +20,7 @@ from decker.common.options import is_valid_source
 from decker.common.platforms import detect_platform, platform_supports
 from decker.common.template import expand_template, template_names
 from decker.common.text_style import is_color
+from decker.common.variables import CORE_VARIABLE_NAMES
 from decker.common.version import decker_version
 from decker.plugin.environment import stage_sdk
 from decker.plugin.events import PluginLoadFailedEvent
@@ -30,7 +31,12 @@ from decker.plugin.loader import (
     PluginLoader,
     recover_interrupted_installs,
 )
-from decker.plugin.manifest import CardSpec, PluginManifest, declared_options_sources
+from decker.plugin.manifest import (
+    ActionSpec,
+    CardSpec,
+    PluginManifest,
+    declared_options_sources,
+)
 from decker.plugin.protocol import PROTOCOL_VERSION, Message
 from decker.plugin.runtime.launcher import launch_command, launch_env
 from decker.plugin.runtime.process import PluginProcess
@@ -41,6 +47,7 @@ from decker.plugin.settings_schema import (
 )
 from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
+from decker.server.action_calls import ActionCall
 from decker.server.actions import ActionRunner
 from decker.server.appearance import (
     PACK_ICON_SCALE,
@@ -196,7 +203,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             policy = SupervisorPolicy(memory_limit=limit)
         self._supervisor = PluginSupervisor(policy, PluginProcess, self._on_plugin_message, self._on_plugin_failed)
         self._supervisor.on_exit = self._on_plugin_exit
-        self._action_runner = ActionRunner(self._supervisor, self._on_action_failed)
+        self._action_runner = ActionRunner(self._supervisor, self._on_action_failed, self._resolve_args)
         self.icon_packs = IconPackRegistry(on_failure=self._record_failure)
         self.variables = VariableStore(on_change=self._on_variables_changed)
         self._variable_runner = VariableRunner(
@@ -350,9 +357,16 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             return OptionsResult(False, error="unknown options source")
         return self._options_runner.fetch(plugin_id, source)
 
-    def run_action(self, action_id: str, settings: dict[str, Any]) -> None:
-        """Run an action in the background; a failure is announced as an ``action_failed`` event."""
-        self._action_runner.run(action_id, settings)
+    def run_action(self, call: ActionCall) -> None:
+        """Run an action call in the background; a failure is announced as an ``action_failed`` event."""
+        self._action_runner.run(call)
+
+    def _resolve_args(self, spec: ActionSpec, args: Mapping[str, Any], device: str | None) -> dict[str, Any]:
+        if device is not None:
+            layout = self._device_layout(device)
+            return deliver_settings(spec.settings, args, layout, self._expansion(page_variables(layout)))
+        names = {name: "" for name in CORE_VARIABLE_NAMES}
+        return deliver_settings(spec.settings, args, DeviceLayout(), VariableChain(names, self.variables.view()))
 
     def _on_action_failed(self, action_id: str, error: str) -> None:
         bus = self._event_bus

@@ -7,11 +7,17 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from decker.plugin.bindings import NOTHING_ACTION_ID
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import ActionSpec
 from decker.plugin.protocol import Message
 from decker.plugin.runtime.supervisor import PluginSupervisor
-from decker.plugin.settings_schema import apply_schema, schema_to_json
+from decker.plugin.settings_schema import (
+    SettingsValidationError,
+    apply_schema,
+    schema_to_json,
+)
+from decker.server.action_calls import ActionCall
 from decker.server.builtin_actions import BUILTIN_ACTIONS, ActionError
 
 DEFAULT_TIMEOUT_S = 30.0
@@ -23,6 +29,10 @@ class ActionResult:
 
     ok: bool
     error: str = ""
+    value: Any = None
+
+
+ArgsResolver = Callable[[ActionSpec, Mapping[str, Any], str | None], dict[str, Any]]
 
 
 class _Pending:
@@ -39,12 +49,12 @@ class ActionRunner:
         self,
         supervisor: PluginSupervisor,
         on_failure: Callable[[str, str], None],
-        builtin: Mapping[str, Callable[[Mapping[str, Any]], None]] | None = None,
+        resolve: ArgsResolver,
         timeout: float = DEFAULT_TIMEOUT_S,
     ) -> None:
         self._supervisor = supervisor
         self._on_failure = on_failure
-        self._builtin = builtin if builtin is not None else BUILTIN_ACTIONS
+        self._resolve = resolve
         self._timeout = timeout
         self._lock = threading.Lock()
         self._actions: dict[str, tuple[InstalledPlugin, ActionSpec]] = {}
@@ -84,20 +94,28 @@ class ActionRunner:
                 "tooltip": spec.tooltip,
                 "icon_b64": icon_b64(plugin, spec),
                 "settings_schema": schema_to_json(spec.settings),
+                "scope": spec.scope,
+                "returns": spec.returns,
             }
             for plugin, spec in entries
         ]
 
-    def run(self, action_id: str, settings: Mapping[str, Any]) -> None:
-        """Run an action without waiting; a failure is reported through ``on_failure``."""
-        threading.Thread(target=self.execute, args=(action_id, settings), name="run-action", daemon=True).start()
+    def scope_of(self, action_id: str) -> tuple[str, str] | None:
+        """The owning plugin id and scope of an installed action, or None."""
+        with self._lock:
+            entry = self._actions.get(action_id)
+        return (entry[0].manifest.id, entry[1].scope) if entry is not None else None
 
-    def execute(self, action_id: str, settings: Mapping[str, Any]) -> ActionResult:
-        """Run an action and wait for it to end (up to the timeout)."""
-        result = self._execute(action_id, settings)
+    def run(self, call: ActionCall) -> None:
+        """Run a call without waiting; a failure is reported through ``on_failure``."""
+        threading.Thread(target=self.execute, args=(call,), name="run-action", daemon=True).start()
+
+    def execute(self, call: ActionCall) -> ActionResult:
+        """Run a call and wait for it to end (up to the timeout)."""
+        result = self._execute(call)
         if not result.ok:
-            logging.warning("Action %s failed: %s", action_id, result.error)
-            self._on_failure(action_id, result.error)
+            logging.warning("Action %s failed: %s", call.action, result.error)
+            self._on_failure(call.action, result.error)
         return result
 
     def on_result(self, plugin_id: str, payload: Mapping[str, Any]) -> None:
@@ -112,17 +130,23 @@ class ActionRunner:
         pending.result = ActionResult(ok, "" if ok else str(payload.get("error") or "the action failed"))
         pending.done.set()
 
-    def _execute(self, action_id: str, settings: Mapping[str, Any]) -> ActionResult:
+    def _execute(self, call: ActionCall) -> ActionResult:
+        if call.action == NOTHING_ACTION_ID:
+            return ActionResult(True)
         with self._lock:
-            entry = self._actions.get(action_id)
+            entry = self._actions.get(call.action)
         if entry is None:
-            return ActionResult(False, f"unknown action {action_id}")
+            return ActionResult(False, f"unknown action {call.action}")
         plugin, spec = entry
-        values = apply_schema(spec.settings, dict(settings))
-        executor = self._builtin.get(action_id)
+        try:
+            validated = apply_schema(spec.settings, dict(call.args), strict=True)
+        except SettingsValidationError as exc:
+            detail = "; ".join(f"{key}: {message}" for key, message in exc.errors.items())
+            return ActionResult(False, f"invalid arguments: {detail}")
+        args = self._resolve(spec, validated, call.device)
         if plugin.manifest.runtime is None:
-            return self._run_builtin(executor, values)
-        return self._run_in_plugin(plugin.manifest.id, action_id, values)
+            return self._run_builtin(BUILTIN_ACTIONS.get(call.action), args)
+        return self._run_in_plugin(plugin.manifest.id, call, args)
 
     @staticmethod
     def _run_builtin(executor: Callable[[Mapping[str, Any]], None] | None, values: Mapping[str, Any]) -> ActionResult:
@@ -137,7 +161,7 @@ class ActionRunner:
             return ActionResult(False, str(exc) or exc.__class__.__name__)
         return ActionResult(True)
 
-    def _run_in_plugin(self, plugin_id: str, action_id: str, values: Mapping[str, Any]) -> ActionResult:
+    def _run_in_plugin(self, plugin_id: str, call: ActionCall, args: Mapping[str, Any]) -> ActionResult:
         if self._supervisor.is_failed(plugin_id):
             return ActionResult(False, "the plugin has failed")
         request = uuid.uuid4().hex
@@ -148,9 +172,9 @@ class ActionRunner:
         try:
             self._supervisor.send(
                 plugin_id,
-                Message("run_action", None, {"action": action_id, "request": request, "settings": dict(values)}),
+                Message("run_action", None, call.payload(request, args)),
             )
-            if not pending.done.wait(self._timeout):
+            if not pending.done.wait(call.timeout or self._timeout):
                 return ActionResult(False, "timed out")
             return pending.result
         finally:
