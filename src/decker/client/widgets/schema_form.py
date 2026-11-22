@@ -299,7 +299,6 @@ class SchemaForm(QWidget):
         self._show_errors()
 
     def _row(self, key: str, control: QWidget) -> QWidget:
-        """The control with an (initially hidden) error label under it."""
         row = QWidget()
         layout = QVBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -480,7 +479,6 @@ class AppearanceForm(QWidget):
 
 
 def _parse(schema: list[dict[str, Any]]) -> tuple[SettingEntry, ...]:
-    """The schema as the validator's entries; one the client cannot parse validates nothing."""
     try:
         return parse_settings_schema(schema, "form")
     except ValueError:

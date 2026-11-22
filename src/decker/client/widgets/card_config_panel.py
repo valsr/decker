@@ -256,7 +256,6 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
             self._preview.set_image(image)
 
     def _route_errors(self, errors: Mapping[str, str]) -> None:
-        """Hand each server error to the form that owns its key (Task 10 adds ``bindings.`` here)."""
         self._settings_form.set_errors(
             {key.removeprefix(_SETTINGS_PREFIX): msg for key, msg in errors.items() if key.startswith(_SETTINGS_PREFIX)}
         )
