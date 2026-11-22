@@ -9,8 +9,8 @@ import pytest
 from assertpy import assert_that
 
 from decker.plugin.loader import InstalledPlugin
-from decker.plugin.manifest import RUN_ACTION_CARD_ID, CardSpec, PluginManifest
-from decker.server.actions import ActionRunner, bound_action
+from decker.plugin.manifest import PluginManifest
+from decker.server.actions import ActionRunner
 from decker.server.builtin_actions import ActionError, http_request
 
 
@@ -148,27 +148,6 @@ class TestPluginExecution:
         runner.on_result("com.other", {"request": "nope", "ok": True})  # must not raise
 
 
-class TestBinding:
-    def _card(self, **kwargs: Any) -> CardSpec:
-        return CardSpec(id="com.t.act.card", name="C", **kwargs)
-
-    def test_a_preset_runs_its_fixed_action_with_its_settings_overlaid_by_the_card_settings(self):
-        card = self._card(base=RUN_ACTION_CARD_ID, action="com.t.act.echo", action_settings={"n": 2, "x": 1})
-
-        assert_that(bound_action(card, {"n": 9})).is_equal_to(("com.t.act.echo", {"n": 9, "x": 1}))
-
-    def test_run_action_card_uses_the_chosen_action_and_parameters(self):
-        card = CardSpec(id=RUN_ACTION_CARD_ID, name="Run")
-
-        assert_that(bound_action(card, {"action": "com.t.act.echo", "parameters": {"n": 5}})).is_equal_to(
-            ("com.t.act.echo", {"n": 5})
-        )
-        assert_that(bound_action(card, {"action": "com.t.act.echo"})).is_equal_to(("com.t.act.echo", {}))
-
-    def test_run_action_card_without_a_choice_runs_nothing(self):
-        assert_that(bound_action(CardSpec(id=RUN_ACTION_CARD_ID, name="Run"), {"action": ""})).is_none()
-
-
 class _Handler(http.server.BaseHTTPRequestHandler):
     seen: list[tuple[str, str, bytes]] = []
 
@@ -232,53 +211,11 @@ class TestManifestCardsAndActions:
             "contributes": contributes,
         }
 
-    def test_a_preset_card_binds_an_action_and_needs_no_runtime(self):
-        data = self._data(
-            cards=[
-                {
-                    "id": "com.t.audio.up",
-                    "name": "Volume Up",
-                    "card": RUN_ACTION_CARD_ID,
-                    "action": "com.t.audio.volumeup",
-                    "action_settings": {"step": 5},
-                    "appearance": {"title": {"text": "Volume Up"}},
-                }
-            ],
-            actions=[{"id": "com.t.audio.volumeup", "name": "Volume up"}],
-        )
-        del data["runtime"]
-
-        manifest = PluginManifest.from_dict(data)
-
-        card = manifest.cards[0]
-        assert_that((card.bound, card.headless, card.action, card.action_settings)).is_equal_to(
-            (True, True, "com.t.audio.volumeup", {"step": 5})
-        )
-        assert_that([a.id for a in manifest.actions]).is_equal_to(["com.t.audio.volumeup"])
-
     def test_an_action_alone_is_a_valid_contribution(self):
         manifest = PluginManifest.from_dict(self._data(actions=[{"id": "com.t.audio.mute", "name": "Mute"}]))
 
         assert_that(manifest.cards).is_empty()
         assert_that([a.id for a in manifest.actions]).is_equal_to(["com.t.audio.mute"])
-
-    @pytest.mark.parametrize(
-        "entry",
-        [
-            {"id": "com.t.audio.x", "name": "X", "action": "com.t.audio.mute"},  # no base card
-            {"id": "com.t.audio.x", "name": "X", "card": "com.t.audio.other", "action": "com.t.audio.mute"},
-            {"id": "com.t.audio.x", "name": "X", "card": RUN_ACTION_CARD_ID},  # no action to run
-            {"id": "com.t.audio.x", "name": "X", "card": RUN_ACTION_CARD_ID, "action": "not an id"},
-            {"id": "com.t.audio.x", "name": "X", "card": RUN_ACTION_CARD_ID, "action": "a.b", "static": True},
-        ],
-    )
-    def test_bad_presets_are_rejected(self, entry):
-        from decker.plugin.manifest import (
-            ManifestValidationError,  # pylint: disable=import-outside-toplevel
-        )
-
-        with pytest.raises(ManifestValidationError):
-            PluginManifest.from_dict(self._data(cards=[entry]))
 
     def test_action_settings_are_validated_like_card_settings(self):
         from decker.plugin.manifest import (

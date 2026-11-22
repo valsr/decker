@@ -134,9 +134,8 @@ def test_blank_ships_page_name_and_page_count_presets() -> None:
     )
 
 
-def test_core_ships_the_switch_card():
+def test_core_ships_no_cards():
     manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / "com.decker.core" / "manifest.json")
 
-    card = next(c for c in manifest.cards if c.id == "com.decker.core.switch")
-    assert_that(card.switch).is_true()
-    assert_that(card.name).is_equal_to("Switch")
+    assert_that(manifest.cards).is_empty()
+    assert_that([a.id for a in manifest.actions]).contains("com.decker.core.httprequest")

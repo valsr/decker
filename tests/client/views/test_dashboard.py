@@ -515,7 +515,7 @@ class TestKeyInteractions:
         assert_that(mock_cm.call.call_args[0][:4]).is_equal_to(("key_assign", "dev1", "p1", 4))
         assert_that(view._key_slots).contains_key(4)  # pylint: disable=protected-access
 
-    def test_dropping_an_action_assigns_run_action_with_that_action_chosen(
+    def test_dropping_an_action_assigns_a_blank_card_with_empty_settings(
         self, qapp, tmp_path
     ):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
@@ -526,14 +526,14 @@ class TestKeyInteractions:
 
         view._on_card_dropped(  # pylint: disable=protected-access
             2,
-            {"plugin_uuid": "com.decker.core", "card_uuid": "com.decker.core.runaction", "preset_action": "com.t.mute"},
+            {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank", "preset_action": "com.t.mute"},
         )
 
         args = mock_cm.call.call_args[0]
         assert_that(args[:7]).is_equal_to(
-            ("key_assign", "dev1", "p1", 2, "com.decker.core", "com.decker.core.runaction", args[6])
+            ("key_assign", "dev1", "p1", 2, "com.decker.blank", "com.decker.blank.blank", args[6])
         )
-        assert_that(json.loads(args[7])).is_equal_to({"action": "com.t.mute"})
+        assert_that(json.loads(args[7])).is_equal_to({})
 
     def test_action_list_event_fills_the_actions_tab(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)

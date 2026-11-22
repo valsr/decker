@@ -11,7 +11,6 @@ from typing import Any
 from decker.common.background import BACKGROUND_DEFAULT, normalize_background
 from decker.common.icon_ref import normalize_icon_value
 from decker.common.options import MAX_TEXT, is_valid_source
-from decker.common.slots import SLOT_NAMES, normalize_slots
 from decker.common.text_style import TEXT_STYLE_DEFAULTS, normalize_text_style
 
 FIELD_TYPES = frozenset(
@@ -30,7 +29,6 @@ FIELD_TYPES = frozenset(
         "profile",
         "action",
         "action_params",
-        "slots",
     }
 )
 
@@ -61,14 +59,12 @@ _ZERO_VALUES: dict[str, Any] = {
     "icon": {"ref": "", "color": "#ffffff"},
     "text_style": dict(TEXT_STYLE_DEFAULTS),
     "background": {**BACKGROUND_DEFAULT, "image": dict(BACKGROUND_DEFAULT["image"])},
-    "slots": dict.fromkeys(SLOT_NAMES),
 }
 # Object-valued types: normalised field by field against the field default (never rejected as a whole).
 _OBJECT_NORMALIZERS: dict[str, Callable[..., dict[str, Any]]] = {
     "text_style": normalize_text_style,
     "icon": normalize_icon_value,
     "background": normalize_background,
-    "slots": normalize_slots,
 }
 _MISSING = object()
 

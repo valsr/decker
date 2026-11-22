@@ -608,8 +608,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         if not plugin_uuid or not card_uuid:
             return
         context_id = uuid.uuid4().hex
-        preset_action = str(card_data.get("preset_action") or "")
-        settings: dict[str, Any] = {"action": preset_action} if preset_action else {}  # Run Action, set to that action
+        settings: dict[str, Any] = {}
         cm = AppContext.get().connection_manager
         if cm is None:
             return

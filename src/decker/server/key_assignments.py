@@ -1,6 +1,7 @@
 """SQLite-backed store mapping (device_id, page_id, key_index) to an active card assignment."""
 
 import json
+import logging
 import sqlite3
 import threading
 import uuid
@@ -18,6 +19,9 @@ from decker.server.pages import initial_page_id
 if TYPE_CHECKING:
     from decker.server.server_context import ServerContext
 
+RETIRED_CARDS: frozenset[tuple[str, str]] = frozenset(
+    {("com.decker.core", "com.decker.core.runaction"), ("com.decker.core", "com.decker.core.switch")}
+)
 _TABLE = "key_assignments"
 _SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS {_TABLE} (
@@ -135,7 +139,9 @@ class KeyAssignmentStore(Manager):
                 f"SELECT {_COLUMNS} FROM {_TABLE} WHERE device_id = ? AND page_id = ? AND key_index = ?",
                 (device_id, page_id, key_index),
             ).fetchone()
-        return _to_assignment(device_id, row)[1] if row is not None else None
+        if row is None or _is_retired(device_id, page_id, row):
+            return None
+        return _to_assignment(device_id, row)[1]
 
     def update_settings(self, device_id: str, page_id: str, key_index: int, settings: dict[str, Any]) -> bool:
         """Overwrite settings for an existing assignment. Returns False if slot is unassigned."""
@@ -164,7 +170,7 @@ class KeyAssignmentStore(Manager):
                 f"SELECT {_COLUMNS} FROM {_TABLE} WHERE device_id = ? AND page_id = ? ORDER BY key_index",
                 (device_id, page_id),
             ).fetchall()
-        return [_to_assignment(device_id, row) for row in rows]
+        return [_to_assignment(device_id, row) for row in rows if not _is_retired(device_id, page_id, row)]
 
     def assignments_for_plugin(self, plugin_id: str) -> list[tuple[str, str, int, KeyAssignment]]:
         """Return every assignment of a plugin's cards as (device_id, page_id, key_index, assignment)."""
@@ -174,7 +180,11 @@ class KeyAssignmentStore(Manager):
                 "ORDER BY device_id, page_id, key_index",
                 (plugin_id,),
             ).fetchall()
-        return [(row[0], row[1], *_to_assignment(row[0], row[2:])) for row in rows]
+        return [
+            (row[0], row[1], *_to_assignment(row[0], row[2:]))
+            for row in rows
+            if not _is_retired(row[0], row[1], row[2:])
+        ]
 
     def plugin_ids(self) -> set[str]:
         """Return the ids of every plugin referenced by at least one assignment."""
@@ -305,6 +315,20 @@ def _remap_pages(settings_json: str, page_map: Mapping[str, str]) -> str:
     if not page_map or not isinstance(settings, dict):
         return settings_json
     return json.dumps({k: page_map.get(v, v) if isinstance(v, str) else v for k, v in settings.items()})
+
+
+def _is_retired(device_id: str, page_id: str, row: tuple[Any, ...]) -> bool:
+    key_index, plugin_uuid, card_uuid = row[0], row[1], row[2]
+    if (plugin_uuid, card_uuid) not in RETIRED_CARDS:
+        return False
+    logging.info(
+        "Key %d of page %s on device %s names the retired card %s; it loads as an empty key",
+        key_index,
+        page_id,
+        device_id,
+        card_uuid,
+    )
+    return True
 
 
 def _to_assignment(device_id: str, row: tuple[Any, ...]) -> tuple[int, KeyAssignment]:

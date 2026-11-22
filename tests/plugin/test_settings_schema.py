@@ -410,16 +410,6 @@ def test_profile_value_with_a_trailing_newline_is_not_an_id() -> None:
     assert_that(apply_schema(schema, {"p": "1\n"})).is_equal_to({"p": ""})
 
 
-def test_slots_field_parses_and_apply_returns_four_keys() -> None:
-    schema = parse_settings_schema([{"key": "slots", "type": "slots"}], "t")
-    assert_that(apply_schema(schema, {})["slots"]).is_equal_to(
-        {"display": None, "press": None, "double_press": None, "long_press": None}
-    )
-    result = apply_schema(schema, {"slots": {"press": {"kind": "action", "action": "a.b", "settings": {}}}})
-    assert_that(result["slots"]["press"]).is_equal_to({"kind": "action", "action": "a.b", "settings": {}})
-    assert_that(result["slots"]["display"]).is_none()
-
-
 SOURCED: dict[str, Any] = {"key": "dev", "type": "choice", "label": "Device", "options_source": "output_devices"}
 
 

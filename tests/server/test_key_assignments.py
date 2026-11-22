@@ -6,11 +6,9 @@ from unittest.mock import MagicMock
 import pytest
 from assertpy import assert_that
 
-from decker.plugin.gestures import Gesture
 from decker.plugin.target import CardTarget
 from decker.server.key_assignments import KeyAssignment, KeyAssignmentStore
 from decker.server.pages import initial_page_id
-from decker.server.switch import SwitchController
 
 
 def _target(device_id="dev1", key_index=0, plugin="com.p", action="com.p.a", ctx="ctx1"):
@@ -342,23 +340,6 @@ class TestMoveAndCopyKey:
         assert_that(store.get("dev1", "p1", 3)).is_equal_to(copied)
         assert_that(store.get("dev1", "p1", 0).target.context_id).is_equal_to("c0")
 
-    def test_key_copy_carries_slots_and_starts_at_display(self, store):
-        def card(name: str) -> dict:
-            return {"kind": "card", "plugin": "com.k", "card": name, "settings": {}, "appearance": {}}
-
-        slots = {"display": card("com.k.red"), "press": card("com.k.blue")}
-        store.assign("dev1", "p1", 0, _target(ctx="orig"), {"slots": slots})
-        controller = SwitchController()
-        controller.handle("orig", slots, Gesture.PRESS)
-        assert_that(controller.shown_slot("orig", slots)).is_equal_to("press")
-
-        copied = store.copy_key("dev1", "p1", 0, 3, "new-ctx")
-
-        assert copied is not None
-        assert_that(copied.settings).is_equal_to({"slots": slots})
-        assert_that(copied.target.context_id).is_equal_to("new-ctx")
-        assert_that(controller.shown_slot("new-ctx", copied.settings["slots"])).is_equal_to("display")
-
     def test_copy_key_replaces_an_occupied_target(self, store):
         self._seed(store)
         store.assign("dev1", "p1", 5, _target(key_index=5, ctx="c5"), {})
@@ -374,3 +355,23 @@ class TestMoveAndCopyKey:
         assert_that(store.copy_key("dev1", "p1", 7, 8, "x")).is_none()
         assert_that(store.copy_key("dev1", "p1", 0, 0, "x")).is_none()
         assert_that(store.all_for_page("dev1", "p1")).is_length(1)
+
+
+class TestRetiredCards:
+    def test_retired_run_action_row_loads_as_an_empty_key(self, store):
+        store.assign("dev1", "p1", 0, _target(plugin="com.decker.core", action="com.decker.core.runaction"), {})
+
+        assert_that(store.get("dev1", "p1", 0)).is_none()
+        assert_that(store.assignments_for_plugin("com.decker.core")).is_empty()
+
+    def test_retired_switch_row_is_skipped_by_all_for_page(self, store):
+        store.assign("dev1", "p1", 0, _target(plugin="com.decker.core", action="com.decker.core.switch"), {})
+        store.assign("dev1", "p1", 1, _target(key_index=1, ctx="c1"), {})
+
+        assert_that(store.all_for_page("dev1", "p1")).is_length(1)
+        assert_that(store.all_for_page("dev1", "p1")[0][0]).is_equal_to(1)
+
+    def test_a_retired_row_stays_in_the_database(self, store):
+        store.assign("dev1", "p1", 0, _target(plugin="com.decker.core", action="com.decker.core.switch"), {})
+
+        assert_that(store.plugin_ids()).contains("com.decker.core")

@@ -24,7 +24,6 @@ from PyQt6.QtWidgets import (
 )
 
 from decker.client.card_icons import asset_pixmap, card_pixmap
-from decker.plugin.manifest import RUN_ACTION_CARD_ID
 
 CARD_MIME_TYPE = "application/x-decker-card"
 ICON_SIZE = 48
@@ -32,7 +31,8 @@ DRAG_ICON_SIZE = 56
 _TILE_SIZE = QSize(96, 104)  # room for a two-line name under the icon
 _ICON_SOURCE_SIZE = ICON_SIZE * 2  # rendered at 2x so icons stay sharp on high-DPI screens
 _DRAG_FIELDS = ("plugin_uuid", "plugin_name", "card_uuid", "card_name", "preset_action")
-_CORE_PLUGIN_ID = "com.decker.core"
+_BLANK_PLUGIN_ID = "com.decker.blank"
+_BLANK_CARD_ID = "com.decker.blank.blank"
 _DRAG_PIXMAP_ROLE = Qt.ItemDataRole.UserRole + 1  # an item's own drag picture, when it is not the card's icon
 _TAB_ICON = 18
 BUILTIN_TITLE = "Built in"
@@ -327,16 +327,16 @@ class SidebarWidget(QFrame):  # pylint: disable=too-many-instance-attributes
         return _tile_icon(asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint))
 
     def _action_drag(self, action: dict[str, Any]) -> tuple[dict[str, Any], QPixmap | None]:
-        """What dragging an action drops: its ready-made card, else the Run Action card set to run it."""
+        """What dragging an action drops: its ready-made card, else a Blank card (the binding comes with Task 11)."""
         action_id = str(action.get("action_uuid", ""))
         preset = self._preset_of(action_id)
         if preset is not None:
             return preset, None
-        run_action = {
-            "plugin_uuid": _CORE_PLUGIN_ID,
-            "plugin_name": "Core",
-            "card_uuid": RUN_ACTION_CARD_ID,
+        blank = {
+            "plugin_uuid": _BLANK_PLUGIN_ID,
+            "plugin_name": "Blank",
+            "card_uuid": _BLANK_CARD_ID,
             "card_name": str(action.get("action_name", "")),
             "preset_action": action_id,
         }
-        return run_action, asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint)
+        return blank, asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint)
