@@ -134,7 +134,7 @@ def test_blank_ships_page_name_and_page_count_presets() -> None:
     )
 
 
-def test_core_ships_no_cards():
+def test_core_ships_no_cards() -> None:
     manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / "com.decker.core" / "manifest.json")
 
     assert_that(manifest.cards).is_empty()

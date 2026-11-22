@@ -305,7 +305,7 @@ class TestTabs:  # pylint: disable=protected-access
         assert_that(payload["card_uuid"]).is_equal_to("com.t.audio.upcard")
         assert_that(payload).does_not_contain_key("preset_action")
 
-    def test_action_drag_drops_a_blank_card(self, qapp):  # pylint: disable=unused-argument
+    def test_action_drag_drops_a_blank_card(self, qapp) -> None:  # pylint: disable=unused-argument
         sidebar = SidebarWidget()
         sidebar.set_actions(_ACTION_LIST)
 

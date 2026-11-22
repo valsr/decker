@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -358,20 +359,23 @@ class TestMoveAndCopyKey:
 
 
 class TestRetiredCards:
-    def test_retired_run_action_row_loads_as_an_empty_key(self, store):
+    def test_retired_run_action_row_loads_as_an_empty_key(self, store, caplog) -> None:
         store.assign("dev1", "p1", 0, _target(plugin="com.decker.core", action="com.decker.core.runaction"), {})
 
-        assert_that(store.get("dev1", "p1", 0)).is_none()
+        with caplog.at_level(logging.INFO):
+            assert_that(store.get("dev1", "p1", 0)).is_none()
+
+        assert_that(caplog.text).contains("com.decker.core.runaction").contains("loads as an empty key")
         assert_that(store.assignments_for_plugin("com.decker.core")).is_empty()
 
-    def test_retired_switch_row_is_skipped_by_all_for_page(self, store):
+    def test_retired_switch_row_is_skipped_by_all_for_page(self, store) -> None:
         store.assign("dev1", "p1", 0, _target(plugin="com.decker.core", action="com.decker.core.switch"), {})
         store.assign("dev1", "p1", 1, _target(key_index=1, ctx="c1"), {})
 
         assert_that(store.all_for_page("dev1", "p1")).is_length(1)
         assert_that(store.all_for_page("dev1", "p1")[0][0]).is_equal_to(1)
 
-    def test_a_retired_row_stays_in_the_database(self, store):
+    def test_a_retired_row_stays_in_the_database(self, store) -> None:
         store.assign("dev1", "p1", 0, _target(plugin="com.decker.core", action="com.decker.core.switch"), {})
 
         assert_that(store.plugin_ids()).contains("com.decker.core")

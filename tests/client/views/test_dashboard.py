@@ -517,7 +517,7 @@ class TestKeyInteractions:
 
     def test_dropping_an_action_assigns_a_blank_card_with_empty_settings(
         self, qapp, tmp_path
-    ):  # pylint: disable=unused-argument
+    ) -> None:  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
         _active_dev1(view)
         mock_cm = MagicMock()
