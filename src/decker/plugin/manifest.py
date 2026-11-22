@@ -10,7 +10,6 @@ from packaging.requirements import InvalidRequirement, Requirement
 
 from decker.common.appearance_schema import APPEARANCE_KEYS
 from decker.common.platforms import PlatformSpec, parse_platform_spec
-from decker.common.slots import SWITCH_CARD_ID
 from decker.common.variables import (
     CORE_VARIABLE_NAMES,
     MAX_DECLARATIONS,
@@ -28,7 +27,6 @@ _SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)
 SUPPORTED_FORMATS = (1, 2)
 CARDS_FORMAT = 2  # format 1 predates the card/action split: its ``contributes.actions`` entries are cards
 KNOWN_CONTRIBUTION_KINDS = frozenset({"cards", "actions", "icon_packs", "variables"})
-RUN_ACTION_CARD_ID = "com.decker.core.runaction"  # the built-in card that runs the action chosen in its settings
 _LEGACY_CARD_KIND = "actions"
 VALID_GESTURES = frozenset({"press", "double_press", "long_press"})
 _RUNTIME_TYPES = ("python", "executable")
@@ -88,20 +86,11 @@ class CardSpec:
     settings: tuple[SettingEntry, ...] = ()
     appearance: dict[str, Any] = field(default_factory=dict, hash=False)
     static: bool = False
-    switch: bool = False  # a Switch card: its slots hold the cards and actions it shows and runs
-    base: str | None = None  # the card this one is a preset of (only the Run Action card can be one)
-    action: str | None = None  # the action a press runs, for a preset of Run Action
-    action_settings: dict[str, Any] = field(default_factory=dict, hash=False)  # that action's preconfigured settings
-
-    @property
-    def bound(self) -> bool:
-        """Whether a press runs an action: the Run Action card itself and every preset of it. It needs no process."""
-        return self.id == RUN_ACTION_CARD_ID or self.base == RUN_ACTION_CARD_ID
 
     @property
     def headless(self) -> bool:
-        """Whether the card has no process of its own: a static preset, a card that runs an action or a Switch card."""
-        return self.static or self.bound or self.switch
+        """Whether the card has no process of its own: a static preset."""
+        return self.static
 
 
 @dataclass(frozen=True)
@@ -317,7 +306,6 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
         raise ManifestValidationError(f"invalid card entry: {entry!r}")
     card_id = _parse_contribution_id(entry["id"], plugin_id, "card id")
     static = _parse_static(entry, card_id)
-    switch = _parse_behavior(entry, card_id)
     gestures = entry.get("gestures", ["press"])
     if (
         not isinstance(gestures, list)
@@ -332,7 +320,6 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
         if key not in APPEARANCE_KEYS:
             raise ManifestValidationError(f"card {card_id} has unknown appearance key {key!r}")
     states = tuple(_parse_state(s, card_id) for s in _as_list(entry.get("states", []), "states"))
-    base, action, action_settings = _parse_binding(entry, card_id, plugin_id)
     return CardSpec(
         id=card_id,
         name=str(entry["name"]),
@@ -343,34 +330,7 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
         settings=_parse_settings(entry.get("settings", []), f"card {card_id} settings"),
         appearance=dict(appearance),
         static=static,
-        switch=switch,
-        base=base,
-        action=action,
-        action_settings=action_settings,
     )
-
-
-def _parse_binding(
-    entry: dict[str, Any], card_id: str, plugin_id: str
-) -> tuple[str | None, str | None, dict[str, Any]]:
-    """The ``card`` / ``action`` / ``action_settings`` keys of a preset of the Run Action card."""
-    base = entry.get("card")
-    if base is None:
-        if "action" in entry or "action_settings" in entry:
-            raise ManifestValidationError(f'card {card_id} binds an action, so it needs "card": "{RUN_ACTION_CARD_ID}"')
-        return None, None, {}
-    if base != RUN_ACTION_CARD_ID:
-        raise ManifestValidationError(f"card {card_id} is based on unknown card {base!r}")
-    if entry.get("static"):
-        raise ManifestValidationError(f"card {card_id} cannot be both static and a preset of {RUN_ACTION_CARD_ID}")
-    action = entry.get("action")
-    if not isinstance(action, str) or not is_valid_plugin_id(action):
-        raise ManifestValidationError(f'card {card_id} needs an "action" id to run')
-    params = entry.get("action_settings", {})
-    if not isinstance(params, dict):
-        raise ManifestValidationError(f"card {card_id} action_settings must be an object")
-    del plugin_id  # the action may belong to any plugin
-    return base, action, dict(params)
 
 
 def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
@@ -384,21 +344,6 @@ def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
         icon=_optional_str(entry.get("icon")),
         settings=_parse_settings(entry.get("settings", []), f"action {action_id} settings"),
     )
-
-
-def _parse_behavior(entry: dict[str, Any], card_id: str) -> bool:
-    behavior = entry.get("behavior")
-    if behavior is None:
-        return False
-    if behavior != "switch":
-        raise ManifestValidationError(f"card {card_id} has unknown behavior {behavior!r}")
-    if card_id != SWITCH_CARD_ID:
-        raise ManifestValidationError(
-            f"card {card_id}: behavior 'switch' is reserved for Decker's built-in Switch card"
-        )
-    if entry.get("static") or "card" in entry:
-        raise ManifestValidationError(f"card {card_id} cannot be a switch and also static or a preset")
-    return True
 
 
 def _parse_static(entry: dict[str, Any], card_id: str) -> bool:

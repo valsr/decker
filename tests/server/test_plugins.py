@@ -2134,52 +2134,8 @@ class TestAnimatedKeyFaces:
         assert_that(entries[3]).is_equal_to({"key_index": 3, "label": "plain", "animation_id": None})
 
 
-class TestRunActionCard:
-    """A press of the built-in Run Action card runs the chosen action through the manager."""
-
-    _TARGET = _target("com.decker.core", "com.decker.core.runaction", "ctx-run", 6)
-
-    def _press(self, env) -> None:
-        env.manager.dispatch_key_down(self._TARGET)
-        env.manager.dispatch_key_up(self._TARGET)
-
-    def test_a_press_runs_the_http_request_action(self, env):
-        from tests.server.test_actions import (  # noqa: F401  # pylint: disable=import-outside-toplevel
-            _Handler,
-            server,
-        )
-
-        httpd = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        _Handler.seen = []
-        try:
-            url = f"http://127.0.0.1:{httpd.server_address[1]}/hook"
-            env.manager.store_settings(
-                self._TARGET,
-                {
-                    "action": "com.decker.core.httprequest",
-                    "parameters": {"method": "POST", "url": url, "body": "hi"},
-                },
-            )
-            env.manager.activate_card(self._TARGET)
-
-            self._press(env)
-
-            assert _wait_for(lambda: bool(_Handler.seen))
-            assert_that(_Handler.seen[0]).is_equal_to(("POST", "/hook", b"hi"))
-        finally:
-            httpd.shutdown()
-
-    def test_a_failing_action_is_announced_as_an_event(self, env):
-        env.manager.store_settings(
-            self._TARGET,
-            {"action": "com.decker.core.httprequest", "parameters": {"url": "ftp://nope"}},
-        )
-        env.manager.activate_card(self._TARGET)
-
-        self._press(env)
-
-        assert _wait_for(lambda: any(name == "action_failed" for name, _ in env.bus.events))
+class TestCoreActions:
+    """Core ships actions, no cards."""
 
     def test_actions_are_listed_with_their_schema(self, env):
         listed = {a["action_uuid"]: a for a in env.manager.list_actions()}
@@ -2187,15 +2143,12 @@ class TestRunActionCard:
         assert_that(listed).contains_key("com.decker.core.httprequest")
         assert_that([f["key"] for f in listed["com.decker.core.httprequest"]["settings_schema"]]).contains("url")
 
-    def test_the_action_list_marks_built_in_plugins_and_the_card_list_names_preset_actions(self, env):
+    def test_the_action_list_marks_built_in_plugins(self, env):
         action = next(a for a in env.manager.list_actions() if a["action_uuid"] == "com.decker.core.httprequest")
-        card = next(c for c in env.manager.list_cards() if c["card_uuid"] == "com.decker.core.runaction")
 
         assert_that(action["plugin_builtin"]).is_true()
-        assert_that(card["action"]).is_equal_to("")
 
-    def test_run_action_is_a_card_in_the_card_list_and_the_http_action_is_not(self, env):
+    def test_the_card_list_has_no_run_action_and_no_http_action(self, env):
         ids = [c["card_uuid"] for c in env.manager.list_cards()]
 
-        assert_that(ids).contains("com.decker.core.runaction")
-        assert_that(ids).does_not_contain("com.decker.core.httprequest")
+        assert_that(ids).does_not_contain("com.decker.core.runaction", "com.decker.core.httprequest")

@@ -520,20 +520,6 @@ class TestActionFields:  # pylint: disable=protected-access
         assert_that(apply_schema(schema, {"parameters": "junk"})).is_equal_to({"action": "", "parameters": {}})
 
 
-class TestSlotsField:  # pylint: disable=unused-argument
-    def test_value_round_trip_through_schema_form(self, qapp):
-        slots = {"press": {"kind": "action", "action": "http", "settings": {}}}
-        form = _form([{"key": "slots", "label": "Slots", "type": "slots"}], {"slots": slots})
-        changes: list[int] = []
-        form.changed.connect(lambda: changes.append(1))
-
-        assert_that(form.values()["slots"]["press"]).is_equal_to(slots["press"])
-        form._fields["slots"].widget.set_slot_value("press", None)  # type: ignore[attr-defined]  # pylint: disable=protected-access
-
-        assert_that(changes).is_length(1)
-        assert_that(form.values()["slots"]["press"]).is_none()
-
-
 def _join(widget: Any) -> None:
     widget._thread.join(5)  # pylint: disable=protected-access
 

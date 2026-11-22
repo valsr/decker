@@ -305,14 +305,14 @@ class TestTabs:  # pylint: disable=protected-access
         assert_that(payload["card_uuid"]).is_equal_to("com.t.audio.upcard")
         assert_that(payload).does_not_contain_key("preset_action")
 
-    def test_an_action_without_a_preset_drops_run_action_set_to_it(self, qapp):  # pylint: disable=unused-argument
+    def test_action_drag_drops_a_blank_card(self, qapp):  # pylint: disable=unused-argument
         sidebar = SidebarWidget()
         sidebar.set_actions(_ACTION_LIST)
 
         payload = _drop_payload(sidebar._actions_pane.sections[0])  # the built-in section: HTTP Request
 
-        assert_that(payload["plugin_uuid"]).is_equal_to("com.decker.core")
-        assert_that(payload["card_uuid"]).is_equal_to("com.decker.core.runaction")
+        assert_that(payload["plugin_uuid"]).is_equal_to("com.decker.blank")
+        assert_that(payload["card_uuid"]).is_equal_to("com.decker.blank.blank")
         assert_that(payload["preset_action"]).is_equal_to("com.decker.core.http")
 
     def test_action_tiles_have_no_options_menu(self, qapp):  # pylint: disable=unused-argument

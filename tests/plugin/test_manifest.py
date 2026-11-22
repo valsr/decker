@@ -377,38 +377,6 @@ def test_format_2_actions_are_not_cards() -> None:
     assert_that([a.id for a in manifest.actions]).is_equal_to(["com.acme.demo.one"])
 
 
-def _core_without_runtime(cards: list[dict[str, Any]]) -> dict[str, Any]:
-    data = _without_runtime([])
-    data["id"] = "com.decker.core"
-    data["contributes"] = {"cards": cards}
-    return data
-
-
-def test_switch_behavior_is_headless() -> None:
-    card = {"id": "com.decker.core.switch", "name": "Switch", "behavior": "switch"}
-    manifest = PluginManifest.from_dict(_core_without_runtime([card]))
-    assert_that(manifest.cards[0].switch).is_true()
-    assert_that(manifest.cards[0].headless).is_true()
-
-
-def test_third_party_switch_behavior_rejected() -> None:
-    card = {"id": "com.decker.counter.sw", "name": "Switch", "behavior": "switch"}
-    with pytest.raises(ManifestValidationError, match="reserved"):
-        PluginManifest.from_dict(_without_runtime([card]))
-
-
-def test_unknown_behavior_rejected() -> None:
-    card = {"id": "com.decker.counter.sw", "name": "Switch", "behavior": "nope"}
-    with pytest.raises(ManifestValidationError, match="behavior"):
-        PluginManifest.from_dict(_without_runtime([card]))
-
-
-def test_switch_cannot_be_static() -> None:
-    card = {"id": "com.decker.core.switch", "name": "Switch", "behavior": "switch", "static": True}
-    with pytest.raises(ManifestValidationError, match="static or a preset"):
-        PluginManifest.from_dict(_core_without_runtime([card]))
-
-
 def _variables(entries: list[Any], **extra: Any) -> dict[str, Any]:
     data = _minimal(2, {"variables": entries})
     data.update({"runtime": {"type": "python", "entry": "plugin.py"}, "decker": ">=0.6", **extra})

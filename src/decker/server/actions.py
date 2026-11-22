@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from decker.plugin.loader import InstalledPlugin
-from decker.plugin.manifest import ActionSpec, CardSpec
+from decker.plugin.manifest import ActionSpec
 from decker.plugin.protocol import Message
 from decker.plugin.runtime.supervisor import PluginSupervisor
 from decker.plugin.settings_schema import apply_schema, schema_to_json
@@ -23,17 +23,6 @@ class ActionResult:
 
     ok: bool
     error: str = ""
-
-
-def bound_action(card: CardSpec, settings: Mapping[str, Any]) -> tuple[str, dict[str, Any]] | None:
-    """The action a press of a Run Action card (or a preset of it) runs, and its settings; None when none is chosen."""
-    if card.action:
-        return card.action, {**card.action_settings, **settings}
-    action = str(settings.get("action") or "")
-    if not action:
-        return None
-    parameters = settings.get("parameters")
-    return action, dict(parameters) if isinstance(parameters, dict) else {}
 
 
 class _Pending:

@@ -4,34 +4,11 @@
   "name": "Core",
   "version": "0.6.0",
   "author": "Decker",
-  "description": "Run Action, a card that runs any available action, and the actions Decker ships.",
+  "description": "The actions Decker ships.",
   "icon": "icons/blank",
   "category": "Utilities",
   "contributes": {
-    "cards": [
-      {
-        "id": "com.decker.core.runaction",
-        "name": "Run Action",
-        "tooltip": "Runs an action when pressed",
-        "icon": "icons/blank",
-        "gestures": ["press"],
-        "appearance": { "background": "#000000" },
-        "settings": [
-          { "key": "action", "type": "action", "label": "Action" },
-          { "key": "parameters", "type": "action_params", "label": "Parameters", "action_field": "action" }
-        ]
-      },
-      {
-        "id": "com.decker.core.switch",
-        "name": "Switch",
-        "tooltip": "Runs actions or swaps the shown card on press, double press and long press",
-        "icon": "icons/blank",
-        "behavior": "switch",
-        "gestures": ["press"],
-        "appearance": { "background": "#000000" },
-        "settings": [{ "key": "slots", "type": "slots", "label": "Slots" }]
-      }
-    ],
+    "cards": [],
     "actions": [
       {
         "id": "com.decker.core.httprequest",
