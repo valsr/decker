@@ -20,8 +20,8 @@ from PIL import Image
 from decker.common import config
 from decker.common.model import DeviceHardwareInfo, KeyInfo, PageInfo, ProfileInfo
 from decker.common.platforms import HostPlatform, PlatformSpec
+from decker.plugin.bindings import GESTURES
 from decker.plugin.events import PluginLoadFailedEvent
-from decker.plugin.gestures import Gesture
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import ActionSpec, PluginManifest, StateSpec
 from decker.plugin.protocol import Message
@@ -353,7 +353,7 @@ class TestListing:
         assert base64.b64decode(counter["icon_b64"]).startswith(b"\x89PNG")
         assert_that(counter["tooltip"]).is_equal_to("Press to count, long press to reset")
         keys = [e.get("key") for e in counter["settings_schema"]]
-        assert_that(keys).contains("step", "double_step", "max")
+        assert_that(keys).contains("step", "max")
         json.dumps(counter["settings_schema"])
 
     def test_action_icons_are_read_once(self, env, monkeypatch):
@@ -449,7 +449,9 @@ class TestWillAppear:
                 "card": _REC_ACTION,
                 "device": "dev-1",
                 "key": {"index": 0, "column": 0, "row": 0},
+                "size": [72, 72],
                 "settings": {"n": 7, "t": "x"},
+                "bindings": {g: {"action": "com.decker.core.nothing", "args": {}} for g in GESTURES},
                 "state": 0,
             }
         )
@@ -515,27 +517,6 @@ class TestCounterEndToEnd:
         assert _wait_for(lambda: env.image() != first)
         assert env.image().startswith(b"\x89PNG")
         assert_that(env.dm.hardware_images[-1][0]).is_equal_to(0)
-
-    def test_set_gestures_changes_recognizer_registration(self, env):
-        env.manager.store_settings(COUNTER_TARGET, {"double_step": 5})
-        env.manager.activate_card(COUNTER_TARGET)
-        assert _wait_for(env.counter_drawn)
-        live = env.manager._live["ctx-1"]  # pylint: disable=protected-access
-        assert _wait_for(lambda: Gesture.DOUBLE_PRESS in live.gestures)
-        first = env.image()
-
-        env.manager.dispatch_key_down(COUNTER_TARGET)
-        env.manager.dispatch_key_up(COUNTER_TARGET)
-        time.sleep(0.15)
-        assert_that(env.image()).is_equal_to(first)  # press is held back by the double-press window
-
-        assert _wait_for(lambda: env.image() != first)
-
-    def test_press_is_immediate_without_double_step(self, env):
-        env.manager.activate_card(COUNTER_TARGET)
-        assert _wait_for(env.counter_drawn)
-        live = env.manager._live["ctx-1"]  # pylint: disable=protected-access
-        assert_that(live.gestures).does_not_contain(Gesture.DOUBLE_PRESS)
 
     def test_settings_changed_is_applied_and_redraws(self, env):
         env.manager.activate_card(COUNTER_TARGET)
@@ -1063,31 +1044,16 @@ class TestPluginRequests:
         time.sleep(0.2)
         assert_that(env.received("settings_changed")).is_empty()  # not echoed back
 
-    def test_set_gestures_ignores_invalid_values(self, env):
-        env.manager.activate_card(REC_TARGET)
-        live = env.manager._live["ctx-1"]  # pylint: disable=protected-access
-        assert_that(live.gestures).is_equal_to(frozenset({Gesture.PRESS}))
-
-        env.manager._on_plugin_message(
-            "com.decker.rec", Message("set_gestures", "ctx-1", {"gestures": ["nope"]})
-        )  # pylint: disable=protected-access
-        assert_that(live.gestures).is_equal_to(frozenset({Gesture.PRESS}))
-        env.manager._on_plugin_message(  # pylint: disable=protected-access
-            "com.decker.rec", Message("set_gestures", "ctx-1", {"gestures": ["press", "long_press", "x"]})
-        )
-
-        assert_that(live.gestures).is_equal_to(frozenset({Gesture.PRESS, Gesture.LONG_PRESS}))
-
-    def test_raw_key_events_and_gestures_are_forwarded(self, env):
+    def test_raw_key_events_are_forwarded_but_gestures_are_not(self, env):
         env.manager.activate_card(REC_TARGET)
         assert _wait_for(lambda: env.received("will_appear"))
 
         env.manager.dispatch_key_down(REC_TARGET)
         env.manager.dispatch_key_up(REC_TARGET)
 
-        assert _wait_for(lambda: env.received("press"))
+        assert _wait_for(lambda: env.received("key_up"))
         events = [m["event"] for m in env.received()]
-        assert_that(events).contains("key_down", "key_up", "press")
+        assert_that(events).contains("key_down", "key_up").does_not_contain("press")
 
     def test_log_messages_do_not_raise(self, env):
         env.manager._on_plugin_message(
@@ -1184,7 +1150,9 @@ def test_page_switch_and_plugin_messages_do_not_deadlock(tmp_path):
     page_store = MagicMock()
     page_store.default_page_id.return_value = "p1"
     keys = MagicMock()
-    keys.all_for_page.return_value = [(0, SimpleNamespace(target=COUNTER_TARGET, settings={}, appearance={}))]
+    keys.all_for_page.return_value = [
+        (0, SimpleNamespace(target=COUNTER_TARGET, settings={}, appearance={}, bindings={}))
+    ]
     controller.create(
         SimpleNamespace(page_store=page_store, key_assignment_store=keys, device_manager=dm, plugin_manager=manager, event_bus=bus)  # type: ignore[arg-type]
     )
@@ -1878,7 +1846,7 @@ def _page_controller(env: Env, target: CardTarget, appearance: dict[str, Any]) -
     store.default_page_id.return_value = "p1"
     keys = MagicMock()
     keys.all_for_page.return_value = [
-        (target.key_index, SimpleNamespace(target=target, settings={}, appearance=appearance))
+        (target.key_index, SimpleNamespace(target=target, settings={}, appearance=appearance, bindings={}))
     ]
     controller.create(
         SimpleNamespace(

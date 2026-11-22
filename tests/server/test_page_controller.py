@@ -109,6 +109,7 @@ class TestActivate:
                 call.dm.show_page(DEV, page2.page_id),
                 call.dm.get_device_state(DEV),
                 call.pm.store_settings(new, {"step": 2}),
+                call.pm.set_bindings(new, {}),
                 call.dm.get_device_state().has_image(0),
                 call.pm.activate_card(new, {}, draw=True),
                 call.pm.refresh_page_dependent(DEV),
@@ -116,6 +117,20 @@ class TestActivate:
         )
         assert_that(context.page_controller.active_page_id(DEV)).is_equal_to(page2.page_id)
         assert_that(_events(context)[-1]).is_equal_to((PAGES_CHANGED_EVENT, {"device_id": DEV}))
+
+    def test_show_passes_stored_bindings_before_activation(self, context):
+        page2 = context.page_store.add_page(DEV)
+        target = _target(0, "new")
+        bindings = {"press": {"action": "com.p.act", "args": {"x": 1}}}
+        context.key_assignment_store.assign(DEV, page2.page_id, 0, target, {}, bindings)
+        tracker = MagicMock()
+        tracker.attach_mock(context.plugin_manager, "pm")
+
+        context.page_controller.activate(DEV, page2.page_id)
+
+        names = [c[0] for c in tracker.mock_calls]
+        assert_that(names.index("pm.set_bindings")).is_less_than(names.index("pm.activate_card"))
+        context.plugin_manager.set_bindings.assert_called_once_with(target, bindings)
 
     def test_activating_current_page_does_not_redraw(self, context):
         assert_that(context.page_controller.activate(DEV, PAGE1)).is_true()

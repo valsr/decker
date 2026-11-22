@@ -581,6 +581,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
             pm.deactivate_card(existing.target)
         key_store.assign(device_id, page_id, key_index, target, settings, bindings)
         pm.store_settings(target, settings)
+        pm.set_bindings(target, bindings)
         if is_active:
             self._context.device_manager.open_device(device_id)
             pm.activate_card(target, {})
@@ -684,6 +685,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
             return
         pm = self._context.plugin_manager
         pm.store_settings(assignment.target, assignment.settings)
+        pm.set_bindings(assignment.target, assignment.bindings)
         pm.activate_card(assignment.target, assignment.appearance)
 
     @exposed

@@ -7,7 +7,10 @@
   "description": "Test-only plugin that counts key presses.",
   "icon": "icons/counter",
   "category": "Utilities",
-  "runtime": { "type": "executable", "entry": "plugin.py" },
+  "runtime": {
+    "type": "executable",
+    "entry": "plugin.py"
+  },
   "contributes": {
     "cards": [
       {
@@ -15,19 +18,78 @@
         "name": "Counter",
         "tooltip": "Press to count, long press to reset",
         "icon": "icons/counter",
-        "appearance": { "background": "#1f618d" },
+        "appearance": {
+          "background": "#1f618d"
+        },
         "settings": [
-          { "section": "Counting" },
-          { "key": "step", "type": "int", "label": "Step", "default": 1, "min": 1, "max": 9999 },
-          { "key": "double_step", "type": "int", "label": "Double press step", "optional": true,
-            "placeholder": "None (presses register immediately)", "min": -9999, "max": 9999 },
-          { "key": "max", "type": "int", "label": "Max count", "default": 0, "min": 0, "max": 99999,
-            "special_value": "∞ (no limit)" }
-        ]
+          {
+            "section": "Counting"
+          },
+          {
+            "key": "step",
+            "type": "int",
+            "label": "Step",
+            "default": 1,
+            "min": 1,
+            "max": 9999
+          },
+          {
+            "key": "max",
+            "type": "int",
+            "label": "Max count",
+            "default": 0,
+            "min": 0,
+            "max": 99999,
+            "special_value": "∞ (no limit)"
+          }
+        ],
+        "bindings": {
+          "press": {
+            "action": "com.decker.testfixture.increment"
+          },
+          "long_press": {
+            "action": "com.decker.testfixture.reset"
+          }
+        }
       }
     ],
     "icon_packs": [
-      { "id": "com.decker.testfixture.icons", "name": "Fixture icons", "path": "iconpack" }
+      {
+        "id": "com.decker.testfixture.icons",
+        "name": "Fixture icons",
+        "path": "iconpack"
+      }
+    ],
+    "actions": [
+      {
+        "id": "com.decker.testfixture.increment",
+        "name": "Increment",
+        "tooltip": "Adds to the count",
+        "icon": "icons/counter",
+        "settings": [
+          {
+            "key": "step",
+            "type": "int",
+            "label": "Step",
+            "optional": true,
+            "min": 1,
+            "max": 9999
+          }
+        ]
+      },
+      {
+        "id": "com.decker.testfixture.reset",
+        "name": "Reset",
+        "tooltip": "Sets the count to zero",
+        "icon": "icons/counter"
+      },
+      {
+        "id": "com.decker.testfixture.bump",
+        "name": "Bump",
+        "tooltip": "Logs a bump",
+        "icon": "icons/counter",
+        "scope": "global"
+      }
     ]
   }
 }

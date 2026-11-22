@@ -11,6 +11,13 @@
     "cards": [],
     "actions": [
       {
+        "id": "com.decker.core.nothing",
+        "name": "Do Nothing",
+        "tooltip": "Does nothing",
+        "scope": "global",
+        "icon": "icons/nothing"
+      },
+      {
         "id": "com.decker.core.httprequest",
         "name": "HTTP Request",
         "tooltip": "Sends an HTTP request",

@@ -140,6 +140,11 @@ class Device:  # pylint: disable=too-many-instance-attributes,too-many-public-me
         """How many keys the device has."""
         return int(self._device.key_count())
 
+    @property
+    def key_size(self) -> tuple[int, int]:
+        """Width and height of a key image in pixels."""
+        return int(self._device.KEY_PIXEL_WIDTH), int(self._device.KEY_PIXEL_HEIGHT)
+
     def key_position(self, key_index: int) -> tuple[int, int] | None:
         """``(column, row)`` of a key from the cached layout (no hardware query), or None outside the layout."""
         if self._layout is None:

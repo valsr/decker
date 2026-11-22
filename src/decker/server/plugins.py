@@ -22,6 +22,11 @@ from decker.common.template import expand_template, template_names
 from decker.common.text_style import is_color
 from decker.common.variables import CORE_VARIABLE_NAMES
 from decker.common.version import decker_version
+from decker.plugin.bindings import (
+    Binding,
+    effective_bindings,
+    normalize_stored_bindings,
+)
 from decker.plugin.environment import stage_sdk
 from decker.plugin.events import PluginLoadFailedEvent
 from decker.plugin.gestures import Gesture, GestureRecognizer
@@ -82,6 +87,8 @@ _DEFAULT_MEMORY_LIMIT = 256 * 1024 * 1024
 _FAILED_LABEL = "Plugin failed"
 _MISSING_LABEL = "Plugin missing"
 _OPEN_URL_SCHEMES = ("http", "https")
+_BLANK_CARD = "com.decker.blank.blank"
+_DEFAULT_KEY_SIZE = (72, 72)
 
 
 _StateChangedCallback = Callable[[str, int], None]
@@ -139,7 +146,7 @@ class _Live:  # pylint: disable=too-many-instance-attributes
     target: CardTarget
     card: CardSpec
     recognizer: GestureRecognizer
-    gestures: frozenset[Gesture]
+    bindings: dict[str, Binding]
     settings: dict[str, Any]
     appearance: dict[str, Any] = field(default_factory=dict)
     plugin_image: bytes | None = None
@@ -164,12 +171,6 @@ def _uses_pack_icon(live: _Live) -> bool:
     return bool(appearance["icon"]["ref"]) or (background["type"] == "image" and bool(background["image"]["ref"]))
 
 
-def _gestures_from(names: Any) -> frozenset[Gesture]:
-    if not isinstance(names, (list, tuple, set, frozenset)):
-        return frozenset()
-    return frozenset(Gesture(n) for n in names if n in {g.value for g in Gesture})
-
-
 class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """Owned by the server: discovers plugins, runs them out of process and routes events both ways."""
 
@@ -187,6 +188,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._plugins: dict[str, InstalledPlugin] = {}
         self._builtin_ids: set[str] = set()
         self._live: dict[str, _Live] = {}
+        self._stored_bindings: dict[str, Mapping[str, Any]] = {}
+        self._warned_foreign: set[tuple[str, str]] = set()
         self._lock = threading.RLock()
         self._sdk_path: Path | None = None
         self._device_manager: Any = None
@@ -408,9 +411,9 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._recompose_icon_users()
 
     def _recompose_icon_users(self) -> None:
-        """Redraw the keys showing a pack icon, since the set of installed packs just changed."""
+        """Redraw the keys showing a pack icon or a bound action's icon, since what is installed just changed."""
         with self._lock:
-            users = [live for live in self._live.values() if _uses_pack_icon(live)]
+            users = [live for live in self._live.values() if _uses_pack_icon(live) or self._shows_action(live)]
         for live in users:
             self._recompose(live)
 
@@ -574,10 +577,11 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             target=target,
             card=spec,
             recognizer=GestureRecognizer(self._gesture_emitter(target.context_id)),
-            gestures=frozenset({Gesture.PRESS}),
+            bindings={},
             settings=apply_schema(spec.settings, stored),
             appearance=dict(appearance or {}),
         )
+        live.bindings = self._effective(live)
         with self._lock:
             self._live[target.context_id] = live
         self._start_live(live, draw)
@@ -610,15 +614,15 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def dispatch_key_down(self, target: CardTarget) -> None:
         """Forward the raw key down, then feed the press to the instance's gesture recognizer."""
         live = self._live.get(target.context_id)
-        if live is None or live.card.static:
+        if live is None:
             return
         self._send_context(live, "key_down")
-        live.recognizer.key_down(live.gestures)
+        live.recognizer.key_down(self._registered(live))
 
     def dispatch_key_up(self, target: CardTarget) -> None:
         """Forward the raw key up, then feed the release to the instance's gesture recognizer."""
         live = self._live.get(target.context_id)
-        if live is None or live.card.static:
+        if live is None:
             return
         self._send_context(live, "key_up")
         live.recognizer.key_up()
@@ -638,7 +642,77 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             return
         stored = self._settings_store.get_settings(target.plugin_uuid, target.card_uuid, target.context_id)
         live.settings = apply_schema(live.card.settings, stored)
-        self._send_context(live, "settings_changed", {"settings": self._delivery(live)})
+        self._send_context(live, "settings_changed", self._settings_payload(live, self._delivery(live)))
+
+    def set_bindings(self, target: CardTarget, stored: Mapping[str, Any]) -> None:
+        """Remember a card instance's stored gesture bindings; a live instance re-registers and is told."""
+        with self._lock:
+            self._stored_bindings[target.context_id] = dict(stored)
+            live = self._live.get(target.context_id)
+        if live is None:
+            return
+        effective = self._effective(live)
+        if effective == live.bindings:
+            return
+        live.bindings = effective
+        self._send_context(live, "settings_changed", self._settings_payload(live, self._delivery(live)))
+        self._recompose(live)
+
+    def _effective(self, live: _Live) -> dict[str, Binding]:
+        with self._lock:
+            stored = self._stored_bindings.get(live.target.context_id, {})
+        return effective_bindings(live.card.bindings, normalize_stored_bindings(stored))
+
+    def _allowed(self, live: _Live, binding: Binding) -> bool:
+        """Whether the binding can run from this card: its own plugin's action, or any installed global one."""
+        if binding.is_nothing:
+            return False
+        found = self._action_runner.scope_of(binding.action)
+        if found is None:
+            return False
+        owner, scope = found
+        if scope == "global" or owner == live.target.plugin_uuid:
+            return True
+        key = (live.target.context_id, binding.action)
+        if key not in self._warned_foreign:
+            self._warned_foreign.add(key)
+            logging.warning(
+                "[%s] binding to %s, another plugin's action, is ignored", live.target.card_uuid, binding.action
+            )
+        return False
+
+    def _registered(self, live: _Live) -> frozenset[Gesture]:
+        return frozenset(Gesture(g) for g, binding in live.bindings.items() if self._allowed(live, binding))
+
+    def _on_gesture(self, live: _Live, gesture: Gesture) -> None:
+        binding = live.bindings.get(gesture.value)
+        if binding is None or not self._allowed(live, binding):
+            return
+        call = ActionCall(
+            binding.action,
+            dict(binding.args),
+            input=gesture.value,
+            card=self._card_payload(live),
+            device=live.target.device_id,
+        )
+        self._action_runner.run(call)
+
+    def _card_payload(self, live: _Live) -> dict[str, Any]:
+        target = live.target
+        column, row = self._key_position(target)
+        return {
+            "context": target.context_id,
+            "card": target.card_uuid,
+            "plugin": target.plugin_uuid,
+            "device": target.device_id,
+            "key": {"index": target.key_index, "column": column, "row": row},
+            "size": list(self._key_size(target)),
+            "settings": self.delivered_settings(live),
+            "last_paint": None,
+        }
+
+    def _settings_payload(self, live: _Live, delivered: dict[str, Any]) -> dict[str, Any]:
+        return {"settings": delivered, "bindings": {g: b.to_json() for g, b in live.bindings.items()}}
 
     # ------------------------------------------------------------------
     # Server -> plugin helpers
@@ -680,6 +754,11 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         if image is None and state is not None and state.image:
             image = read_icon(plugin.plugin_dir, state.image) if plugin is not None else None
         title = plugin_title or (state.title if state is not None and state.title else "")
+        face = self._face_action(live)
+        if face is not None:
+            action, icon = face
+            image = image if image is not None else icon
+            title = title or action.name
         return compose_key_face(
             self._expanded_appearance(live.target.device_id, appearance),
             image,
@@ -689,6 +768,23 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             poster=poster,
             background_image=self._background_bytes(appearance),
         )
+
+    def _shows_action(self, live: _Live) -> bool:
+        press = live.bindings.get("press")
+        return live.card.id == _BLANK_CARD and press is not None and not press.is_nothing
+
+    def _face_action(self, live: _Live) -> tuple[ActionSpec, bytes | None] | None:
+        """The press action a Blank key shows (its spec and icon), or None for any other key or a dead binding."""
+        press = live.bindings.get("press")
+        if not self._shows_action(live) or press is None or not self._allowed(live, press):
+            return None
+        found = self._action_runner.scope_of(press.action)
+        action = self._action_runner.spec(press.action)
+        with self._lock:
+            plugin = self._plugins.get(found[0]) if found is not None else None
+        if action is None or plugin is None:
+            return None
+        return action, read_icon(plugin.plugin_dir, action.icon or plugin.manifest.icon)
 
     def _background_bytes(self, appearance: dict[str, Any]) -> bytes | None:
         background = appearance["background"]
@@ -805,7 +901,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         delivered = self.delivered_settings(live)
         if delivered != live.delivered:
             live.delivered = delivered
-            self._send_context(live, "settings_changed", {"settings": delivered})
+            self._send_context(live, "settings_changed", self._settings_payload(live, delivered))
 
     def _notify_state(self, device_id: str, key_index: int) -> None:
         callback = self._state_changed_cb
@@ -828,7 +924,9 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             "card": target.card_uuid,
             "device": target.device_id,
             "key": {"index": target.key_index, "column": column, "row": row},
+            "size": list(self._key_size(target)),
             "settings": self._delivery(live),
+            "bindings": {g: b.to_json() for g, b in live.bindings.items()},
             "state": live.state,
         }
         self._supervisor.send(target.plugin_uuid, Message("will_appear", target.context_id, payload))
@@ -843,12 +941,19 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             logging.debug("No key layout for %s key %d", target.device_id, target.key_index)
         return target.key_index, 0
 
+    def _key_size(self, target: CardTarget) -> tuple[int, int]:
+        try:
+            width, height = self._device_manager.open_device(target.device_id).key_size
+            return int(width), int(height)
+        except Exception:  # pylint: disable=broad-except
+            return _DEFAULT_KEY_SIZE
+
     def _gesture_emitter(self, context_id: str) -> Callable[[Gesture], None]:
         def _emit(gesture: Gesture) -> None:
             live = self._live.get(context_id)
             if live is None:
                 return
-            self._send_context(live, gesture.value)
+            self._on_gesture(live, gesture)
 
         return _emit
 
@@ -924,7 +1029,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         if message.event == "set_settings":
             self._on_set_settings(live, message.payload)
         elif message.event == "set_gestures":
-            self._on_set_gestures(live, message.payload)
+            logging.debug("[%s] set_gestures is ignored: gestures come from bindings", plugin_id)
         elif message.event == "switch_page":
             self._on_switch_page(live, message.payload)
         elif message.event == "switch_profile":
@@ -1042,13 +1147,6 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             logging.warning("[%s] set_global_settings without a settings object dropped", plugin_id)
             return
         self.update_global_settings(plugin_id, raw, notify=False)
-
-    def _on_set_gestures(self, live: _Live, payload: dict[str, Any]) -> None:
-        gestures = _gestures_from(payload.get("gestures"))
-        if not gestures:
-            logging.warning("[%s] set_gestures without valid gestures ignored", live.target.plugin_uuid)
-            return
-        live.gestures = gestures
 
     @staticmethod
     def _on_log(plugin_id: str, payload: dict[str, Any]) -> None:
