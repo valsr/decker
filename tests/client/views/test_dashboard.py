@@ -566,10 +566,12 @@ class TestKeyInteractions:
         AppContext.get().connection_manager = mock_cm
         mock_cm.call.return_value = json.dumps({"ok": False, "errors": {"step": "is required"}})
 
-        assert_that(view._save_key_settings(2, {"step": 5})).is_false()  # pylint: disable=protected-access
+        failed = view._save_key_settings(2, {"step": 5})  # pylint: disable=protected-access
+        assert_that(failed.ok).is_false()
+        assert_that(dict(failed.errors)).is_equal_to({"settings.step": "is required"})
 
         mock_cm.call.return_value = json.dumps({"ok": True, "errors": {}})
-        assert_that(view._save_key_settings(2, {"step": 5})).is_true()  # pylint: disable=protected-access
+        assert_that(view._save_key_settings(2, {"step": 5}).ok).is_true()  # pylint: disable=protected-access
 
     def test_selecting_key_shows_schema_form_for_its_action(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
@@ -643,7 +645,7 @@ class TestKeyInteractions:
             "appearance_defaults": {"background": "#000000"},
         }
 
-        view._make_save_callback(2)({"step": 2}, {"background": "#ff0000"})  # pylint: disable=protected-access
+        view._make_save_callback(2)({"step": 2}, {"background": "#ff0000"}, {})  # pylint: disable=protected-access
 
         calls = [c.args for c in mock_cm.call.call_args_list]
         assert_that(calls).is_equal_to(
@@ -1045,13 +1047,13 @@ class TestSaveResult:  # pylint: disable=protected-access
     def test_save_callback_reports_success(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = self._view(tmp_path, True)
 
-        assert_that(view._make_save_callback(2)({"step": 2}, {})).is_true()
+        assert_that(view._make_save_callback(2)({"step": 2}, {}, {}).ok).is_true()
 
     @pytest.mark.parametrize("result", [False, None])
     def test_save_callback_reports_failure(self, qapp, tmp_path, result):  # pylint: disable=unused-argument
         view = self._view(tmp_path, result)
 
-        assert_that(view._make_save_callback(2)({"step": 2}, {})).is_false()
+        assert_that(view._make_save_callback(2)({"step": 2}, {}, {}).ok).is_false()
         assert_that(view._key_slots[2]["settings"]).is_equal_to({})
 
 

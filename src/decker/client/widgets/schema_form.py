@@ -1,6 +1,6 @@
 """Form generated from a settings schema (the JSON list produced by ``schema_to_json``)."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,6 +31,11 @@ from decker.client.widgets.icon_edit import IconEdit
 from decker.client.widgets.page_edit import PageEdit
 from decker.client.widgets.profile_edit import ProfileEdit
 from decker.client.widgets.text_style_edit import TextStyleEdit
+from decker.plugin.settings_schema import (
+    SettingEntry,
+    parse_settings_schema,
+    validate_settings,
+)
 
 _INT_LIMIT = 999_999_999
 _DEFAULT_COLOR = "#000000"
@@ -265,12 +270,18 @@ class SchemaForm(QWidget):
         self._layout = QFormLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._fields: dict[str, _Field] = {}
+        self._error_labels: dict[str, QLabel] = {}
+        self._server_errors: dict[str, str] = {}
+        self._parsed: tuple[SettingEntry, ...] = ()
 
     def set_schema(self, schema: list[dict[str, Any]], values: dict[str, Any], plugin_id: str = "") -> None:
         """Rebuild the form for ``schema`` and fill it from ``values`` (missing keys use schema defaults)."""
         while self._layout.rowCount():
             self._layout.removeRow(0)
         self._fields = {}
+        self._error_labels = {}
+        self._server_errors = {}
+        self._parsed = _parse(schema)
         for entry in schema:
             if "section" in entry:
                 self._layout.addRow(_section(str(entry["section"])))
@@ -280,11 +291,57 @@ class SchemaForm(QWidget):
                 continue
             self._fields[entry["key"]] = field
             label = entry.get("label", entry["key"])
-            self._layout.addRow(f"{label}:", field.widget)
+            self._layout.addRow(f"{label}:", self._row(entry["key"], field.widget))
         self._link_profile_fields(schema)
         self._link_action_fields(schema)
-        for field in self._fields.values():  # after linking, so a profile change clears the page before `changed`
-            _watch(field.widget, self.changed.emit)
+        for key, field in self._fields.items():  # after linking, so a profile change clears the page before `changed`
+            _watch(field.widget, self._edit_slot(key))
+        self._show_errors()
+
+    def _row(self, key: str, control: QWidget) -> QWidget:
+        """The control with an (initially hidden) error label under it."""
+        row = QWidget()
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(control)
+        error = QLabel()
+        error.setProperty("role", "error")
+        error.setWordWrap(True)
+        error.hide()
+        layout.addWidget(error)
+        self._error_labels[key] = error
+        return row
+
+    def errors(self) -> dict[str, str]:
+        """Validation messages for the values entered, keyed by schema key."""
+        return validate_settings(self._parsed, self.values())
+
+    def has_errors(self) -> bool:
+        """Whether any field currently shows an error."""
+        return bool(self._displayed_errors())
+
+    def set_errors(self, errors: Mapping[str, str]) -> None:
+        """Show server-reported errors on their fields until each is edited; unknown keys are ignored."""
+        self._server_errors = {key: str(message) for key, message in errors.items() if key in self._fields}
+        self._show_errors()
+
+    def _displayed_errors(self) -> dict[str, str]:
+        return {**self.errors(), **self._server_errors}
+
+    def _show_errors(self) -> None:
+        shown = self._displayed_errors()
+        for key, label in self._error_labels.items():
+            label.setText(shown.get(key, ""))
+            label.setVisible(key in shown)
+
+    def _edit_slot(self, key: str) -> Callable[[], None]:
+        return lambda: self._on_edited(key)
+
+    def _on_edited(self, key: str) -> None:
+        self._server_errors.pop(key, None)
+        self._show_errors()
+        self.changed.emit()
 
     def _link_profile_fields(self, schema: list[dict[str, Any]]) -> None:
         """Make each page field list the pages of the profile chosen in its ``profile_field``."""
@@ -420,6 +477,14 @@ class AppearanceForm(QWidget):
     def values(self) -> dict[str, Any]:
         """The values currently entered, keyed by schema key."""
         return {key: field.get() for key, field in self._fields.items()}
+
+
+def _parse(schema: list[dict[str, Any]]) -> tuple[SettingEntry, ...]:
+    """The schema as the validator's entries; one the client cannot parse validates nothing."""
+    try:
+        return parse_settings_schema(schema, "form")
+    except ValueError:
+        return ()
 
 
 def _section(title: str) -> QLabel:

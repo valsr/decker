@@ -2,7 +2,8 @@
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
@@ -30,7 +31,19 @@ _PREVIEW_DEBOUNCE_MS = 150
 _TOP = Qt.AlignmentFlag.AlignTop
 
 PreviewProvider = Callable[[dict[str, Any]], str | None]
-SaveCallback = Callable[[dict[str, Any], dict[str, Any]], bool | None]  # False = the save failed
+
+
+@dataclass(frozen=True)
+class SaveOutcome:
+    """Result of a save: ``errors`` maps ``settings.<key>`` / ``bindings.<gesture>.<key>`` to a message."""
+
+    ok: bool
+    errors: Mapping[str, str] = field(default_factory=dict)
+
+
+SaveCallback = Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], SaveOutcome]  # settings, appearance, bindings
+
+_SETTINGS_PREFIX = "settings."
 
 
 def _run_job(job: Callable[[], str | None]) -> str | None:
@@ -187,8 +200,8 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         return page
 
     def _icon_edit(self) -> Any:
-        field = self._appearance_form._fields.get("icon")  # pylint: disable=protected-access
-        return field.widget if field is not None else None
+        icon = self._appearance_form._fields.get("icon")  # pylint: disable=protected-access
+        return icon.widget if icon is not None else None
 
     def _browse_icon(self) -> None:
         if (edit := self._icon_edit()) is not None:
@@ -211,6 +224,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
             if (style := self._save_btn.style()) is not None:
                 style.unpolish(self._save_btn)
                 style.polish(self._save_btn)
+        self._save_btn.setEnabled(not self._settings_form.has_errors())
         icon = self._appearance_form.values().get("icon")
         self._preview.set_has_icon(isinstance(icon, dict) and bool(icon.get("ref")))
 
@@ -241,6 +255,12 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         if seq == self._preview_seq and isinstance(image, str) and image:
             self._preview.set_image(image)
 
+    def _route_errors(self, errors: Mapping[str, str]) -> None:
+        """Hand each server error to the form that owns its key (Task 10 adds ``bindings.`` here)."""
+        self._settings_form.set_errors(
+            {key.removeprefix(_SETTINGS_PREFIX): msg for key, msg in errors.items() if key.startswith(_SETTINGS_PREFIX)}
+        )
+
     def _on_save(self) -> None:
         if self._save_cb is None:
             return
@@ -258,9 +278,10 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
             )
         self._baseline = self._current_values()
         draft = self._draft_appearance()
-        saved = self._save_cb(settings, draft)
-        if saved is False:
+        outcome = self._save_cb(settings, draft, {})
+        if not outcome.ok:
             self._loaded, self._baseline = previous
+            self._route_errors(outcome.errors)
         else:
             self._stored_background = draft.get("background")
             self._stored_norm = form_appearance.get("background")

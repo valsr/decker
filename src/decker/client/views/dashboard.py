@@ -4,7 +4,6 @@ import json
 import logging
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable
 from typing import Any
 
 from PyQt6.QtCore import Qt, QTimer
@@ -36,7 +35,11 @@ from decker.client.events import (
 from decker.client.ui_state_store import UiStateStore
 from decker.client.views.base import BaseView
 from decker.client.widgets.button_grid import ButtonGridWidget
-from decker.client.widgets.card_config_panel import CardConfigPanel
+from decker.client.widgets.card_config_panel import (
+    CardConfigPanel,
+    SaveCallback,
+    SaveOutcome,
+)
 from decker.client.widgets.icon_edit import IconEdit
 from decker.client.widgets.page_tab_bar import PageTabBar
 from decker.client.widgets.profiles_dialog import ProfilesDialog
@@ -708,22 +711,22 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         }
         self._sync_draggable()
 
-    def _make_save_callback(self, key_index: int) -> "Callable[[dict[str, Any], dict[str, Any]], bool]":
-        def _cb(settings: dict[str, Any], appearance: dict[str, Any]) -> bool:
-            settings_saved = self._save_key_settings(key_index, settings)
+    def _make_save_callback(self, key_index: int) -> SaveCallback:
+        def _cb(settings: dict[str, Any], appearance: dict[str, Any], _bindings: dict[str, Any]) -> SaveOutcome:
+            settings_outcome = self._save_key_settings(key_index, settings)
             appearance_saved = self._save_key_appearance(key_index, appearance)
-            return settings_saved and appearance_saved
+            return SaveOutcome(settings_outcome.ok and appearance_saved, settings_outcome.errors)
 
         return _cb
 
-    def _save_key_settings(self, key_index: int, settings: dict[str, Any]) -> bool:
-        saved = self._key_call("key_update_settings", key_index, settings)
-        if saved and key_index in self._key_slots:
+    def _save_key_settings(self, key_index: int, settings: dict[str, Any]) -> SaveOutcome:
+        outcome = self._key_save_result("key_update_settings", key_index, settings)
+        if outcome.ok and key_index in self._key_slots:
             self._key_slots[key_index]["settings"] = settings
-        return saved
+        return outcome
 
     def _save_key_appearance(self, key_index: int, appearance: dict[str, Any]) -> bool:
-        saved = self._key_call("key_update_appearance", key_index, appearance)
+        saved = bool(self._key_call("key_update_appearance", key_index, appearance))
         if saved and key_index in self._key_slots:
             slot = self._key_slots[key_index]
             slot["appearance"] = {**slot.get("appearance_defaults", {}), **appearance}
@@ -738,16 +741,22 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         result = cm.call("key_preview", device_id, page_id, key_index, json.dumps(appearance))
         return result if isinstance(result, str) else None
 
-    def _key_call(self, method: str, key_index: int, payload: dict[str, Any]) -> bool:
+    def _key_call(self, method: str, key_index: int, payload: dict[str, Any]) -> Any:
         device_id = AppContext.get().active_device_id
         page_id = self._active_page_id
         cm = AppContext.get().connection_manager
         if not device_id or not page_id or cm is None:
-            return False
-        result = cm.call(method, device_id, page_id, key_index, json.dumps(payload))
-        if isinstance(result, str):  # the save RPCs answer {"ok": bool, "errors": {...}}
-            return bool(json.loads(result).get("ok"))
-        return bool(result)
+            return None
+        return cm.call(method, device_id, page_id, key_index, json.dumps(payload))
+
+    def _key_save_result(self, method: str, key_index: int, payload: dict[str, Any]) -> SaveOutcome:
+        """Parse a save RPC's ``{"ok", "errors"}`` answer; server error keys gain the ``settings.`` prefix."""
+        result = self._key_call(method, key_index, payload)
+        if not isinstance(result, str):
+            return SaveOutcome(bool(result))
+        data = json.loads(result)
+        errors = {f"settings.{key}": str(msg) for key, msg in (data.get("errors") or {}).items()}
+        return SaveOutcome(bool(data.get("ok")), errors)
 
     # ------------------------------------------------------------------
     # Other widget callbacks

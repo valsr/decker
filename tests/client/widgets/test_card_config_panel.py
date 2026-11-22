@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 
 import decker.client.widgets.card_config_panel as panel_module
 from decker.client.widgets import dynamic_choice_edit
-from decker.client.widgets.card_config_panel import CardConfigPanel
+from decker.client.widgets.card_config_panel import CardConfigPanel, SaveOutcome
 from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.common.text_style import TEXT_STYLE_DEFAULTS
 
@@ -42,9 +42,17 @@ def _show(panel: CardConfigPanel, settings=None, appearance=None, save=None, tit
         settings or {},
         appearance or dict(_DEFAULTS),
         dict(_DEFAULTS),
-        save or (lambda s, a: None),
+        save or (lambda s, a, _b: SaveOutcome(True)),
         title=title,
     )
+
+
+def _record(captured: list[Any], appearance_only: bool = False) -> Any:
+    def save(settings: dict[str, Any], appearance: dict[str, Any], _bindings: dict[str, Any]) -> SaveOutcome:
+        captured.append(appearance if appearance_only else (settings, appearance))
+        return SaveOutcome(True)
+
+    return save
 
 
 def _labels(panel: CardConfigPanel) -> list[str]:
@@ -77,7 +85,7 @@ class TestActionConfigPanel:  # pylint: disable=protected-access
     def test_save_sends_settings_and_changed_appearance_only(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         captured: list[tuple[dict, dict]] = []
-        _show(panel, {"step": 1}, save=lambda s, a: captured.append((s, a)))
+        _show(panel, {"step": 1}, save=_record(captured))
         panel._settings_form._fields["step"].set(7)
         panel._appearance_form._fields["background"].set("#8a1c1c")
 
@@ -142,7 +150,7 @@ class TestActionConfigPanel:  # pylint: disable=protected-access
     def test_save_drops_legacy_keys(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         captured: list[tuple[dict, dict]] = []
-        _show(panel, {"step": 1}, {"title": "Old", "title_size": 20}, save=lambda s, a: captured.append((s, a)))
+        _show(panel, {"step": 1}, {"title": "Old", "title_size": 20}, save=_record(captured))
 
         panel._on_save()
 
@@ -154,7 +162,7 @@ class TestActionConfigPanel:  # pylint: disable=protected-access
     def test_unchanged_title_is_not_saved(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         captured: list[tuple[dict, dict]] = []
-        _show(panel, {"step": 1}, save=lambda s, a: captured.append((s, a)))
+        _show(panel, {"step": 1}, save=_record(captured))
 
         panel._on_save()
 
@@ -176,7 +184,7 @@ class TestActionConfigPanel:  # pylint: disable=protected-access
     def test_background_alpha_survives_save(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         captured: list[tuple[dict, dict]] = []
-        _show(panel, {"step": 1}, save=lambda s, a: captured.append((s, a)))
+        _show(panel, {"step": 1}, save=_record(captured))
         panel._appearance_form._fields["background"].set("#11223380")
 
         panel._on_save()
@@ -392,10 +400,10 @@ class TestPanelStateReset:  # pylint: disable=protected-access
 
     def test_failed_save_stays_dirty_and_a_retry_sends_again(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
-        outcomes = iter([False, True])
+        outcomes = iter([SaveOutcome(False), SaveOutcome(True)])
         sent: list[dict] = []
 
-        def save(settings: dict, _appearance: dict) -> bool:
+        def save(settings: dict, _appearance: dict, _bindings: dict) -> SaveOutcome:
             sent.append(settings)
             return next(outcomes)
 
@@ -412,20 +420,11 @@ class TestPanelStateReset:  # pylint: disable=protected-access
 
     def test_failed_save_does_not_swallow_the_server_echo_of_old_values(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
-        _show(panel, {"step": 1}, save=lambda s, a: False)
+        _show(panel, {"step": 1}, save=lambda s, a, _b: SaveOutcome(False))
         panel._settings_form._fields["step"].widget.setValue(7)  # type: ignore[attr-defined]
         panel._on_save()
 
         assert_that(panel._loaded[1]).is_equal_to({"step": 1})  # type: ignore[index]
-
-    def test_save_callback_returning_none_counts_as_saved(self, qapp):  # pylint: disable=unused-argument
-        panel = CardConfigPanel()
-        _show(panel, {"step": 1})
-        panel._settings_form._fields["step"].widget.setValue(7)  # type: ignore[attr-defined]
-
-        panel._on_save()
-
-        assert_that(panel.is_dirty).is_false()
 
 
 def _pump(ms: int) -> None:
@@ -555,7 +554,7 @@ class TestBackgroundIntegration:  # pylint: disable=protected-access
     def test_legacy_string_background_is_clean_and_keeps_its_shape(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         captured: list[dict] = []
-        _show(panel, {"step": 1}, {**_DEFAULTS, "background": "#336699"}, save=lambda s, a: captured.append(a))
+        _show(panel, {"step": 1}, {**_DEFAULTS, "background": "#336699"}, save=_record(captured, appearance_only=True))
 
         assert_that(panel.is_dirty).is_false()
         assert_that(panel._appearance_form.values()["background"]).is_equal_to(_bg("#336699"))
@@ -569,7 +568,7 @@ class TestBackgroundIntegration:  # pylint: disable=protected-access
         panel = CardConfigPanel()
         captured: list[dict] = []
         stored = _bg("#445566", "image", "pack:x/y.png")
-        _show(panel, {"step": 1}, {**_DEFAULTS, "background": stored}, save=lambda s, a: captured.append(a))
+        _show(panel, {"step": 1}, {**_DEFAULTS, "background": stored}, save=_record(captured, appearance_only=True))
         panel._appearance_form._fields["title"].set({"text": "hi"})
         panel._on_save()
 
@@ -578,7 +577,7 @@ class TestBackgroundIntegration:  # pylint: disable=protected-access
     def test_editing_background_saves_nested_dict_and_previews_it(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         captured: list[dict] = []
-        _show(panel, {"step": 1}, {**_DEFAULTS, "background": "#336699"}, save=lambda s, a: captured.append(a))
+        _show(panel, {"step": 1}, {**_DEFAULTS, "background": "#336699"}, save=_record(captured, appearance_only=True))
         panel._appearance_form._fields["background"].set(_bg("#000000", "none"))
         panel._on_edited()
 
@@ -634,7 +633,7 @@ _DYNAMIC_SCHEMA: list[dict[str, Any]] = [
 
 def _show_dynamic(panel: CardConfigPanel, plugin_id: str) -> Any:
     panel.show_card_config(
-        _DYNAMIC_SCHEMA, {}, dict(_DEFAULTS), dict(_DEFAULTS), lambda s, a: None, plugin_id=plugin_id
+        _DYNAMIC_SCHEMA, {}, dict(_DEFAULTS), dict(_DEFAULTS), lambda s, a, _b: SaveOutcome(True), plugin_id=plugin_id
     )
     field = panel._settings_form._fields["voice"].widget
     assert isinstance(field, DynamicChoiceEdit)
@@ -664,3 +663,55 @@ def test_card_config_panel_rebuilds_for_another_plugin_with_identical_schema(
     second = _show_dynamic(panel, "com.t.y")
 
     assert_that(second._plugin_id).is_equal_to("com.t.y")
+
+
+_URL_SCHEMA: list[dict[str, Any]] = [{"key": "url", "type": "text", "label": "URL", "required": True}]
+
+
+def _show_url(panel: CardConfigPanel, values: dict[str, Any], save: Any = None) -> QLineEdit:
+    panel.show_card_config(
+        _URL_SCHEMA, values, dict(_DEFAULTS), dict(_DEFAULTS), save or (lambda s, a, b: SaveOutcome(True))
+    )
+    edit = panel._settings_form._fields["url"].widget  # pylint: disable=protected-access
+    assert isinstance(edit, QLineEdit)
+    return edit
+
+
+def _save_button(panel: CardConfigPanel) -> QPushButton:
+    return next(b for b in panel.findChildren(QPushButton) if b.text() == "Save")
+
+
+class TestCardConfigPanelValidation:
+    def test_save_disabled_while_errors(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        edit = _show_url(panel, {"url": "http://x"})
+        assert_that(_save_button(panel).isEnabled()).is_true()
+
+        edit.setText("")
+        assert_that(_save_button(panel).isEnabled()).is_false()
+
+        edit.setText("http://y")
+        assert_that(_save_button(panel).isEnabled()).is_true()
+
+    def test_refused_save_keeps_edits_and_shows_errors(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        calls: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
+
+        def refuse(s: dict[str, Any], a: dict[str, Any], b: dict[str, Any]) -> SaveOutcome:
+            calls.append((s, a, b))
+            return SaveOutcome(False, {"settings.url": "required"})
+
+        edit = _show_url(panel, {"url": "http://x"}, refuse)
+        edit.setText("http://edited")
+
+        _save_button(panel).click()
+
+        assert_that(calls).is_length(1)
+        assert_that(calls[0][2]).is_equal_to({})
+        assert_that(edit.text()).is_equal_to("http://edited")
+        assert_that(panel.is_dirty).is_true()
+        assert_that(panel._settings_form.has_errors()).is_true()  # pylint: disable=protected-access
+        assert_that(_save_button(panel).isEnabled()).is_false()
+
+        edit.setText("http://again")
+        assert_that(_save_button(panel).isEnabled()).is_true()

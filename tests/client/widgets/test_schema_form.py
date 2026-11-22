@@ -620,3 +620,66 @@ class TestActionParamsPluginId:  # pylint: disable=protected-access
         assert isinstance(field, DynamicChoiceEdit)
         assert_that(field._plugin_id).is_equal_to("com.u.y")
         _join(field)
+
+
+_URL_SCHEMA: list[dict[str, Any]] = [
+    {"key": "url", "type": "text", "label": "URL", "required": True, "pattern": "https?://.+"},
+    {"key": "name", "type": "text", "label": "Name"},
+]
+
+
+def _error_texts(form: SchemaForm) -> list[str]:
+    return [
+        label.text()
+        for label in form.findChildren(QLabel)
+        if label.property("role") == "error" and not label.isHidden() and label.text()
+    ]
+
+
+class TestSchemaFormValidation:  # pylint: disable=protected-access
+    def test_required_field_shows_inline_error_and_clears_when_filled(
+        self, qapp
+    ) -> None:  # pylint: disable=unused-argument
+        form = _form(_URL_SCHEMA, {"url": "http://x"})
+        edit = form._fields["url"].widget
+        assert isinstance(edit, QLineEdit)
+
+        edit.setText("")
+        assert_that(form.errors()).contains_key("url")
+        assert_that(_error_texts(form)).is_length(1)
+
+        edit.setText("http://y")
+        assert_that(form.errors()).is_empty()
+        assert_that(_error_texts(form)).is_empty()
+
+    def test_pattern_error_shows_inline(self, qapp) -> None:  # pylint: disable=unused-argument
+        form = _form(_URL_SCHEMA, {"url": "http://x"})
+        edit = form._fields["url"].widget
+        assert isinstance(edit, QLineEdit)
+
+        edit.setText("ftp://nope")
+
+        assert_that(form.errors()).contains_key("url")
+        assert_that(_error_texts(form)).is_length(1)
+
+    def test_stored_invalid_value_loads_flagged(self, qapp) -> None:  # pylint: disable=unused-argument
+        form = _form(_URL_SCHEMA, {"url": "bad"})
+
+        assert_that(form.errors()).contains_key("url")
+        assert_that(_error_texts(form)).is_length(1)
+        assert_that(form.has_errors()).is_true()
+
+    def test_server_errors_show_on_their_fields(self, qapp) -> None:  # pylint: disable=unused-argument
+        form = _form(_URL_SCHEMA, {"url": "http://x"})
+        assert_that(form.has_errors()).is_false()
+
+        form.set_errors({"url": "server says no", "unknown": "ignored"})
+
+        assert_that(_error_texts(form)).is_equal_to(["server says no"])
+        assert_that(form.has_errors()).is_true()
+
+        edit = form._fields["url"].widget
+        assert isinstance(edit, QLineEdit)
+        edit.setText("http://z")
+        assert_that(_error_texts(form)).is_empty()
+        assert_that(form.has_errors()).is_false()
