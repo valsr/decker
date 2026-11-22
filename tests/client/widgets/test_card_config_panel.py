@@ -617,7 +617,7 @@ class TestFrozenTop:  # pylint: disable=protected-access
         assert_that([type(w).__name__ for w in widgets][-2:]).is_equal_to(["QFrame", "QScrollArea"])
         scroll = widgets[-1]
         assert isinstance(scroll, QScrollArea)
-        assert_that(scroll.widget()).is_same_as(panel._settings_form)
+        assert_that(panel._settings_form.parent()).is_same_as(scroll.widget())
 
     def test_the_appearance_rows_are_title_background_icon(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
@@ -715,3 +715,116 @@ class TestCardConfigPanelValidation:
 
         edit.setText("http://again")
         assert_that(_save_button(panel).isEnabled()).is_true()
+
+
+class TestPanelBindings:  # pylint: disable=protected-access
+    _ACTIONS = [
+        {
+            "plugin_uuid": "com.p",
+            "plugin_name": "P",
+            "action_uuid": "com.p.go",
+            "action_name": "Go",
+            "scope": "plugin",
+            "settings_schema": [{"key": "url", "type": "text", "label": "URL", "default": "", "required": True}],
+        },
+        {
+            "plugin_uuid": "com.p",
+            "plugin_name": "P",
+            "action_uuid": "com.p.stop",
+            "action_name": "Stop",
+            "scope": "plugin",
+            "settings_schema": [],
+        },
+    ]
+
+    def setup_method(self) -> None:
+        import json
+
+        from decker.client.context import AppContext
+
+        actions = self._ACTIONS
+
+        class _Rpc:
+            def call(self, method: str, *_args: Any) -> Any:
+                return json.dumps(actions) if method == "plugins_actions_list" else None
+
+        AppContext._instance = None
+        AppContext.get().connection_manager = _Rpc()  # type: ignore[assignment]
+
+    def teardown_method(self) -> None:
+        from decker.client.context import AppContext
+
+        AppContext._instance = None
+
+    def _show(self, panel: CardConfigPanel, save: Any, stored: dict[str, Any] | None = None) -> None:
+        from decker.client.widgets.bindings_edit import BindingsSpec
+
+        defaults = {"press": {"action": "com.p.stop", "args": {}}}
+        panel.show_card_config(
+            _COUNTER_SCHEMA,
+            {},
+            dict(_DEFAULTS),
+            dict(_DEFAULTS),
+            save,
+            plugin_id="com.p",
+            bindings=BindingsSpec(defaults, stored or {}),
+        )
+
+    def _choose(self, panel: CardConfigPanel, gesture_index: int, action_id: str) -> None:
+        from decker.client.widgets.action_edit import ActionEdit
+
+        combo = panel._bindings_edit.findChildren(ActionEdit)[gesture_index]
+        index = combo.findData(action_id)
+        combo.setCurrentIndex(index)
+        combo.activated.emit(index)
+
+    def test_bindings_edit_marks_panel_dirty_and_save_sends_bindings(
+        self, qapp
+    ) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        received: list[dict[str, Any]] = []
+
+        def save(_s: dict[str, Any], _a: dict[str, Any], b: dict[str, Any]) -> SaveOutcome:
+            received.append(b)
+            return SaveOutcome(True)
+
+        self._show(panel, save)
+        assert_that(panel.is_dirty).is_false()
+
+        self._choose(panel, 1, "com.p.stop")
+        assert_that(panel.is_dirty).is_true()
+        _save_button(panel).click()
+
+        assert_that(received).is_equal_to([{"double_press": {"action": "com.p.stop"}}])
+
+    def test_identical_values_resent_keep_binding_edits(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._show(panel, lambda s, a, b: SaveOutcome(True))
+        self._choose(panel, 1, "com.p.stop")
+
+        self._show(panel, lambda s, a, b: SaveOutcome(True))
+
+        assert_that(panel.is_dirty).is_true()
+
+    def test_save_disabled_while_a_binding_argument_has_errors(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._show(panel, lambda s, a, b: SaveOutcome(True))
+        assert_that(_save_button(panel).isEnabled()).is_true()
+
+        self._choose(panel, 1, "com.p.go")  # its required url starts empty
+
+        assert_that(_save_button(panel).isEnabled()).is_false()
+        assert_that(panel._bindings_edit.errors()).is_equal_to({"double_press.url": "is required"})
+
+    def test_refused_save_routes_binding_errors_to_rows(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        outcome = SaveOutcome(False, {"bindings.press": "not allowed", "bindings.long_press.url": "bad url"})
+        self._show(panel, lambda s, a, b: outcome, stored={"long_press": {"action": "com.p.go", "args": {"url": "x"}}})
+        self._choose(panel, 0, "com.p.go")
+        panel._bindings_edit._rows["press"]._params._form._fields["url"].set("http://ok")
+
+        _save_button(panel).click()
+
+        shown = [lb.text() for lb in panel._bindings_edit.findChildren(QLabel) if not lb.isHidden() and lb.text()]
+        assert_that(shown).contains("not allowed", "bad url")
+        assert_that(_save_button(panel).isEnabled()).is_false()
