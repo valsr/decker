@@ -34,7 +34,8 @@ def _split(binding: Mapping[str, Any] | None) -> tuple[str, dict[str, Any]]:
     return (action if isinstance(action, str) else NOTHING_ACTION_ID), (dict(args) if isinstance(args, dict) else {})
 
 
-class _BindingRow(QWidget):  # pylint: disable=missing-function-docstring
+class _BindingRow(QWidget):
+    # pylint: disable=missing-function-docstring
 
     changed = pyqtSignal()
 
