@@ -4,6 +4,7 @@ import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import lru_cache
 from types import MappingProxyType
 from typing import Any
 
@@ -39,7 +40,7 @@ _RGBA_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$")
 _EXTRA_KEYS: dict[str, tuple[str, ...]] = {
     "int": ("min", "max", "step", "special_value"),
     "float": ("min", "max", "step", "decimals"),
-    "text": ("multiline", "template"),
+    "text": ("multiline", "template", "pattern", "min_length", "max_length"),
     "text_style": ("template",),
     "color": ("alpha",),
     "page": ("profile_field",),
@@ -88,12 +89,26 @@ class SettingField:
     label: str
     default: Any = None
     optional: bool = False
+    required: bool = False
     placeholder: str = ""
     help: str = ""
     extra: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}), hash=False)
 
 
 SettingEntry = SettingSection | SettingField
+
+
+class SettingsValidationError(ValueError):
+    """Raised by a strict `apply_schema`; `errors` maps each failing field key to a message."""
+
+    def __init__(self, errors: dict[str, str]) -> None:
+        super().__init__("; ".join(f"{key}: {message}" for key, message in errors.items()))
+        self.errors = errors
+
+
+@lru_cache(maxsize=256)
+def _compiled(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern)
 
 
 def _is_number(value: Any) -> bool:
@@ -150,7 +165,27 @@ def _parse_extra(type_: str, data: dict[str, Any], where: str) -> dict[str, Any]
     for name in ("multiline", "alpha", "template"):
         if name in extra and not isinstance(extra[name], bool):
             raise ValueError(f"{where}: '{name}' must be a boolean")
+    _check_text_rules(type_, data, extra, where)
     return extra
+
+
+def _check_text_rules(type_: str, data: dict[str, Any], extra: Mapping[str, Any], where: str) -> None:
+    for name in ("pattern", "min_length", "max_length"):
+        if name in data and type_ != "text":
+            raise ValueError(f"{where}: '{name}' is only valid on text fields")
+    if "pattern" in extra:
+        try:
+            if not isinstance(extra["pattern"], str):
+                raise TypeError
+            _compiled(extra["pattern"])
+        except (re.error, TypeError) as exc:
+            raise ValueError(f"{where}: 'pattern' must be a valid regular expression string") from exc
+    for name in ("min_length", "max_length"):
+        value = extra.get(name, 0)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"{where}: '{name}' must be a non-negative integer")
+    if extra.get("min_length", 0) > extra.get("max_length", extra.get("min_length", 0)):
+        raise ValueError(f"{where}: 'min_length' must not exceed 'max_length'")
 
 
 def _check_profile_field(type_: str, data: dict[str, Any], extra: Mapping[str, Any], where: str) -> None:
@@ -252,6 +287,8 @@ def _parse_field(data: dict[str, Any], where: str) -> SettingField:
     if not isinstance(data.get("optional", False), bool):
         raise ValueError(f"{where}: 'optional' must be a boolean")
     optional = data.get("optional", False)
+    if not isinstance(data.get("required", False), bool):
+        raise ValueError(f"{where}: 'required' must be a boolean")
     extra = _parse_extra(type_, data, where)
     return SettingField(
         key=key,
@@ -259,6 +296,7 @@ def _parse_field(data: dict[str, Any], where: str) -> SettingField:
         label=data.get("label", key),
         default=_parse_default(type_, data, optional, extra, where),
         optional=optional,
+        required=data.get("required", False),
         placeholder=data.get("placeholder", ""),
         help=data.get("help", ""),
         extra=MappingProxyType(extra),
@@ -296,8 +334,50 @@ def _check_profile_fields(entries: Sequence[SettingEntry], where: str) -> None:
             raise ValueError(f"{where}: profile_field {entry.extra['profile_field']!r} is not a profile field")
 
 
-def apply_schema(schema: Sequence[SettingEntry], values: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a complete, typed settings dict: unknown keys dropped, invalid or missing values defaulted."""
+def _is_empty(entry: SettingField, raw: Any) -> bool:
+    if entry.type == "icon" and isinstance(raw, dict):
+        return not raw.get("ref")
+    return raw is None or raw == ""
+
+
+def _field_error(entry: SettingField, raw: Any) -> str | None:
+    if _is_empty(entry, raw):
+        return "is required" if entry.required else None
+    if entry.type in _OBJECT_NORMALIZERS:
+        return None
+    value = _coerce(entry.type, raw, entry.extra)
+    if value is _MISSING:
+        return "is not a valid value"
+    return _text_error(entry.extra, value) if entry.type == "text" else None
+
+
+def _text_error(extra: Mapping[str, Any], value: str) -> str | None:
+    if "pattern" in extra and not _compiled(extra["pattern"]).fullmatch(value):
+        return f"does not match the pattern {extra['pattern']!r}"
+    if len(value) < extra.get("min_length", 0):
+        return f"must be at least {extra['min_length']} characters"
+    if len(value) > extra.get("max_length", len(value)):
+        return f"must be at most {extra['max_length']} characters"
+    return None
+
+
+def validate_settings(schema: Sequence[SettingEntry], values: Mapping[str, Any]) -> dict[str, str]:
+    """Return field key -> message for every value that breaks the schema; empty when all is valid."""
+    errors: dict[str, str] = {}
+    for entry in schema:
+        if not isinstance(entry, SettingField):
+            continue
+        raw = values.get(entry.key, _MISSING)
+        message = _field_error(entry, entry.default if raw is _MISSING else raw)
+        if message:
+            errors[entry.key] = message
+    return errors
+
+
+def apply_schema(schema: Sequence[SettingEntry], values: Mapping[str, Any], strict: bool = False) -> dict[str, Any]:
+    """Return a complete, typed settings dict; invalid values default, or raise when `strict`."""
+    if strict and (errors := validate_settings(schema, values)):
+        raise SettingsValidationError(errors)
     result: dict[str, Any] = {}
     for entry in schema:
         if not isinstance(entry, SettingField):
@@ -321,6 +401,8 @@ def _field_to_json(entry: SettingField) -> dict[str, Any]:
         out["default"] = entry.default
     if entry.optional:
         out["optional"] = True
+    if entry.required:
+        out["required"] = True
     if entry.placeholder:
         out["placeholder"] = entry.placeholder
     if entry.help:
