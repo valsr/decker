@@ -664,7 +664,6 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         return effective_bindings(live.card.bindings, normalize_stored_bindings(stored))
 
     def _allowed(self, live: _Live, binding: Binding) -> bool:
-        """Whether the binding can run from this card: its own plugin's action, or any installed global one."""
         if binding.is_nothing:
             return False
         found = self._action_runner.scope_of(binding.action)
@@ -774,7 +773,6 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         return live.card.id == _BLANK_CARD and press is not None and not press.is_nothing
 
     def _face_action(self, live: _Live) -> tuple[ActionSpec, bytes | None] | None:
-        """The press action a Blank key shows (its spec and icon), or None for any other key or a dead binding."""
         press = live.bindings.get("press")
         if not self._shows_action(live) or press is None or not self._allowed(live, press):
             return None
