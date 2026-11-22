@@ -8,9 +8,11 @@ from decker.plugin.settings_schema import (
     FIELD_TYPES,
     SettingField,
     SettingSection,
+    SettingsValidationError,
     apply_schema,
     parse_settings_schema,
     schema_to_json,
+    validate_settings,
 )
 
 COUNTER: list[dict[str, Any]] = [
@@ -508,3 +510,75 @@ def test_optional_sourced_choice_without_default_stays_none() -> None:
     entry = parse_settings_schema([{**SOURCED, "optional": True}], "here")[0]
     assert isinstance(entry, SettingField)
     assert_that(entry.default).is_none()
+
+
+def _text_schema(**rules: Any) -> tuple[Any, ...]:
+    return parse_settings_schema([{"key": "u", "type": "text", "label": "U", **rules}], "here")
+
+
+def test_required_flags_empty_null_and_missing_without_default() -> None:
+    schema = _text_schema(required=True)
+    for values in ({}, {"u": ""}, {"u": None}):
+        assert_that(validate_settings(schema, values)).contains_key("u")
+    assert_that(validate_settings(schema, {"u": "x"})).is_empty()
+
+
+def test_required_with_nonempty_default_accepts_missing_key() -> None:
+    schema = _text_schema(required=True, default="seed")
+    assert_that(validate_settings(schema, {})).is_empty()
+
+
+def test_pattern_uses_fullmatch() -> None:
+    schema = _text_schema(pattern="[a-z]+")
+    assert_that(validate_settings(schema, {"u": "abc"})).is_empty()
+    assert_that(validate_settings(schema, {"u": "abc1"})).contains_key("u")
+
+
+def test_invalid_pattern_is_a_parse_error() -> None:
+    with pytest.raises(ValueError, match="pattern"):
+        _text_schema(pattern="[")
+
+
+def test_min_and_max_length() -> None:
+    schema = _text_schema(min_length=3, max_length=4)
+    assert_that(validate_settings(schema, {"u": "ab"})["u"]).contains("3")
+    assert_that(validate_settings(schema, {"u": "abcde"})).contains_key("u")
+    assert_that(validate_settings(schema, {"u": "abc"})).is_empty()
+
+
+def test_length_rules_rejected_on_non_text_fields() -> None:
+    for rule in ({"pattern": "a"}, {"min_length": 1}, {"max_length": 1}):
+        with pytest.raises(ValueError, match=next(iter(rule))):
+            parse_settings_schema([{"key": "n", "type": "int", "label": "N", **rule}], "here")
+    with pytest.raises(ValueError, match="min_length"):
+        _text_schema(min_length=5, max_length=2)
+    with pytest.raises(ValueError, match="max_length"):
+        _text_schema(max_length=-1)
+
+
+def test_strict_apply_schema_raises_with_all_field_errors() -> None:
+    schema = parse_settings_schema(
+        [
+            {"key": "a", "type": "text", "label": "A", "required": True},
+            {"key": "b", "type": "int", "label": "B", "min": 1},
+        ],
+        "here",
+    )
+    with pytest.raises(SettingsValidationError) as caught:
+        apply_schema(schema, {"b": 0}, strict=True)
+    assert_that(caught.value.errors).contains_key("a", "b")
+
+
+def test_non_strict_apply_schema_still_falls_back() -> None:
+    schema = parse_settings_schema([{"key": "b", "type": "int", "label": "B", "default": 5, "min": 1}], "here")
+    assert_that(apply_schema(schema, {"b": 0})).is_equal_to({"b": 5})
+
+
+def test_invalid_typed_value_is_a_strict_error() -> None:
+    schema = parse_settings_schema([{"key": "b", "type": "int", "label": "B"}], "here")
+    assert_that(validate_settings(schema, {"b": "x"})).contains_key("b")
+
+
+def test_rules_round_trip_through_schema_to_json() -> None:
+    schema = _text_schema(required=True, pattern="[a-z]+", min_length=1, max_length=9, default="ab")
+    assert_that(parse_settings_schema(schema_to_json(schema), "w")).is_equal_to(schema)
