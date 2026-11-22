@@ -186,7 +186,7 @@ class TestProtocol4:
         result = runner.execute(_call("com.t.act.echo", {"n": "abc"}))
 
         assert_that(result.ok).is_false()
-        assert_that(result.error).starts_with("invalid arguments:").contains("n")
+        assert_that(result.error).starts_with("invalid arguments: n: ")
         supervisor.send.assert_not_called()
         assert_that(failures).is_length(1)
 

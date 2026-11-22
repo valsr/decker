@@ -23,7 +23,7 @@ from decker.common.platforms import HostPlatform, PlatformSpec
 from decker.plugin.events import PluginLoadFailedEvent
 from decker.plugin.gestures import Gesture
 from decker.plugin.loader import InstalledPlugin
-from decker.plugin.manifest import PluginManifest, StateSpec
+from decker.plugin.manifest import ActionSpec, PluginManifest, StateSpec
 from decker.plugin.protocol import Message
 from decker.plugin.runtime.supervisor import SupervisorPolicy
 from decker.plugin.settings_schema import parse_settings_schema
@@ -1436,6 +1436,33 @@ class TestTemplates:
         settings = self._tpl_settings(env, where="p3")
 
         assert_that(settings["where"]).is_equal_to({"page_id": "p3", "name": "Media", "index": 3, "profile_id": 0})
+
+    @staticmethod
+    def _action_spec() -> ActionSpec:
+        schema = parse_settings_schema(
+            [
+                {"key": "label", "type": "text", "label": "L", "template": True},
+                {"key": "where", "type": "page", "label": "W"},
+            ],
+            "t",
+        )
+        return ActionSpec(id="com.decker.rec.act", name="Act", settings=schema)
+
+    def test_action_args_without_a_device_are_unset_and_templates_expand_empty(self, env):
+        args = {"label": "On {page_name}", "where": "p3"}
+
+        delivered = env.manager._resolve_args(self._action_spec(), args, None)  # pylint: disable=protected-access
+
+        assert_that(delivered["label"]).is_equal_to("On ")
+        assert_that(delivered["where"]).is_equal_to({"page_id": "", "name": "", "index": 0, "profile_id": -1})
+
+    def test_action_args_with_a_device_resolve_against_its_pages(self, env):
+        args = {"label": "On {page_name}", "where": "p3"}
+
+        delivered = env.manager._resolve_args(self._action_spec(), args, "dev-1")  # pylint: disable=protected-access
+
+        assert_that(delivered["label"]).is_equal_to("On Settings")
+        assert_that(delivered["where"]).is_equal_to({"page_id": "p3", "name": "Media", "index": 3, "profile_id": 0})
 
     @pytest.mark.parametrize("stored", ["", "gone", 5, {"page_id": 5}, None])
     def test_deleted_or_unset_or_foreign_page_resolves_to_empty(self, env, stored):
