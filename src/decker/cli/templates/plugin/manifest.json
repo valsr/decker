@@ -17,7 +17,17 @@
         "name": "{{name}}",
         "tooltip": "Press to say hello",
         "icon": "icons/card",
-        "states": [{ "image": "icons/card" }]
+        "states": [{ "image": "icons/card" }],
+        "bindings": { "press": { "action": "{{plugin_id}}.hello" } }
+      }
+    ],
+    "actions": [
+      {
+        "id": "{{plugin_id}}.hello",
+        "name": "Say hello",
+        "tooltip": "Logs a greeting",
+        "scope": "plugin",
+        "icon": "icons/card"
       }
     ]
   }

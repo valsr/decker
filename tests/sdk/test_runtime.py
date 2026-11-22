@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from assertpy import assert_that
 
+import decker_plugin_sdk
 from decker_plugin_sdk import run
 from decker_plugin_sdk._context import CardContext
 
@@ -73,7 +74,7 @@ class Harness:
         )
         assert_that(self.recv()["event"]).is_equal_to("ready")
 
-    def appear(self, context: str = "c1", **settings: Any) -> None:
+    def appear(self, context: str = "c1", extra: dict[str, Any] | None = None, **settings: Any) -> None:
         self.send(
             "will_appear",
             context,
@@ -83,6 +84,7 @@ class Harness:
                 "key": {"index": 0, "column": 0, "row": 0},
                 "settings": settings,
                 "state": 0,
+                **(extra or {}),
             },
         )
 
@@ -113,62 +115,75 @@ def test_ready_after_hello(harness: Harness) -> None:
 def test_ping_answered_while_handler_blocks(harness: Harness) -> None:
     harness.hello()
     harness.appear(mode="block")
-    harness.send("press", "c1")
+    harness.send("key_down", "c1")
     harness.send("ping")
     assert_that(harness.recv()["event"]).is_equal_to("pong")
     harness.module.BLOCK.set()
     assert_that(harness.recv_until("set_title")["payload"]["title"]).is_equal_to("pressed")
 
 
-def test_press_dispatches_handler_and_set_title(harness: Harness) -> None:
+def test_key_down_dispatches_handler_and_set_title(harness: Harness) -> None:
     harness.hello()
     harness.appear()
-    harness.send("press", "c1")
+    harness.send("key_down", "c1")
     message = harness.recv()
     assert_that(message).is_equal_to({"event": "set_title", "context": "c1", "payload": {"title": "pressed"}})
 
 
-def test_set_gestures_sent_after_will_appear_when_overridden(harness: Harness) -> None:
-    harness.hello()
-    harness.appear(dbl=True)
-    message = harness.recv()
-    assert_that(message["event"]).is_equal_to("set_gestures")
-    assert_that(message["context"]).is_equal_to("c1")
-    assert_that(message["payload"]["gestures"]).is_equal_to(["double_press", "press"])
-
-
-def test_no_set_gestures_when_gestures_returns_none(harness: Harness) -> None:
+def test_press_event_is_ignored_by_the_sdk(harness: Harness) -> None:
     harness.hello()
     harness.appear()
-    harness.send("press", "c1")
-    assert_that(harness.recv()["event"]).is_equal_to("set_title")
+    for gesture in ("press", "double_press", "long_press"):
+        harness.send(gesture, "c1")
+    harness.send("ping")
+    assert_that(harness.recv()["event"]).is_equal_to("pong")
+    assert_that(harness.module.SEEN).is_empty()
 
 
-def test_settings_changed_resends_gestures(harness: Harness) -> None:
+def test_will_appear_and_settings_changed_fill_bindings(harness: Harness) -> None:
     harness.hello()
-    harness.appear()
-    harness.send("settings_changed", "c1", {"settings": {"dbl": True}})
-    assert_that(harness.recv()["event"]).is_equal_to("set_gestures")
+    binding = {"action": "a.b", "args": {"n": 1}}
+    harness.appear(extra={"bindings": {"press": binding}})
+    harness.send("key_down", "c1")
+    assert_that(harness.recv_until("set_title")["payload"]["title"]).is_equal_to("pressed")
+    assert_that(harness.module.BINDINGS[-1]).is_equal_to({"press": binding})
+    harness.send("settings_changed", "c1", {"settings": {}, "bindings": {"long_press": binding}})
+    harness.send("key_down", "c1")
+    assert_that(harness.recv_until("set_title")["payload"]["title"]).is_equal_to("pressed")
+    assert_that(harness.module.BINDINGS[-1]).is_equal_to({"long_press": binding})
+
+
+def test_will_appear_fills_size(harness: Harness) -> None:
+    harness.hello()
+    harness.appear(extra={"size": [96, 48]})
+    harness.send("key_down", "c1")
+    harness.recv_until("set_title")
+    assert_that(harness.module.SIZES[-1]).is_equal_to((96, 48))
+
+
+def test_sdk_exports_no_gesture() -> None:
+    assert_that(hasattr(decker_plugin_sdk, "Gesture")).is_false()
+    assert_that(decker_plugin_sdk.__all__).does_not_contain("Gesture")
 
 
 def test_handler_exception_logged_not_fatal(harness: Harness) -> None:
     harness.hello()
     harness.appear(mode="boom")
-    harness.send("press", "c1")
+    harness.send("key_down", "c1")
     log = harness.recv()
     assert_that(log["event"]).is_equal_to("log")
     assert_that(log["payload"]["level"]).is_equal_to("error")
     harness.send("settings_changed", "c1", {"settings": {}})
-    harness.send("press", "c1")
+    harness.send("key_down", "c1")
     assert_that(harness.recv_until("set_title")["payload"]["title"]).is_equal_to("pressed")
 
 
 def test_events_for_one_context_run_in_order(harness: Harness) -> None:
     harness.hello()
     harness.appear(mode="slow", tag="first")
-    harness.send("press", "c1")
+    harness.send("key_down", "c1")
     harness.send("settings_changed", "c1", {"settings": {"tag": "second"}})
-    harness.send("press", "c1")
+    harness.send("key_down", "c1")
     harness.recv_until("set_title")
     harness.recv_until("set_title")
     assert_that(harness.module.SEEN).is_equal_to(["first", "second"])
@@ -258,11 +273,14 @@ def test_shutdown_stops_promptly_with_blocked_handler() -> None:
         _feed(proc, {"event": "hello", "payload": {}})
         assert_that(json.loads(proc.stdout.readline())["event"]).is_equal_to("ready")
         _feed(
-            proc, _appear("c1", mode="block"), {"event": "press", "context": "c1"}, {"event": "press", "context": "c1"}
+            proc,
+            _appear("c1", mode="block"),
+            {"event": "key_down", "context": "c1"},
+            {"event": "key_down", "context": "c1"},
         )
         _feed(proc, {"event": "shutdown"})
         assert_that(proc.wait(2)).is_equal_to(0)
-        assert_that(proc.stdout.read()).is_equal_to(b"")  # queued press never ran or wrote
+        assert_that(proc.stdout.read()).is_equal_to(b"")  # queued key_down never ran or wrote
 
 
 def test_stray_fd1_writes_do_not_corrupt_protocol() -> None:
@@ -270,7 +288,7 @@ def test_stray_fd1_writes_do_not_corrupt_protocol() -> None:
         assert proc.stdout and proc.stderr
         _feed(proc, {"event": "hello", "payload": {}})
         assert_that(json.loads(proc.stdout.readline())["event"]).is_equal_to("ready")
-        _feed(proc, _appear("c1", mode="junk"), {"event": "press", "context": "c1"})
+        _feed(proc, _appear("c1", mode="junk"), {"event": "key_down", "context": "c1"})
         assert_that(json.loads(proc.stdout.readline())["payload"]["title"]).is_equal_to("pressed")
         _feed(proc, {"event": "shutdown"})
         assert_that(proc.wait(5)).is_equal_to(0)
