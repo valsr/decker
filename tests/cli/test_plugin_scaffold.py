@@ -18,6 +18,11 @@ def test_scaffold_creates_valid_plugin(tmp_path):
     assert_that(manifest["format"]).is_equal_to(3)
     assert_that(PluginManifest.load(folder / "manifest.json").format).is_equal_to(3)
     assert_that(manifest["contributes"]["cards"][0]["id"]).is_equal_to("com.example.hello-world.card")
+    action_id = "com.example.hello-world.hello"
+    assert_that(manifest["contributes"]["actions"][0]["id"]).is_equal_to(action_id)
+    assert_that(manifest["contributes"]["actions"][0]["scope"]).is_equal_to("plugin")
+    assert_that(manifest["contributes"]["cards"][0]["bindings"]["press"]["action"]).is_equal_to(action_id)
+    assert_that((folder / "plugin.py").read_text()).contains(f'@action("{action_id}")')
     assert_that((folder / "plugin.py").read_text()).contains('@card("com.example.hello-world.card")')
     assert_that((folder / "icons" / "action.png").read_bytes()[:4]).is_equal_to(b"\x89PNG")
 

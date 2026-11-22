@@ -10,7 +10,6 @@ from typing import Any, BinaryIO, TypeVar
 
 from . import _options, _variables
 from ._context import MAX_LINE_BYTES, CardContext, encode_line
-from ._gestures import Gesture
 
 WORKERS = 4
 PLUGIN_WIDE = "\0plugin"  # queue key for context-less events
@@ -35,24 +34,11 @@ class DeckerPlugin:
     def on_key_up(self, ctx: CardContext) -> None:
         """Raw key up."""
 
-    def on_press(self, ctx: CardContext) -> None:
-        """Press gesture."""
-
-    def on_double_press(self, ctx: CardContext) -> None:
-        """Double-press gesture."""
-
-    def on_long_press(self, ctx: CardContext) -> None:
-        """Long-press gesture."""
-
     def on_settings_changed(self, ctx: CardContext) -> None:
         """The key's settings changed."""
 
     def on_global_settings_changed(self, ctx: CardContext) -> None:
         """The plugin's global settings changed."""
-
-    def gestures(self, settings: dict[str, Any]) -> frozenset[Gesture] | None:  # pylint: disable=unused-argument
-        """Gestures for this key; None keeps the manifest's list."""
-        return None
 
 
 def card(card_id: str) -> "Callable[[_T], _T]":
@@ -93,9 +79,6 @@ _HANDLERS = {
     "will_disappear": "on_will_disappear",
     "key_down": "on_key_down",
     "key_up": "on_key_up",
-    "press": "on_press",
-    "double_press": "on_double_press",
-    "long_press": "on_long_press",
     "settings_changed": "on_settings_changed",
     "global_settings_changed": "on_global_settings_changed",
 }
@@ -265,19 +248,24 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         plugin, ctx = entry
         if event == "settings_changed":
             ctx.settings = self._dict(payload.get("settings"))
-        elif event in ("key_down", "key_up", "press", "double_press", "long_press"):
+            ctx.bindings = self._dict(payload.get("bindings"))
+        elif event in ("key_down", "key_up"):
             ctx.state = payload.get("state", ctx.state) if isinstance(payload.get("state"), int) else ctx.state
         try:
             getattr(plugin, _HANDLERS[event])(ctx)
         finally:
             if event == "will_disappear":
                 self._contexts.pop(context, None)
-        if event in ("will_appear", "settings_changed"):
-            self._send_gestures(plugin, ctx)
 
     @staticmethod
     def _dict(value: Any) -> dict[str, Any]:
         return dict(value) if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _size(value: Any) -> tuple[int, int]:
+        if isinstance(value, (list, tuple)) and len(value) == 2 and all(isinstance(v, int) for v in value):
+            return (value[0], value[1])
+        return (72, 72)
 
     def _create(self, context: str, payload: dict[str, Any]) -> None:
         card_id = payload.get("card")
@@ -295,6 +283,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             column=int(key.get("column", 0)),
             row=int(key.get("row", 0)),
             settings=self._dict(payload.get("settings")),
+            bindings=self._dict(payload.get("bindings")),
+            size=self._size(payload.get("size")),
             global_settings=self._global_settings,
             state=state if isinstance(state, int) else 0,
             _send=self.send,
@@ -307,11 +297,6 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         for context, (_, ctx) in list(self._contexts.items()):
             ctx.global_settings = settings
             self._enqueue(context, {"event": "global_settings_changed", "context": context, "payload": payload})
-
-    def _send_gestures(self, plugin: DeckerPlugin, ctx: CardContext) -> None:
-        gestures = plugin.gestures(ctx.settings)
-        if gestures is not None:
-            self.send("set_gestures", ctx.context, {"gestures": sorted(str(g) for g in gestures)})
 
 
 def run(

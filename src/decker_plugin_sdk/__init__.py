@@ -1,7 +1,6 @@
 """Dependency-free SDK for writing Decker plugins."""
 
 from ._context import CardContext
-from ._gestures import Gesture
 from ._options import options
 from ._runtime import DeckerPlugin, action, card, run
 from ._variables import (
@@ -19,7 +18,6 @@ from ._variables import (
 __all__ = [
     "CardContext",
     "DeckerPlugin",
-    "Gesture",
     "PluginContext",
     "action",
     "card",

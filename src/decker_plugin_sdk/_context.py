@@ -33,6 +33,8 @@ class CardContext:
     row: int
     settings: dict[str, Any] = field(default_factory=dict)
     global_settings: dict[str, Any] = field(default_factory=dict)
+    bindings: dict[str, Any] = field(default_factory=dict)
+    size: tuple[int, int] = (72, 72)
     state: int = 0
     _send: Sender = field(default=lambda event, context, payload: None, repr=False, compare=False)
 
