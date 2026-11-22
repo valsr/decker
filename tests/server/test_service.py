@@ -81,6 +81,8 @@ def store():
 def manager():
     mock = MagicMock()
     mock.is_builtin.return_value = False
+    mock.validate_card_settings.return_value = {}
+    mock.validate_bindings.return_value = {}
     mock.complete_settings.side_effect = lambda _target, settings: settings
     mock.appearance_for.side_effect = lambda _target, stored: (dict(stored), {"background": "#000000"})
     return mock
@@ -263,13 +265,81 @@ class TestKeyUpdateSettings:
         target = _make_target()
         store.assign("dev1", P1, 0, target, {"step": 1})
         result = service.key_update_settings("dev1", P1, 0, json.dumps({"step": 5}))
-        assert_that(result).is_true()
+        assert_that(json.loads(result)["ok"]).is_true()
         manager.dispatch_settings_changed.assert_called_once_with(target)
 
     def test_update_settings_returns_false_for_unassigned_slot(self, service, manager):
         result = service.key_update_settings("dev1", P1, 99, json.dumps({"step": 1}))
-        assert_that(result).is_false()
+        assert_that(json.loads(result)["ok"]).is_false()
         manager.dispatch_settings_changed.assert_not_called()
+
+    def test_key_update_settings_ok_shape(self, service, manager, store) -> None:
+        store.assign("dev1", P1, 0, _make_target(), {})
+        manager.validate_card_settings.return_value = {}
+
+        result = json.loads(service.key_update_settings("dev1", P1, 0, json.dumps({"step": 5})))
+
+        assert_that(result).is_equal_to({"ok": True, "errors": {}})
+
+    def test_key_update_settings_returns_field_errors_and_does_not_persist(self, service, manager, store) -> None:
+        store.assign("dev1", P1, 0, _make_target(), {"step": 1})
+        manager.validate_card_settings.return_value = {"step": "is required"}
+
+        result = json.loads(service.key_update_settings("dev1", P1, 0, json.dumps({"step": 5})))
+
+        assert_that(result).is_equal_to({"ok": False, "errors": {"step": "is required"}})
+        assert_that(store.get("dev1", P1, 0).settings).is_equal_to({"step": 1})
+        manager.dispatch_settings_changed.assert_not_called()
+
+
+class TestKeyUpdateBindings:
+    _BINDINGS = {"press": {"action": "com.p.act", "args": {"n": 1}}}
+
+    def test_key_update_bindings_persists_and_updates_live_card(self, service, manager, store) -> None:
+        target = _make_target()
+        store.assign("dev1", P1, 0, target, {})
+        manager.validate_bindings.return_value = {}
+
+        result = json.loads(service.key_update_bindings("dev1", P1, 0, json.dumps(self._BINDINGS)))
+
+        assert_that(result).is_equal_to({"ok": True, "errors": {}})
+        assert_that(store.get("dev1", P1, 0).bindings).is_equal_to(self._BINDINGS)
+        manager.set_bindings.assert_called_once_with(target, self._BINDINGS)
+
+    def test_key_update_bindings_rejects_bad_args_with_gesture_prefixed_keys(self, service, manager, store) -> None:
+        store.assign("dev1", P1, 0, _make_target(), {})
+        manager.validate_bindings.return_value = {"press.n": "is required"}
+
+        result = json.loads(service.key_update_bindings("dev1", P1, 0, json.dumps(self._BINDINGS)))
+
+        assert_that(result).is_equal_to({"ok": False, "errors": {"press.n": "is required"}})
+        assert_that(store.get("dev1", P1, 0).bindings).is_equal_to({})
+        manager.set_bindings.assert_not_called()
+
+    def test_key_update_bindings_refuses_foreign_plugin_scoped_action(self, service, manager, store) -> None:
+        store.assign("dev1", P1, 0, _make_target(), {})
+        manager.validate_bindings.return_value = {"press": "belongs to another plugin"}
+
+        result = json.loads(service.key_update_bindings("dev1", P1, 0, json.dumps(self._BINDINGS)))
+
+        assert_that(result["ok"]).is_false()
+        assert_that(result["errors"]).contains_key("press")
+
+    def test_key_update_bindings_keeps_uninstalled_action(self, service, manager, store) -> None:
+        store.assign("dev1", P1, 0, _make_target(), {})
+        manager.validate_bindings.return_value = {}
+
+        result = json.loads(service.key_update_bindings("dev1", P1, 0, json.dumps(self._BINDINGS)))
+
+        assert_that(result["ok"]).is_true()
+        assert_that(store.get("dev1", P1, 0).bindings).is_equal_to(self._BINDINGS)
+
+    def test_key_update_bindings_on_unassigned_slot_is_not_ok(self, service, manager) -> None:
+        manager.validate_bindings.return_value = {}
+
+        result = json.loads(service.key_update_bindings("dev1", P1, 9, json.dumps(self._BINDINGS)))
+
+        assert_that(result["ok"]).is_false()
 
 
 class TestKeyUpdateAppearance:
@@ -577,7 +647,7 @@ class TestKeysOnInactivePage:
     def test_update_settings_on_inactive_page_does_not_notify_plugin(self, service, manager, store, page2):
         store.assign("dev1", page2, 0, _make_target(), {"step": 1})
 
-        assert_that(service.key_update_settings("dev1", page2, 0, json.dumps({"step": 2}))).is_true()
+        assert_that(json.loads(service.key_update_settings("dev1", page2, 0, json.dumps({"step": 2})))["ok"]).is_true()
 
         manager.dispatch_settings_changed.assert_not_called()
         manager.store_settings.assert_called_once()

@@ -557,6 +557,20 @@ class TestKeyInteractions:
         view._save_key_settings(2, {"step": 5, "max": 10})  # pylint: disable=protected-access
         mock_cm.call.assert_called_once_with("key_update_settings", "dev1", "p1", 2, json.dumps({"step": 5, "max": 10}))
 
+    def test_save_key_settings_reads_ok_from_the_json_result(
+        self, qapp, tmp_path
+    ) -> None:  # pylint: disable=unused-argument
+        view = _make_view(tmp_path)
+        _active_dev1(view)
+        mock_cm = MagicMock()
+        AppContext.get().connection_manager = mock_cm
+        mock_cm.call.return_value = json.dumps({"ok": False, "errors": {"step": "is required"}})
+
+        assert_that(view._save_key_settings(2, {"step": 5})).is_false()  # pylint: disable=protected-access
+
+        mock_cm.call.return_value = json.dumps({"ok": True, "errors": {}})
+        assert_that(view._save_key_settings(2, {"step": 5})).is_true()  # pylint: disable=protected-access
+
     def test_selecting_key_shows_schema_form_for_its_action(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
         _active_dev1(view)

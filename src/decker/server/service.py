@@ -689,26 +689,55 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         pm.activate_card(assignment.target, assignment.appearance)
 
     @exposed
-    def key_update_settings(self, device_id: str, page_id: str, key_index: int, settings_json: str) -> bool:
+    @api_response
+    def key_update_settings(self, device_id: str, page_id: str, key_index: int, settings_json: str) -> dict:
         """
-        Update per-key card settings; a live card is notified via on_settings_changed.
+        Validate and save per-key card settings; a live card is notified via on_settings_changed.
 
         Returns:
-            bool: True if the slot was assigned and settings were persisted.
+            dict: ``{"ok": bool, "errors": {field: message}}``; on errors nothing is persisted.
         """
         if self._context is None:
-            return False
+            return {"ok": False, "errors": {}}
         settings: dict[str, Any] = json.loads(settings_json)
         key_store = self._context.key_assignment_store
-        if not key_store.update_settings(device_id, page_id, key_index, settings):
-            return False
         assignment = key_store.get(device_id, page_id, key_index)
         if assignment is None:
-            return False
+            return {"ok": False, "errors": {}}
+        errors = self._context.plugin_manager.validate_card_settings(assignment.target, settings)
+        if errors:
+            return {"ok": False, "errors": errors}
+        if not key_store.update_settings(device_id, page_id, key_index, settings):
+            return {"ok": False, "errors": {}}
         self._context.plugin_manager.store_settings(assignment.target, settings)
         if self._is_active_page(device_id, page_id):
             self._context.plugin_manager.dispatch_settings_changed(assignment.target)
-        return True
+        return {"ok": True, "errors": {}}
+
+    @exposed
+    @api_response
+    def key_update_bindings(self, device_id: str, page_id: str, key_index: int, bindings_json: str) -> dict:
+        """
+        Validate and save a key's gesture bindings; a live card re-registers its gestures.
+
+        Returns:
+            dict: ``{"ok": bool, "errors": {"<gesture>[.<arg>]": message}}``; on errors nothing is persisted.
+        """
+        if self._context is None:
+            return {"ok": False, "errors": {}}
+        stored = json.loads(bindings_json)
+        key_store = self._context.key_assignment_store
+        assignment = key_store.get(device_id, page_id, key_index)
+        if assignment is None or not isinstance(stored, dict):
+            return {"ok": False, "errors": {}}
+        errors = self._context.plugin_manager.validate_bindings(assignment.target, stored)
+        if errors:
+            return {"ok": False, "errors": errors}
+        if not key_store.update_bindings(device_id, page_id, key_index, stored):
+            return {"ok": False, "errors": {}}
+        if self._is_active_page(device_id, page_id):
+            self._context.plugin_manager.set_bindings(assignment.target, stored)
+        return {"ok": True, "errors": {}}
 
     @exposed
     def key_update_appearance(self, device_id: str, page_id: str, key_index: int, appearance_json: str) -> bool:

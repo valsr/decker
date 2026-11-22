@@ -281,3 +281,44 @@ class TestWillAppear:
         assert_that(payload["bindings"]).contains_key("press", "double_press", "long_press")
         assert_that(payload["bindings"]["press"]).is_equal_to({"action": _INCREMENT, "args": {"step": 2}})
         assert_that(payload["bindings"]["long_press"]).is_equal_to({"action": NOTHING_ACTION_ID, "args": {}})
+
+
+class TestValidation:
+    def test_card_settings_errors_are_keyed_by_field(self, env) -> None:
+        errors = env.manager.validate_card_settings(COUNTER_TARGET, {"step": "many"})
+
+        assert_that(errors).contains_key("step")
+        assert_that(env.manager.validate_card_settings(COUNTER_TARGET, {"step": 3})).is_empty()
+
+    def test_bad_args_are_keyed_by_gesture_and_arg(self, env) -> None:
+        errors = env.manager.validate_bindings(COUNTER_TARGET, {"press": {"action": _INCREMENT, "args": {"step": "x"}}})
+
+        assert_that(errors).contains_key("press.step")
+
+    def test_a_foreign_plugin_scoped_action_is_refused_but_global_is_fine(self, env) -> None:
+        stored = {"press": {"action": _INCREMENT}, "long_press": {"action": _BUMP}, "double_press": _NOTHING}
+
+        errors = env.manager.validate_bindings(REC_TARGET, stored)
+
+        assert_that(errors).contains_key("press").does_not_contain_key("long_press", "double_press")
+
+    def test_an_uninstalled_action_and_do_nothing_are_not_errors(self, env) -> None:
+        stored = {"press": {"action": "com.gone.action"}, "long_press": _NOTHING}
+
+        assert_that(env.manager.validate_bindings(COUNTER_TARGET, stored)).is_empty()
+
+
+class TestListings:
+    def test_cards_carry_their_default_bindings(self, env) -> None:
+        card = next(c for c in env.manager.list_cards() if c["card_uuid"] == COUNTER_TARGET.card_uuid)
+
+        assert_that(card).does_not_contain_key("action")
+        assert_that(card["bindings"]["press"]).is_equal_to({"action": _INCREMENT, "args": {}})
+        assert_that(card["bindings"]["double_press"]).is_equal_to({"action": NOTHING_ACTION_ID, "args": {}})
+
+    def test_actions_carry_scope_and_returns(self, env) -> None:
+        listed = {a["action_uuid"]: a for a in env.manager.list_actions()}
+
+        assert_that(listed[_BUMP]["scope"]).is_equal_to("global")
+        assert_that(listed[_INCREMENT]["scope"]).is_equal_to("plugin")
+        assert_that(listed[_INCREMENT]).contains_key("returns")
