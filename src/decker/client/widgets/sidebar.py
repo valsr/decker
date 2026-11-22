@@ -23,7 +23,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from decker.client.card_icons import asset_pixmap, card_pixmap
+from decker.client.card_icons import asset_pixmap, card_pixmap, decode_icon
+from decker.plugin.bindings import NOTHING_ACTION_ID
 
 CARD_MIME_TYPE = "application/x-decker-card"
 ICON_SIZE = 48
@@ -293,15 +294,16 @@ class SidebarWidget(QFrame):  # pylint: disable=too-many-instance-attributes
         return [self._tabs.tabText(i) for i in range(self._tabs.count())]
 
     def set_cards(self, cards: list[dict[str, Any]]) -> None:
-        """Replace the full card list (presets of actions change the Actions tab too)."""
+        """Replace the full card list."""
         self._cards = cards
         self._card_icons = {}
         self._cards_pane.set_entries(cards)
-        self._actions_pane.refresh()
 
     def set_actions(self, actions: list[dict[str, Any]]) -> None:
-        """Replace the full action list."""
-        self._actions_pane.set_entries(actions)
+        """Replace the action list; only global actions other than Do Nothing can be dropped on a key."""
+        self._actions_pane.set_entries(
+            [a for a in actions if a.get("scope") == "global" and a.get("action_uuid") != NOTHING_ACTION_ID]
+        )
 
     def _update_placeholder(self) -> None:
         self._search.setPlaceholderText("Search cards..." if self._tabs.currentIndex() == 0 else "Search actions...")
@@ -316,22 +318,15 @@ class SidebarWidget(QFrame):  # pylint: disable=too-many-instance-attributes
     def _card_drag(card: dict[str, Any]) -> tuple[dict[str, Any], QPixmap | None]:
         return card, None
 
-    def _preset_of(self, action_id: str) -> dict[str, Any] | None:
-        """The ready-made card a plugin ships for this action, if there is one."""
-        return next((c for c in self._cards if c.get("action") == action_id), None)
-
     def _action_icon(self, action: dict[str, Any]) -> QIcon:
-        preset = self._preset_of(str(action.get("action_uuid", "")))
-        if preset is not None:
-            return self._card_icon(preset)
-        return _tile_icon(asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint))
+        pixmap = decode_icon(str(action.get("icon_b64") or ""))
+        if pixmap is None:
+            pixmap = asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint)
+        return _tile_icon(pixmap)
 
     def _action_drag(self, action: dict[str, Any]) -> tuple[dict[str, Any], QPixmap | None]:
-        """What dragging an action drops: its ready-made card, else a Blank card carrying the action as ``preset_action``."""
+        """What dragging an action drops: a Blank card named for it, carrying the action as ``preset_action``."""
         action_id = str(action.get("action_uuid", ""))
-        preset = self._preset_of(action_id)
-        if preset is not None:
-            return preset, None
         blank = {
             "plugin_uuid": _BLANK_PLUGIN_ID,
             "plugin_name": "Blank",
@@ -339,4 +334,5 @@ class SidebarWidget(QFrame):  # pylint: disable=too-many-instance-attributes
             "card_name": str(action.get("action_name", "")),
             "preset_action": action_id,
         }
-        return blank, asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint)
+        icon = decode_icon(str(action.get("icon_b64") or ""))
+        return blank, icon or asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint)

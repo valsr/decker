@@ -515,7 +515,7 @@ class TestKeyInteractions:
         assert_that(mock_cm.call.call_args[0][:4]).is_equal_to(("key_assign", "dev1", "p1", 4))
         assert_that(view._key_slots).contains_key(4)  # pylint: disable=protected-access
 
-    def test_dropping_an_action_assigns_a_blank_card_with_empty_settings(
+    def test_dropping_an_action_assigns_blank_with_press_bound(
         self, qapp, tmp_path
     ) -> None:  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
@@ -534,10 +534,13 @@ class TestKeyInteractions:
             ("key_assign", "dev1", "p1", 2, "com.decker.blank", "com.decker.blank.blank", args[6])
         )
         assert_that(json.loads(args[7])).is_equal_to({})
+        assert_that(json.loads(args[8])).is_equal_to({"press": {"action": "com.t.mute", "args": {}}})
 
     def test_action_list_event_fills_the_actions_tab(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
-        actions = [{"plugin_uuid": "p", "plugin_name": "P", "action_uuid": "p.a", "action_name": "Do"}]
+        actions = [
+            {"plugin_uuid": "p", "plugin_name": "P", "action_uuid": "p.a", "action_name": "Do", "scope": "global"}
+        ]
 
         view.handle_event(ActionListUpdatedEvent(actions=actions))
 
