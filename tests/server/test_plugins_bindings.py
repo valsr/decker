@@ -11,6 +11,7 @@ from decker.plugin.gestures import Gesture
 from decker.plugin.icons import read_icon
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.protocol import Message
+from decker.plugin.target import CardTarget
 from decker.server.appearance import compose_key_image, resolve_appearance
 from tests.server.test_plugins import (
     _COUNTER,
@@ -43,7 +44,7 @@ def _counter_log(env: Env, event: str | None = None) -> list[dict[str, Any]]:
     return [m for m in messages if event is None or m["event"] == event]
 
 
-def _live(env: Env, context: str = "ctx-1"):
+def _live(env: Env, context: str = "ctx-1") -> Any:
     return env.manager._live[context]  # pylint: disable=protected-access
 
 
@@ -51,7 +52,7 @@ def _registered(env: Env, context: str = "ctx-1") -> frozenset[Gesture]:
     return env.manager._registered(_live(env, context))  # pylint: disable=protected-access
 
 
-def _tap(env: Env, target=COUNTER_TARGET) -> None:
+def _tap(env: Env, target: CardTarget = COUNTER_TARGET) -> None:
     env.manager.dispatch_key_down(target)
     env.manager.dispatch_key_up(target)
 
@@ -62,7 +63,7 @@ def _counter_ready(env: Env) -> None:
 
 
 class TestDispatch:
-    def test_press_runs_the_default_bound_action_in_the_plugin(self, env):
+    def test_press_runs_the_default_bound_action_in_the_plugin(self, env) -> None:
         _counter_ready(env)
         first = env.image()
 
@@ -77,7 +78,7 @@ class TestDispatch:
         assert_that(payload["card"]["key"]).is_equal_to({"index": 0, "column": 0, "row": 0})
         assert_that(payload["card"]["size"]).is_equal_to([72, 72])
 
-    def test_cards_no_longer_receive_press_events(self, env):
+    def test_cards_no_longer_receive_press_events(self, env) -> None:
         _counter_ready(env)
 
         _tap(env)
@@ -90,7 +91,7 @@ class TestDispatch:
         events = {m["event"] for m in _counter_log(env)}
         assert_that(events).does_not_contain("press", "double_press", "long_press")
 
-    def test_key_down_and_up_still_reach_the_card(self, env):
+    def test_key_down_and_up_still_reach_the_card(self, env) -> None:
         _counter_ready(env)
 
         _tap(env)
@@ -98,12 +99,12 @@ class TestDispatch:
         assert _wait_for(lambda: _counter_log(env, "key_up"))
         assert_that(_counter_log(env, "key_down")).is_not_empty()
 
-    def test_nothing_gesture_is_not_registered(self, env):
+    def test_nothing_gesture_is_not_registered(self, env) -> None:
         _counter_ready(env)
 
         assert_that(_registered(env)).is_equal_to(frozenset({Gesture.PRESS, Gesture.LONG_PRESS}))
 
-    def test_press_fires_at_once_when_double_press_is_nothing(self, env):
+    def test_press_fires_at_once_when_double_press_is_nothing(self, env) -> None:
         _counter_ready(env)
         first = env.image()
 
@@ -111,7 +112,7 @@ class TestDispatch:
 
         assert _wait_for(lambda: env.image() != first, timeout=0.15)
 
-    def test_press_is_held_back_when_double_press_is_bound(self, env):
+    def test_press_is_held_back_when_double_press_is_bound(self, env) -> None:
         env.manager.set_bindings(COUNTER_TARGET, {"double_press": {"action": _INCREMENT, "args": {"step": 5}}})
         _counter_ready(env)
         first = env.image()
@@ -122,7 +123,7 @@ class TestDispatch:
 
         assert _wait_for(lambda: env.image() != first)
 
-    def test_stored_binding_overrides_default(self, env):
+    def test_stored_binding_overrides_default(self, env) -> None:
         env.manager.set_bindings(COUNTER_TARGET, {"double_press": {"action": _INCREMENT, "args": {"step": 5}}})
         _counter_ready(env)
 
@@ -134,7 +135,7 @@ class TestDispatch:
         assert_that(payload["input"]).is_equal_to("double_press")
         assert_that(payload["args"]).is_equal_to({"step": 5})
 
-    def test_invalid_stored_args_raise_action_failed_with_field_error(self, env):
+    def test_invalid_stored_args_raise_action_failed_with_field_error(self, env) -> None:
         env.manager.set_bindings(COUNTER_TARGET, {"press": {"action": _INCREMENT, "args": {"step": 0}}})
         _counter_ready(env)
 
@@ -146,7 +147,7 @@ class TestDispatch:
         assert_that(failure["error"]).contains("step")
         assert_that(_counter_log(env, "run_action")).is_empty()
 
-    def test_static_card_binding_a_global_action_runs_it(self, env):
+    def test_static_card_binding_a_global_action_runs_it(self, env) -> None:
         env.manager.set_bindings(_BLANK_TARGET, {"press": {"action": _BUMP}})
         env.manager.activate_card(_BLANK_TARGET)
 
@@ -158,7 +159,7 @@ class TestDispatch:
         assert_that(payload["card"]["context"]).is_equal_to("ctx-blank")
         assert_that(payload["card"]["plugin"]).is_equal_to("com.decker.blank")
 
-    def test_foreign_plugin_scoped_binding_is_not_registered(self, env):
+    def test_foreign_plugin_scoped_binding_is_not_registered(self, env) -> None:
         env.manager.set_bindings(REC_TARGET, {"press": {"action": _INCREMENT}})
         env.manager.activate_card(REC_TARGET)
 
@@ -169,18 +170,21 @@ class TestDispatch:
         assert_that(_counter_log(env)).is_empty()
         assert_that(_live(env).bindings["press"].action).is_equal_to(_INCREMENT)  # kept as stored
 
-    def test_set_gestures_is_ignored(self, env):
-        env.manager.activate_card(REC_TARGET)
+    def test_set_gestures_is_ignored(self, env) -> None:
+        _counter_ready(env)
+        first = env.image()
 
         env.manager._on_plugin_message(  # pylint: disable=protected-access
-            "com.decker.rec", Message("set_gestures", "ctx-1", {"gestures": ["press", "long_press"]})
+            _COUNTER, Message("set_gestures", "ctx-1", {"gestures": ["double_press"]})
         )
 
-        assert_that(_registered(env)).is_empty()
+        assert_that(_registered(env)).is_equal_to(frozenset({Gesture.PRESS, Gesture.LONG_PRESS}))
+        _tap(env)
+        assert _wait_for(lambda: env.image() != first, timeout=0.3)
 
 
 class TestBindingChanges:
-    def test_set_bindings_on_live_card_reregisters_and_sends_settings_changed_with_bindings(self, env):
+    def test_set_bindings_on_live_card_reregisters_and_sends_settings_changed_with_bindings(self, env) -> None:
         _counter_ready(env)
 
         env.manager.set_bindings(COUNTER_TARGET, {"press": {"action": _RESET}, "long_press": _NOTHING})
@@ -191,7 +195,7 @@ class TestBindingChanges:
         assert_that(sent["long_press"]["action"]).is_equal_to(NOTHING_ACTION_ID)
         assert_that(_registered(env)).is_equal_to(frozenset({Gesture.PRESS}))
 
-    def test_binding_to_uninstalled_action_acts_as_nothing_and_survives_reinstall(self, env):
+    def test_binding_to_uninstalled_action_acts_as_nothing_and_survives_reinstall(self, env) -> None:
         env.manager.set_bindings(_BLANK_TARGET, {"press": {"action": _BUMP}})
         env.manager.activate_card(_BLANK_TARGET)
         assert_that(_registered(env, "ctx-blank")).is_equal_to(frozenset({Gesture.PRESS}))
@@ -211,7 +215,7 @@ class TestBindingChanges:
 
         assert _wait_for(lambda: _counter_log(env, "run_action"))
 
-    def test_untouched_gesture_follows_new_manifest_default_and_explicit_nothing_stays(self, env):
+    def test_untouched_gesture_follows_new_manifest_default_and_explicit_nothing_stays(self, env) -> None:
         env.manager.set_bindings(COUNTER_TARGET, {"long_press": _NOTHING})
         _counter_ready(env)
         plugin = env.manager._plugins[_COUNTER]  # pylint: disable=protected-access
@@ -238,7 +242,7 @@ class TestBindingChanges:
 
 
 class TestBlankFace:
-    def test_blank_shows_press_action_icon_and_name(self, env):
+    def test_blank_shows_press_action_icon_and_name(self, env) -> None:
         env.manager.activate_card(_BLANK_TARGET)
         plain = env.image(3)
         assert_that(plain).is_equal_to(compose_key_image(resolve_appearance({}, {}), None, ""))
@@ -249,13 +253,13 @@ class TestBlankFace:
         expected = compose_key_image(resolve_appearance({}, {}), icon, "Bump")
         assert _wait_for(lambda: env.image(3) == expected)
 
-    def test_blank_bound_to_do_nothing_keeps_the_plain_face(self, env):
+    def test_blank_bound_to_do_nothing_keeps_the_plain_face(self, env) -> None:
         env.manager.set_bindings(_BLANK_TARGET, {"press": _NOTHING})
         env.manager.activate_card(_BLANK_TARGET)
 
         assert_that(env.image(3)).is_equal_to(compose_key_image(resolve_appearance({}, {}), None, ""))
 
-    def test_blank_face_follows_the_action_being_uninstalled(self, env):
+    def test_blank_face_follows_the_action_being_uninstalled(self, env) -> None:
         env.manager.set_bindings(_BLANK_TARGET, {"press": {"action": _BUMP}})
         env.manager.activate_card(_BLANK_TARGET)
         plain = compose_key_image(resolve_appearance({}, {}), None, "")
@@ -267,7 +271,7 @@ class TestBlankFace:
 
 
 class TestWillAppear:
-    def test_will_appear_carries_bindings_and_size(self, env):
+    def test_will_appear_carries_bindings_and_size(self, env) -> None:
         env.manager.set_bindings(REC_TARGET, {"press": {"action": _INCREMENT, "args": {"step": 2}}})
         env.manager.activate_card(REC_TARGET)
 

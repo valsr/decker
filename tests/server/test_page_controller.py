@@ -118,7 +118,7 @@ class TestActivate:
         assert_that(context.page_controller.active_page_id(DEV)).is_equal_to(page2.page_id)
         assert_that(_events(context)[-1]).is_equal_to((PAGES_CHANGED_EVENT, {"device_id": DEV}))
 
-    def test_show_passes_stored_bindings_before_activation(self, context):
+    def test_show_passes_stored_bindings_before_activation(self, context) -> None:
         page2 = context.page_store.add_page(DEV)
         target = _target(0, "new")
         bindings = {"press": {"action": "com.p.act", "args": {"x": 1}}}
