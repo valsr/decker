@@ -103,7 +103,7 @@ class SettingsValidationError(ValueError):
 
     def __init__(self, errors: dict[str, str]) -> None:
         super().__init__("; ".join(f"{key}: {message}" for key, message in errors.items()))
-        self.errors = errors
+        self.errors: dict[str, str] = errors
 
 
 @lru_cache(maxsize=256)
@@ -342,7 +342,10 @@ def _is_empty(entry: SettingField, raw: Any) -> bool:
 
 def _field_error(entry: SettingField, raw: Any) -> str | None:
     if _is_empty(entry, raw):
-        return "is required" if entry.required else None
+        if entry.required:
+            return "is required"
+        if entry.optional or entry.type == "text" or entry.type in _OBJECT_NORMALIZERS:
+            return None
     if entry.type in _OBJECT_NORMALIZERS:
         return None
     value = _coerce(entry.type, raw, entry.extra)
