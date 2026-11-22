@@ -379,3 +379,67 @@ class TestRetiredCards:
         store.assign("dev1", "p1", 0, _target(plugin="com.decker.core", action="com.decker.core.switch"), {})
 
         assert_that(store.plugin_ids()).contains("com.decker.core")
+
+
+def _bindings(store: KeyAssignmentStore, device_id: str, page_id: str, key_index: int) -> dict:
+    assignment = store.get(device_id, page_id, key_index)
+    assert assignment is not None
+    return assignment.bindings
+
+
+class TestBindings:
+    _BINDINGS = {"press": {"action": "com.p.go", "args": {"page": "p1"}}, "long_press": {"action": "x.nothing"}}
+
+    def test_bindings_round_trip_and_default_empty(self, store) -> None:
+        store.assign("dev1", "p1", 0, _target(), {})
+        store.assign("dev1", "p1", 1, _target(key_index=1, ctx="c1"), {}, self._BINDINGS)
+
+        assert_that(_bindings(store, "dev1", "p1", 0)).is_equal_to({})
+        assert_that(_bindings(store, "dev1", "p1", 1)).is_equal_to(self._BINDINGS)
+        assert_that(store.update_bindings("dev1", "p1", 0, {"press": {"action": "a", "args": {}}})).is_true()
+        assert_that(_bindings(store, "dev1", "p1", 0)).is_equal_to({"press": {"action": "a", "args": {}}})
+
+    def test_update_bindings_returns_false_for_missing_slot(self, store) -> None:
+        assert_that(store.update_bindings("dev1", "p1", 3, {})).is_false()
+
+    def test_reassign_resets_bindings(self, store) -> None:
+        store.assign("dev1", "p1", 0, _target(), {}, self._BINDINGS)
+        store.assign("dev1", "p1", 0, _target(ctx="c2"), {})
+        assert_that(_bindings(store, "dev1", "p1", 0)).is_equal_to({})
+
+    def test_bindings_column_added_to_an_existing_database(self, tmp_path) -> None:
+        db = tmp_path / "old.db"
+        conn = sqlite3.connect(db)
+        conn.execute("""CREATE TABLE key_assignments (device_id TEXT NOT NULL, page_id TEXT NOT NULL,
+            key_index INTEGER NOT NULL, plugin_uuid TEXT NOT NULL, card_uuid TEXT NOT NULL,
+            context_id TEXT NOT NULL, settings TEXT NOT NULL DEFAULT '{}',
+            appearance TEXT NOT NULL DEFAULT '{}',
+            PRIMARY KEY (device_id, page_id, key_index))""")
+        conn.execute("INSERT INTO key_assignments VALUES ('d', 'p1', 0, 'com.p', 'a', 'c1', '{}', '{}')")
+        conn.commit()
+        conn.close()
+        migrated = KeyAssignmentStore(db_path=db)
+        migrated.create(MagicMock())
+
+        assert_that(_bindings(migrated, "d", "p1", 0)).is_equal_to({})
+        assert_that(migrated.update_bindings("d", "p1", 0, self._BINDINGS)).is_true()
+        assert_that(_bindings(migrated, "d", "p1", 0)).is_equal_to(self._BINDINGS)
+        migrated.destroy()
+
+    def test_move_and_copy_key_carry_bindings(self, store) -> None:
+        store.assign("dev1", "p1", 0, _target(ctx="c0"), {}, self._BINDINGS)
+
+        store.copy_key("dev1", "p1", 0, 1, "c1")
+        assert_that(_bindings(store, "dev1", "p1", 1)).is_equal_to(self._BINDINGS)
+        store.move("dev1", "p1", 0, 2)
+        assert_that(_bindings(store, "dev1", "p1", 2)).is_equal_to(self._BINDINGS)
+
+    def test_copy_page_remaps_page_ids_inside_binding_args(self, store) -> None:
+        bindings = {"press": {"action": "x.y.go", "args": {"page": "p1", "n": 2}}, "long_press": {"action": "z"}}
+        store.assign("dev1", "p1", 0, _target(), {}, bindings)
+
+        copied = store.copy_page("dev1", "p1", "p2", {"p1": "p9"})
+
+        assert_that(copied[0][1].bindings["press"]["args"]).is_equal_to({"page": "p9", "n": 2})
+        assert_that(copied[0][1].bindings["long_press"]).is_equal_to({"action": "z"})
+        assert_that(_bindings(store, "dev1", "p1", 0)["press"]["args"]["page"]).is_equal_to("p1")

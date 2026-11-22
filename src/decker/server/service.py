@@ -554,6 +554,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         card_uuid: str,
         context_id: str,
         settings_json: str = "{}",
+        bindings_json: str = "{}",
     ) -> bool:
         """
         Assign a plugin card to a key slot on a page, activating it if the page is on the device.
@@ -564,6 +565,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         if self._context is None or self._context.page_store.get(device_id, page_id) is None:
             return False
         settings: dict[str, Any] = json.loads(settings_json)
+        bindings: dict[str, Any] = json.loads(bindings_json)
         target = CardTarget(
             plugin_uuid=plugin_uuid,
             card_uuid=card_uuid,
@@ -577,7 +579,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         existing = key_store.get(device_id, page_id, key_index)
         if existing is not None and is_active:
             pm.deactivate_card(existing.target)
-        key_store.assign(device_id, page_id, key_index, target, settings)
+        key_store.assign(device_id, page_id, key_index, target, settings, bindings)
         pm.store_settings(target, settings)
         if is_active:
             self._context.device_manager.open_device(device_id)
@@ -1059,6 +1061,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
                     ),
                     appearance=appearance,
                     appearance_defaults=defaults,
+                    bindings=assignment.bindings if assignment else {},
                 )
             )
         return result
