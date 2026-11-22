@@ -223,6 +223,11 @@ class TestKeyAssign:
         service.key_assign("dev1", P1, 0, "com.q", "com.q.b", "ctx2")
         manager.deactivate_card.assert_called_once_with(target)
 
+    def test_key_assign_stores_bindings_json(self, service, store) -> None:
+        bindings = {"press": {"action": "com.p.go", "args": {"n": 1}}}
+        service.key_assign("dev1", P1, 0, "com.p", "com.p.a", "ctx1", "{}", json.dumps(bindings))
+        assert_that(store.get("dev1", P1, 0).bindings).is_equal_to(bindings)
+
     def test_assign_returns_false_without_context(self):
         s = DeckerService()
         assert_that(s.key_assign("dev1", P1, 0, "p", "a", "c")).is_false()
@@ -501,6 +506,17 @@ class TestKeyGetStates:
         assert_that(states[0]["appearance"]).is_equal_to({"title": "Hi"})
         assert_that(states[0]["appearance_defaults"]).is_equal_to({"background": "#000000"})
         assert_that(states[1]["appearance"]).is_equal_to({})
+
+    def test_key_states_report_stored_bindings(self, service, store) -> None:
+        service._context.device_manager.open_device.return_value = self._make_mock_device(num_keys=2)
+        service._context.device_manager.get_device_state.return_value = self._make_mock_device_state()
+        bindings = {"press": {"action": "com.p.go", "args": {}}}
+        store.assign("dev1", P1, 0, _make_target(), {}, bindings)
+
+        states = json.loads(service.key_get_states("dev1"))
+
+        assert_that(states[0]["bindings"]).is_equal_to(bindings)
+        assert_that(states[1]["bindings"]).is_equal_to({})
 
     def test_returns_key_image_as_base64(self, service, store):
         import base64  # pylint: disable=import-outside-toplevel

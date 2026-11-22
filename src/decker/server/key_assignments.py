@@ -33,12 +33,13 @@ CREATE TABLE IF NOT EXISTS {_TABLE} (
     context_id  TEXT NOT NULL,
     settings    TEXT NOT NULL DEFAULT '{{}}',
     appearance  TEXT NOT NULL DEFAULT '{{}}',
+    bindings    TEXT NOT NULL DEFAULT '{{}}',
     PRIMARY KEY (device_id, page_id, key_index)
 )
 """
 _META_SCHEMA = "CREATE TABLE IF NOT EXISTS key_assignment_meta (name TEXT PRIMARY KEY)"
 _LEGACY_COLUMNS = "key_index, plugin_uuid, card_uuid, context_id, settings"
-_COLUMNS = f"{_LEGACY_COLUMNS}, appearance"
+_COLUMNS = f"{_LEGACY_COLUMNS}, appearance, bindings"
 _COUNTER_PLUGIN = "com.decker.counter"
 _COUNTER_APPEARANCE_MIGRATION = "counter_appearance"
 _COUNTER_APPEARANCE_KEYS = (
@@ -60,6 +61,7 @@ class KeyAssignment:
     target: CardTarget
     settings: dict[str, Any]
     appearance: dict[str, Any] = field(default_factory=dict)
+    bindings: dict[str, Any] = field(default_factory=dict)
 
 
 class KeyAssignmentStore(Manager):
@@ -79,6 +81,7 @@ class KeyAssignmentStore(Manager):
         self._db.execute(_SCHEMA)
         self._db.execute(_META_SCHEMA)
         self._add_appearance_column()
+        self._add_bindings_column()
         self._migrate_counter_appearance()
         self._db.commit()
 
@@ -95,21 +98,28 @@ class KeyAssignmentStore(Manager):
         return self._conn
 
     def assign(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-        self, device_id: str, page_id: str, key_index: int, target: CardTarget, settings: dict[str, Any]
+        self,
+        device_id: str,
+        page_id: str,
+        key_index: int,
+        target: CardTarget,
+        settings: dict[str, Any],
+        bindings: dict[str, Any] | None = None,
     ) -> None:
         """Persist an assignment, replacing any previous one for this slot."""
         with self._lock:
             self._db.execute(
                 f"""
                 INSERT INTO {_TABLE}
-                    (device_id, page_id, key_index, plugin_uuid, card_uuid, context_id, settings)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (device_id, page_id, key_index, plugin_uuid, card_uuid, context_id, settings, bindings)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(device_id, page_id, key_index) DO UPDATE SET
                     plugin_uuid = excluded.plugin_uuid,
                     card_uuid = excluded.card_uuid,
                     context_id  = excluded.context_id,
                     settings    = excluded.settings,
-                    appearance  = '{{}}'
+                    appearance  = '{{}}',
+                    bindings    = excluded.bindings
                 """,
                 (
                     device_id,
@@ -119,6 +129,7 @@ class KeyAssignmentStore(Manager):
                     target.card_uuid,
                     target.context_id,
                     json.dumps(settings),
+                    json.dumps(bindings or {}),
                 ),
             )
             self._db.commit()
@@ -159,6 +170,16 @@ class KeyAssignmentStore(Manager):
             cursor = self._db.execute(
                 f"UPDATE {_TABLE} SET appearance = ? WHERE device_id = ? AND page_id = ? AND key_index = ?",
                 (json.dumps(appearance), device_id, page_id, key_index),
+            )
+            self._db.commit()
+        return cursor.rowcount > 0
+
+    def update_bindings(self, device_id: str, page_id: str, key_index: int, bindings: dict[str, Any]) -> bool:
+        """Overwrite the key's gesture bindings. Returns False if slot is unassigned."""
+        with self._lock:
+            cursor = self._db.execute(
+                f"UPDATE {_TABLE} SET bindings = ? WHERE device_id = ? AND page_id = ? AND key_index = ?",
+                (json.dumps(bindings), device_id, page_id, key_index),
             )
             self._db.commit()
         return cursor.rowcount > 0
@@ -237,8 +258,8 @@ class KeyAssignmentStore(Manager):
                 (device_id, page_id, to_index),
             )
             self._db.execute(
-                f"INSERT INTO {_TABLE} (device_id, page_id, {_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (device_id, page_id, to_index, row[1], row[2], context_id, row[4], row[5]),
+                f"INSERT INTO {_TABLE} (device_id, page_id, {_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (device_id, page_id, to_index, row[1], row[2], context_id, row[4], row[5], row[6]),
             )
         return self.get(device_id, page_id, to_index)
 
@@ -247,16 +268,16 @@ class KeyAssignmentStore(Manager):
     ) -> list[tuple[int, KeyAssignment]]:
         """Copy every assignment of a page onto another page, giving each copy a new context id.
 
-        Settings values that are exactly an id in ``page_map`` (a copied page) are rewritten to its copy.
+        Settings values and binding args that are exactly an id in ``page_map`` are rewritten to the page's copy.
         """
         with self._lock:
             rows = self._db.execute(
                 f"SELECT {_COLUMNS} FROM {_TABLE} WHERE device_id = ? AND page_id = ? ORDER BY key_index",
                 (device_id, source_page_id),
             ).fetchall()
-            copies = [(*row[:3], uuid.uuid4().hex, _remap_pages(row[4], page_map or {}), row[5]) for row in rows]
+            copies = [_page_copy(row, page_map or {}) for row in rows]
             self._db.executemany(
-                f"INSERT INTO {_TABLE} (device_id, page_id, {_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO {_TABLE} (device_id, page_id, {_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [(device_id, target_page_id, *copy) for copy in copies],
             )
             self._db.commit()
@@ -280,6 +301,11 @@ class KeyAssignmentStore(Manager):
         columns = [row[1] for row in self._db.execute(f"PRAGMA table_info({_TABLE})").fetchall()]
         if "appearance" not in columns:
             self._db.execute(f"ALTER TABLE {_TABLE} ADD COLUMN appearance TEXT NOT NULL DEFAULT '{{}}'")
+
+    def _add_bindings_column(self) -> None:
+        columns = [row[1] for row in self._db.execute(f"PRAGMA table_info({_TABLE})").fetchall()]
+        if "bindings" not in columns:
+            self._db.execute(f"ALTER TABLE {_TABLE} ADD COLUMN bindings TEXT NOT NULL DEFAULT '{{}}'")
 
     def _migrate_counter_appearance(self) -> None:
         done = self._db.execute(
@@ -317,6 +343,26 @@ def _remap_pages(settings_json: str, page_map: Mapping[str, str]) -> str:
     return json.dumps({k: page_map.get(v, v) if isinstance(v, str) else v for k, v in settings.items()})
 
 
+def _remap_binding_args(bindings_json: str, page_map: Mapping[str, str]) -> str:
+    bindings = json.loads(bindings_json)
+    if not page_map or not isinstance(bindings, dict):
+        return bindings_json
+    for binding in bindings.values():
+        if isinstance(binding, dict) and isinstance(binding.get("args"), dict):
+            binding["args"] = {k: page_map.get(v, v) if isinstance(v, str) else v for k, v in binding["args"].items()}
+    return json.dumps(bindings)
+
+
+def _page_copy(row: tuple[Any, ...], page_map: Mapping[str, str]) -> tuple[Any, ...]:
+    return (
+        *row[:3],
+        uuid.uuid4().hex,
+        _remap_pages(row[4], page_map),
+        row[5],
+        _remap_binding_args(row[6], page_map),
+    )
+
+
 def _is_retired(device_id: str, page_id: str, row: tuple[Any, ...]) -> bool:
     key_index, plugin_uuid, card_uuid = row[0], row[1], row[2]
     if (plugin_uuid, card_uuid) not in RETIRED_CARDS:
@@ -332,7 +378,7 @@ def _is_retired(device_id: str, page_id: str, row: tuple[Any, ...]) -> bool:
 
 
 def _to_assignment(device_id: str, row: tuple[Any, ...]) -> tuple[int, KeyAssignment]:
-    key_index, plugin_uuid, card_uuid, context_id, settings_json, appearance_json = row
+    key_index, plugin_uuid, card_uuid, context_id, settings_json, appearance_json, bindings_json = row
     target = CardTarget(
         device_id=device_id,
         key_index=key_index,
@@ -341,5 +387,8 @@ def _to_assignment(device_id: str, row: tuple[Any, ...]) -> tuple[int, KeyAssign
         context_id=context_id,
     )
     return key_index, KeyAssignment(
-        target=target, settings=json.loads(settings_json), appearance=json.loads(appearance_json)
+        target=target,
+        settings=json.loads(settings_json),
+        appearance=json.loads(appearance_json),
+        bindings=json.loads(bindings_json),
     )
