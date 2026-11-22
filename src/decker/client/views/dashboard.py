@@ -737,6 +737,9 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         return outcome
 
     def _save_key_bindings(self, key_index: int, bindings: dict[str, Any]) -> SaveOutcome:
+        slot = self._key_slots.get(key_index)
+        if slot is not None and bindings == slot.get("bindings", {}):
+            return SaveOutcome(True)  # unchanged: a kept-but-refused binding must not block other edits
         outcome = self._key_save_result("key_update_bindings", key_index, bindings, "bindings")
         if outcome.ok and key_index in self._key_slots:
             self._key_slots[key_index]["bindings"] = bindings

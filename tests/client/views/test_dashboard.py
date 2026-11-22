@@ -651,10 +651,22 @@ class TestKeyInteractions:
         assert_that(calls).is_equal_to(
             [
                 ("key_update_settings", "dev1", "p1", 2, json.dumps({"step": 2})),
-                ("key_update_bindings", "dev1", "p1", 2, json.dumps({})),
                 ("key_update_appearance", "dev1", "p1", 2, json.dumps({"background": "#ff0000"})),
             ]
         )
+
+    def test_changed_bindings_are_sent_and_unchanged_ones_are_not(  # pylint: disable=unused-argument
+        self, qapp, tmp_path
+    ) -> None:
+        view, mock_cm = self._refusing_view(tmp_path, "nothing", {})
+        view._key_slots[2]["bindings"] = {"press": {"action": "a"}}  # pylint: disable=protected-access
+        save = view._make_save_callback(2)  # pylint: disable=protected-access
+
+        save({}, {}, {"press": {"action": "a"}})
+        assert_that([c.args[0] for c in mock_cm.call.call_args_list]).does_not_contain("key_update_bindings")
+
+        save({}, {}, {"press": {"action": "b"}})
+        assert_that([c.args[0] for c in mock_cm.call.call_args_list]).contains("key_update_bindings")
 
     def _refusing_view(self, tmp_path, refused: str, errors: dict[str, str]) -> tuple[DashboardView, MagicMock]:
         view = _make_view(tmp_path)

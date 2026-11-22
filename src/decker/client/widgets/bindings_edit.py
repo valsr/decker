@@ -34,14 +34,14 @@ def _split(binding: Mapping[str, Any] | None) -> tuple[str, dict[str, Any]]:
     return (action if isinstance(action, str) else NOTHING_ACTION_ID), (dict(args) if isinstance(args, dict) else {})
 
 
-class _BindingRow(QWidget):  # pylint: disable=too-many-instance-attributes
-    """One gesture: its action dropdown, the action's argument form and a reset button."""
+class _BindingRow(QWidget):  # pylint: disable=missing-function-docstring
 
     changed = pyqtSignal()
 
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._default: tuple[str, dict[str, Any]] = (NOTHING_ACTION_ID, {})
+        self._shown_action = NOTHING_ACTION_ID
         self._action_edit = ActionEdit(owner="")
         self._params = ActionParamsEdit()
         self._reset = QPushButton(_RESET_TEXT)
@@ -63,8 +63,8 @@ class _BindingRow(QWidget):  # pylint: disable=too-many-instance-attributes
         self._reset.clicked.connect(self._on_reset)
 
     def load(self, default: Mapping[str, Any] | None, stored: Mapping[str, Any] | None, plugin_id: str) -> None:
-        """Show ``stored`` (else ``default``) for the plugin ``plugin_id``, remembering ``default`` for reset."""
         self._action_edit.set_owner(plugin_id)
+        self._action_edit.reload()  # the actions may have changed (or been unreachable) since the row was built
         self._show(*_split(default))
         self._default = (self._action_edit.value(), self._params.value())
         if stored is not None:
@@ -73,33 +73,28 @@ class _BindingRow(QWidget):  # pylint: disable=too-many-instance-attributes
         self._refresh()
 
     def binding(self) -> tuple[str, dict[str, Any]]:
-        """The chosen action id and its arguments."""
         return self._action_edit.value(), self._params.value()
 
     def is_default(self) -> bool:
-        """Whether the row shows the manifest default."""
         return self.binding() == self._default
 
     def stored_value(self) -> dict[str, Any]:
-        """The row in its stored shape."""
         action, args = self.binding()
         return {"action": action, "args": args} if args else {"action": action}
 
     def errors(self) -> dict[str, str]:
-        """Validation messages of the argument form."""
         return self._params.errors()
 
     def has_errors(self) -> bool:
-        """Whether the row shows any error."""
         return self._params.has_errors() or bool(self._error.text())
 
     def set_errors(self, own: str, args: Mapping[str, str]) -> None:
-        """Show a row-level message and server argument errors."""
         self._error.setText(own)
         self._error.setVisible(bool(own))
         self._params.set_errors(args)
 
     def _show(self, action: str, args: dict[str, Any]) -> None:
+        self._shown_action = action
         self._action_edit.set_value(action)
         self._params.set_action(action, args)
 
@@ -107,6 +102,9 @@ class _BindingRow(QWidget):  # pylint: disable=too-many-instance-attributes
         self._reset.setEnabled(not self.is_default())
 
     def _on_action_chosen(self) -> None:
+        if self._action_edit.value() == self._shown_action:
+            return  # the same action picked again keeps its arguments
+        self._shown_action = self._action_edit.value()
         self._params.set_action(self._action_edit.value(), {})
         self._on_edited()
 
