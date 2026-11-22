@@ -214,7 +214,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self.send("action_result", None, {"request": request, "ok": False, "error": "no such action"})
             return
         try:
-            handler(self._dict(payload.get("settings")))
+            handler(self._dict(payload.get("args")))
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.log_error(f"action {payload.get('action')} failed: {type(exc).__name__}: {exc}")
             self.send("action_result", None, {"request": request, "ok": False, "error": f"{type(exc).__name__}: {exc}"})

@@ -374,7 +374,7 @@ class TestActions:
         harness = Harness()
         try:
             harness.hello()
-            harness.send("run_action", None, {"action": "test.echo.record", "request": "r1", "settings": {"n": 3}})
+            harness.send("run_action", None, {"action": "test.echo.record", "request": "r1", "args": {"n": 3}})
 
             result = harness.recv_until("action_result")
 
@@ -387,9 +387,7 @@ class TestActions:
         harness = Harness()
         try:
             harness.hello()
-            harness.send(
-                "run_action", None, {"action": "test.echo.record", "request": "r2", "settings": {"fail": True}}
-            )
+            harness.send("run_action", None, {"action": "test.echo.record", "request": "r2", "args": {"fail": True}})
 
             payload = harness.recv_until("action_result")["payload"]
 

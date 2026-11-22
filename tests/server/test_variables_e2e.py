@@ -14,6 +14,7 @@ from assertpy import assert_that
 from decker.plugin.environment import venv_python
 from decker.plugin.runtime.supervisor import SupervisorPolicy
 from decker.plugin.settings_store import PluginSettingsStore
+from decker.server.action_calls import ActionCall
 from decker.server.plugins import PluginManager
 from tests.server.test_plugins import FakePages
 
@@ -111,7 +112,7 @@ def test_values_flow_from_plugin_to_expansion(env: _Env) -> None:
 def test_signal_from_action_updates_expansion(env: _Env) -> None:
     assert_that(_wait(lambda: env.counter() > 0)).is_true()
 
-    env.manager.run_action(_BUMP, {})
+    env.manager.run_action(ActionCall(_BUMP, {}, "plugin"))
 
     assert_that(_wait(lambda: env.counter() >= 1000)).is_true()
     assert_that(int(env.expand("{test_counter}"))).is_greater_than_or_equal_to(1000)
@@ -119,7 +120,7 @@ def test_signal_from_action_updates_expansion(env: _Env) -> None:
 
 def test_killing_the_process_clears_then_restores_values(env: _Env) -> None:
     assert_that(_wait(lambda: env.counter() > 0 and env.value("test_alpha_value") != "")).is_true()
-    env.manager.run_action(_BUMP, {})
+    env.manager.run_action(ActionCall(_BUMP, {}, "plugin"))
     assert_that(_wait(lambda: env.counter() >= 1000)).is_true()
     first = env.pid()
     assert first is not None

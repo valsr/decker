@@ -29,6 +29,7 @@ from decker.plugin.runtime.supervisor import SupervisorPolicy
 from decker.plugin.settings_schema import parse_settings_schema
 from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
+from decker.server.action_calls import ActionCall
 from decker.server.appearance import (
     PACK_ICON_SCALE,
     compose_key_image,
@@ -2149,7 +2150,9 @@ class TestCoreActions:
         try:
             url = f"http://127.0.0.1:{httpd.server_address[1]}/hook"
 
-            env.manager.run_action("com.decker.core.httprequest", {"method": "POST", "url": url, "body": "hi"})
+            env.manager.run_action(
+                ActionCall("com.decker.core.httprequest", {"method": "POST", "url": url, "body": "hi"}, "plugin")
+            )
 
             assert _wait_for(lambda: bool(_Handler.seen))
             assert_that(_Handler.seen[0]).is_equal_to(("POST", "/hook", b"hi"))
@@ -2157,7 +2160,7 @@ class TestCoreActions:
             httpd.shutdown()
 
     def test_a_failing_action_is_announced_as_an_event(self, env) -> None:
-        env.manager.run_action("com.decker.core.httprequest", {"url": "ftp://nope"})
+        env.manager.run_action(ActionCall("com.decker.core.httprequest", {"url": "ftp://nope"}, "plugin"))
 
         assert _wait_for(lambda: any(name == "action_failed" for name, _ in env.bus.events))
 
