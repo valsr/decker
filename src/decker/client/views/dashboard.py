@@ -744,7 +744,10 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         cm = AppContext.get().connection_manager
         if not device_id or not page_id or cm is None:
             return False
-        return bool(cm.call(method, device_id, page_id, key_index, json.dumps(payload)))
+        result = cm.call(method, device_id, page_id, key_index, json.dumps(payload))
+        if isinstance(result, str):  # the save RPCs answer {"ok": bool, "errors": {...}}
+            return bool(json.loads(result).get("ok"))
+        return bool(result)
 
     # ------------------------------------------------------------------
     # Other widget callbacks

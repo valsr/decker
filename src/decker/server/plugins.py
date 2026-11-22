@@ -23,9 +23,11 @@ from decker.common.text_style import is_color
 from decker.common.variables import CORE_VARIABLE_NAMES
 from decker.common.version import decker_version
 from decker.plugin.bindings import (
+    GESTURES,
     Binding,
     effective_bindings,
     normalize_stored_bindings,
+    parse_binding,
 )
 from decker.plugin.environment import stage_sdk
 from decker.plugin.events import PluginLoadFailedEvent
@@ -49,6 +51,7 @@ from decker.plugin.runtime.supervisor import PluginSupervisor, SupervisorPolicy
 from decker.plugin.settings_schema import (
     apply_schema,
     schema_to_json,
+    validate_settings,
 )
 from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
@@ -498,6 +501,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
                     "tooltip": spec.tooltip,
                     "settings_schema": schema_to_json(spec.settings),
                     "appearance": dict(spec.appearance),
+                    "bindings": {g: b.to_json() for g, b in spec.bindings.items()},
                 }
                 for spec in manifest.cards
             )
@@ -657,6 +661,35 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         live.bindings = effective
         self._send_context(live, "settings_changed", self._settings_payload(live, self._delivery(live)))
         self._recompose(live)
+
+    def validate_card_settings(self, target: CardTarget, settings: Mapping[str, Any]) -> dict[str, str]:
+        """Field key -> message for every setting that breaks the card's schema."""
+        spec = self._card_spec(target.plugin_uuid, target.card_uuid)
+        return validate_settings(spec.settings, settings) if spec is not None else {}
+
+    def validate_bindings(self, target: CardTarget, stored: Mapping[str, Any]) -> dict[str, str]:
+        """Errors in stored bindings, keyed ``<gesture>.<arg>``, or ``<gesture>`` for a foreign plugin-scoped action."""
+        errors: dict[str, str] = {}
+        for gesture in GESTURES:
+            if gesture not in stored:
+                continue
+            try:
+                binding = parse_binding(stored[gesture], gesture)
+            except ValueError as exc:
+                errors[gesture] = str(exc)
+                continue
+            errors.update(self._binding_errors(target, gesture, binding))
+        return errors
+
+    def _binding_errors(self, target: CardTarget, gesture: str, binding: Binding) -> dict[str, str]:
+        found = self._action_runner.scope_of(binding.action)
+        spec = self._action_runner.spec(binding.action)
+        if binding.is_nothing or found is None or spec is None:
+            return {}
+        owner, scope = found
+        if scope != "global" and owner != target.plugin_uuid:
+            return {gesture: "is another plugin's action and cannot be used on this card"}
+        return {f"{gesture}.{key}": msg for key, msg in validate_settings(spec.settings, binding.args).items()}
 
     def _effective(self, live: _Live) -> dict[str, Binding]:
         with self._lock:
