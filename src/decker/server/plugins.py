@@ -143,10 +143,6 @@ class _Live:  # pylint: disable=too-many-instance-attributes
     delivered: dict[str, Any] = field(default_factory=dict)
 
 
-def _where(target: CardTarget) -> tuple[str, int]:
-    return target.device_id, target.key_index
-
-
 _VARIABLE_EVENTS: frozenset[str] = frozenset(
     {"register_variable", "unregister_variable", "variable_updated", "variable_value"}
 )

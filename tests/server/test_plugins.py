@@ -2137,18 +2137,42 @@ class TestAnimatedKeyFaces:
 class TestCoreActions:
     """Core ships actions, no cards."""
 
-    def test_actions_are_listed_with_their_schema(self, env):
+    def test_run_action_runs_the_http_request_action(self, env) -> None:
+        from tests.server.test_actions import (  # noqa: F401  # pylint: disable=import-outside-toplevel
+            _Handler,
+            server,
+        )
+
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        _Handler.seen = []
+        try:
+            url = f"http://127.0.0.1:{httpd.server_address[1]}/hook"
+
+            env.manager.run_action("com.decker.core.httprequest", {"method": "POST", "url": url, "body": "hi"})
+
+            assert _wait_for(lambda: bool(_Handler.seen))
+            assert_that(_Handler.seen[0]).is_equal_to(("POST", "/hook", b"hi"))
+        finally:
+            httpd.shutdown()
+
+    def test_a_failing_action_is_announced_as_an_event(self, env) -> None:
+        env.manager.run_action("com.decker.core.httprequest", {"url": "ftp://nope"})
+
+        assert _wait_for(lambda: any(name == "action_failed" for name, _ in env.bus.events))
+
+    def test_actions_are_listed_with_their_schema(self, env) -> None:
         listed = {a["action_uuid"]: a for a in env.manager.list_actions()}
 
         assert_that(listed).contains_key("com.decker.core.httprequest")
         assert_that([f["key"] for f in listed["com.decker.core.httprequest"]["settings_schema"]]).contains("url")
 
-    def test_the_action_list_marks_built_in_plugins(self, env):
+    def test_the_action_list_marks_built_in_plugins(self, env) -> None:
         action = next(a for a in env.manager.list_actions() if a["action_uuid"] == "com.decker.core.httprequest")
 
         assert_that(action["plugin_builtin"]).is_true()
 
-    def test_the_card_list_has_no_run_action_and_no_http_action(self, env):
+    def test_the_card_list_has_no_run_action_and_no_http_action(self, env) -> None:
         ids = [c["card_uuid"] for c in env.manager.list_cards()]
 
         assert_that(ids).does_not_contain("com.decker.core.runaction", "com.decker.core.httprequest")

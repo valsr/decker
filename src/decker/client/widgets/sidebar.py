@@ -327,7 +327,7 @@ class SidebarWidget(QFrame):  # pylint: disable=too-many-instance-attributes
         return _tile_icon(asset_pixmap("tasks.svg", _ICON_SOURCE_SIZE, self._tint))
 
     def _action_drag(self, action: dict[str, Any]) -> tuple[dict[str, Any], QPixmap | None]:
-        """What dragging an action drops: its ready-made card, else a Blank card (the binding comes with Task 11)."""
+        """What dragging an action drops: its ready-made card, else a Blank card carrying the action as ``preset_action``."""
         action_id = str(action.get("action_uuid", ""))
         preset = self._preset_of(action_id)
         if preset is not None:
