@@ -750,7 +750,6 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         return cm.call(method, device_id, page_id, key_index, json.dumps(payload))
 
     def _key_save_result(self, method: str, key_index: int, payload: dict[str, Any]) -> SaveOutcome:
-        """Parse a save RPC's ``{"ok", "errors"}`` answer; server error keys gain the ``settings.`` prefix."""
         result = self._key_call(method, key_index, payload)
         if not isinstance(result, str):
             return SaveOutcome(bool(result))
