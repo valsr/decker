@@ -317,6 +317,7 @@ class PluginInstaller:
         for device_id, page_id, _key_index, assignment in ctx.key_assignment_store.assignments_for_plugin(plugin_id):
             if ctx.page_controller.active_page_id(device_id) == page_id:
                 ctx.plugin_manager.store_settings(assignment.target, assignment.settings)
+                ctx.plugin_manager.set_bindings(assignment.target, assignment.bindings)
                 ctx.plugin_manager.activate_card(assignment.target, assignment.appearance)
 
     def _roll_back(self, swap: _Swap) -> None:

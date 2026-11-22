@@ -260,6 +260,7 @@ class PageController(Manager):
         for key_index, assignment in self._ctx.key_assignment_store.all_for_page(device_id, page_id):
             target = assignment.target
             plugins.store_settings(target, assignment.settings)
+            plugins.set_bindings(target, assignment.bindings)
             # a key whose last image is already on the hardware is not redrawn bare before its plugin answers
             cached = state is not None and state.has_image(key_index)
             plugins.activate_card(target, assignment.appearance, draw=not cached)

@@ -3,6 +3,7 @@
 
 import base64
 import json
+import os
 import struct
 import sys
 import zlib
@@ -38,10 +39,6 @@ class Counter:
         self.settings = {}
 
     def push(self, context):
-        wanted = ["press", "long_press"]
-        if self.settings.get("double_step") is not None:
-            wanted.append("double_press")
-        _send("set_gestures", context, {"gestures": wanted})
         _send("set_image", context, {"image": base64.b64encode(_png(self.count)).decode(), "format": "png"})
 
     def advance(self, amount):
@@ -56,20 +53,28 @@ class Counter:
             self.settings = payload.get("settings", {})
         elif event == "settings_changed":
             self.settings = payload.get("settings", {})
-        elif event == "press":
-            self.advance(self.settings.get("step", 1))
-        elif event == "double_press":
-            self.advance(self.settings.get("double_step") or 0)
-        elif event == "long_press":
-            self.count = 0
         else:
             return
+        self.push(context)
+
+    def run_action(self, payload):
+        action, args = payload["action"], payload.get("args") or {}
+        context = (payload.get("card") or {}).get("context")
+        if action.endswith(".bump"):
+            return
+        if action.endswith(".increment"):
+            self.advance(args.get("step") or self.settings.get("step", 1))
+        elif action.endswith(".reset"):
+            self.count = 0
         self.push(context)
 
 
 def main():
     counter = Counter()
+    here = os.path.dirname(os.path.abspath(__file__))
     for line in sys.stdin:
+        with open(os.path.join(here, "received.log"), "a") as log:
+            log.write(line)
         message = json.loads(line)
         event = message["event"]
         if event == "hello":
@@ -78,6 +83,10 @@ def main():
             _send("pong")
         elif event == "shutdown":
             break
+        elif event == "run_action":
+            payload = message.get("payload") or {}
+            counter.run_action(payload)
+            _send("action_result", None, {"request": payload["request"], "ok": True})
         else:
             counter.handle(event, message.get("context"), message.get("payload") or {})
 

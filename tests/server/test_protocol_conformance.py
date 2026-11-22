@@ -111,7 +111,7 @@ def test_non_sdk_executable_plugin_speaks_the_documented_protocol(tmp_path):
         hello = next(r for r in seen() if r["event"] == "hello")
         assert_that(hello["keys"]).is_equal_to(["decker_version", "global_settings", "plugin_id", "protocol"])
         will_appear = next(r for r in seen() if r["event"] == "will_appear")
-        assert_that(will_appear["keys"]).is_equal_to(["card", "device", "key", "settings", "state"])
+        assert_that(will_appear["keys"]).is_equal_to(["bindings", "card", "device", "key", "settings", "size", "state"])
         assert_that(will_appear["key"]).is_equal_to(["column", "index", "row"])
 
         assert _wait_for(
