@@ -196,3 +196,35 @@ class TestBindingsEdit:  # pylint: disable=protected-access
 
         field = edit.findChildren(DynamicChoiceEdit)[0]
         assert_that(field._plugin_id).is_equal_to("com.b")
+
+
+class TestBindingRowFixes:  # pylint: disable=protected-access
+    def test_actions_are_loaded_when_shown_not_only_when_built(self) -> None:
+        state = {"up": False}
+
+        class _Rpc:
+            def call(self, method: str, *_args: Any) -> Any:
+                if not state["up"]:
+                    raise ConnectionError("not connected")
+                return json.dumps(_ACTIONS) if method == "plugins_actions_list" else None
+
+        AppContext.get().connection_manager = _Rpc()  # type: ignore[assignment]
+        edit = BindingsEdit()
+        state["up"] = True
+
+        edit.set_bindings(BindingsSpec({}, {"press": {"action": "com.a.shared"}}), "com.a")
+
+        combo = _combos(edit)[0]
+        assert_that(_texts(combo)).is_equal_to(["Do Nothing", "Own", "Say", "Shared", "Web"])
+        assert_that(combo.value()).is_equal_to("com.a.shared")
+        assert_that(combo.currentText()).is_equal_to("Shared")
+
+    def test_picking_the_same_action_again_keeps_its_args(self) -> None:
+        edit = _edit(stored={"press": {"action": "com.b.web", "args": {"url": "http://keep", "n": 5}}})
+        seen: list[int] = []
+        edit.changed.connect(lambda: seen.append(1))
+
+        _choose(_combos(edit)[0], "com.b.web")
+
+        assert_that(edit.value()["press"]["args"]).is_equal_to({"url": "http://keep", "n": 5})
+        assert_that(seen).is_empty()

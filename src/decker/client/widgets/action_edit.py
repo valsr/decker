@@ -56,11 +56,7 @@ def _action_icon(action: dict[str, Any]) -> QIcon:
 
 
 class ActionEdit(QComboBox):
-    """Pick an action; ``value()`` is its id, or ``""`` for none.
-
-    With an ``owner`` plugin it lists Do Nothing, the owner's actions and every global action; without one, the
-    global actions only.
-    """
+    """Pick an action; ``value()`` is its id (with an ``owner``, Do Nothing, its own and global actions)."""
 
     value_changed = pyqtSignal()
 
