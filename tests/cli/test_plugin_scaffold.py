@@ -6,6 +6,7 @@ from assertpy import assert_that
 
 from decker.cli import plugin as plugin_cli
 from decker.cli import plugin_scaffold
+from decker.plugin.manifest import PluginManifest
 from decker.plugin.package import read_manifest
 
 
@@ -14,6 +15,8 @@ def test_scaffold_creates_valid_plugin(tmp_path):
     assert_that(folder).is_equal_to(tmp_path / "com.example.hello-world")
     manifest = json.loads((folder / "manifest.json").read_text())
     assert_that(manifest["name"]).is_equal_to("Hello World")
+    assert_that(manifest["format"]).is_equal_to(3)
+    assert_that(PluginManifest.load(folder / "manifest.json").format).is_equal_to(3)
     assert_that(manifest["contributes"]["cards"][0]["id"]).is_equal_to("com.example.hello-world.card")
     assert_that((folder / "plugin.py").read_text()).contains('@card("com.example.hello-world.card")')
     assert_that((folder / "icons" / "action.png").read_bytes()[:4]).is_equal_to(b"\x89PNG")

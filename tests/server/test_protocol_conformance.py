@@ -21,14 +21,14 @@ _PLUGIN_ID = "com.example.conform"
 _ACTION_ID = "com.example.conform.act"
 
 _MANIFEST = {
-    "format": 1,
+    "format": 3,
     "id": _PLUGIN_ID,
     "name": "Conformance",
     "version": "1.0.0",
     "author": "Test",
     "runtime": {"type": "executable", "entry": entry_name("run.py")},
     "global_settings": [{"key": "token", "type": "text", "label": "Token", "default": ""}],
-    "contributes": {"actions": [{"id": _ACTION_ID, "name": "Act"}]},
+    "contributes": {"cards": [{"id": _ACTION_ID, "name": "Act"}]},
 }
 
 

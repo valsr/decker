@@ -12,13 +12,13 @@ from decker.plugin import package
 from decker.plugin.package import PackageError, extract, read_manifest
 
 _MANIFEST = {
-    "format": 1,
+    "format": 3,
     "id": "com.decker.test",
     "name": "Test",
     "version": "1.0.0",
     "author": "Decker",
     "runtime": {"type": "python", "entry": "plugin.py"},
-    "contributes": {"actions": [{"id": "com.decker.test.show", "name": "Show"}]},
+    "contributes": {"cards": [{"id": "com.decker.test.show", "name": "Show"}]},
 }
 
 

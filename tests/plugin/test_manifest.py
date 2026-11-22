@@ -14,7 +14,7 @@ from decker.plugin.manifest import (
 from decker.plugin.settings_schema import SettingField
 
 _COUNTER: dict[str, Any] = {
-    "format": 1,
+    "format": 3,
     "id": "com.decker.counter",
     "name": "Counter",
     "version": "1.0.0",
@@ -23,19 +23,18 @@ _COUNTER: dict[str, Any] = {
     "homepage": "https://github.com/valsr/Decker",
     "icon": "icons/plugin",
     "category": "Utilities",
-    "decker": ">=0.2",
+    "decker": ">=0.7",
     "runtime": {"type": "python", "entry": "plugin.py", "python": ">=3.12", "requirements": []},
     "permissions": [],
     "global_settings": [],
     "contributes": {
         "icon_packs": [{"id": "com.decker.counter.icons", "name": "Counter icons", "path": "iconpack"}],
-        "actions": [
+        "cards": [
             {
                 "id": "com.decker.counter.counter",
                 "name": "Counter",
                 "tooltip": "Press to count, long press to reset",
                 "icon": "icons/counter",
-                "gestures": ["press", "long_press"],
                 "states": [{"image": "icons/counter"}],
                 "settings": [
                     {"section": "Counting"},
@@ -70,15 +69,15 @@ def _counter(**overrides: Any) -> dict[str, Any]:
 
 def _with_action(**action: Any) -> dict[str, Any]:
     data = _counter()
-    data["contributes"]["actions"][0].update(action)
+    data["contributes"]["cards"][0].update(action)
     return data
 
 
 def test_counter_manifest_parses() -> None:
     manifest = PluginManifest.from_dict(_counter())
-    assert_that(manifest.format).is_equal_to(1)  # the fixture is a format 1 manifest, read through the legacy alias
+    assert_that(manifest.format).is_equal_to(3)
     assert_that(manifest.cards[0].id).is_equal_to("com.decker.counter.counter")
-    assert_that(manifest.cards[0].gestures).is_equal_to({"press", "long_press"})
+    assert_that(manifest.cards[0].bindings).contains_key("press", "double_press", "long_press")
     assert_that(manifest.cards[0].settings).is_length(4)
     assert_that(manifest.runtime).is_not_none()
     assert manifest.runtime is not None
@@ -88,8 +87,14 @@ def test_counter_manifest_parses() -> None:
 
 
 def test_unknown_format_rejected() -> None:
-    with pytest.raises(ManifestValidationError, match="format 3"):
-        PluginManifest.from_dict(_counter(format=3))
+    with pytest.raises(ManifestValidationError, match="format 4"):
+        PluginManifest.from_dict(_counter(format=4))
+
+
+@pytest.mark.parametrize("fmt", [1, 2])
+def test_format_2_manifest_is_refused_naming_the_format(fmt: int) -> None:
+    with pytest.raises(ManifestValidationError, match=f"format {fmt} is no longer supported.*format 3"):
+        PluginManifest.from_dict(_counter(format=fmt))
 
 
 def test_missing_format_rejected() -> None:
@@ -125,7 +130,7 @@ def test_actions_require_runtime() -> None:
 def test_icon_pack_only_needs_no_runtime() -> None:
     data = _counter()
     del data["runtime"]
-    del data["contributes"]["actions"]
+    del data["contributes"]["cards"]
     manifest = PluginManifest.from_dict(data)
     assert_that(manifest.runtime).is_none()
     assert_that(manifest.cards).is_empty()
@@ -138,12 +143,6 @@ def test_contribution_id_must_be_prefixed_by_plugin_id() -> None:
     data["contributes"]["icon_packs"][0]["id"] = "com.other.icons"
     with pytest.raises(ManifestValidationError, match="icon pack id"):
         PluginManifest.from_dict(data)
-
-
-@pytest.mark.parametrize("gestures", [["swipe"], [["press"]], [{}], [], "press"])
-def test_invalid_gesture_rejected(gestures: Any) -> None:
-    with pytest.raises(ManifestValidationError, match="com.decker.counter.counter gestures"):
-        PluginManifest.from_dict(_with_action(gestures=gestures))
 
 
 @pytest.mark.parametrize("req", ["foo @ https://x/y.whl", "git+https://x"])
@@ -167,12 +166,6 @@ def test_runtime_type_must_be_python_or_executable() -> None:
     data["runtime"]["type"] = "java"
     with pytest.raises(ManifestValidationError, match="runtime type"):
         PluginManifest.from_dict(data)
-
-
-def test_action_gestures_default_to_press() -> None:
-    data = _counter()
-    del data["contributes"]["actions"][0]["gestures"]
-    assert_that(PluginManifest.from_dict(data).cards[0].gestures).is_equal_to({"press"})
 
 
 def test_invalid_settings_schema_becomes_manifest_error() -> None:
@@ -235,7 +228,7 @@ def test_page_in_global_settings_is_rejected() -> None:
 
 def test_page_in_action_settings_is_accepted() -> None:
     data = copy.deepcopy(_COUNTER)
-    data["contributes"]["actions"][0]["settings"] = [{"key": "where", "type": "page", "label": "Where"}]
+    data["contributes"]["cards"][0]["settings"] = [{"key": "where", "type": "page", "label": "Where"}]
     manifest = PluginManifest.from_dict(data)
     field = manifest.cards[0].settings[0]
     assert isinstance(field, SettingField)
@@ -249,7 +242,7 @@ def _static_action(**extra: Any) -> dict[str, Any]:
 def _without_runtime(actions: list[dict[str, Any]]) -> dict[str, Any]:
     data = _counter()
     del data["runtime"]
-    data["contributes"] = {"actions": actions}
+    data["contributes"] = {"cards": actions}
     return data
 
 
@@ -267,7 +260,7 @@ def test_non_static_action_without_runtime_is_still_rejected() -> None:
 
 def test_mixed_actions_with_runtime() -> None:
     data = _counter()
-    data["contributes"]["actions"].append(_static_action())
+    data["contributes"]["cards"].append(_static_action())
     manifest = PluginManifest.from_dict(data)
     assert_that([a.static for a in manifest.cards]).is_equal_to([False, True])
 
@@ -281,11 +274,6 @@ def test_static_action_with_settings_rejected() -> None:
     action = _static_action(settings=[{"key": "a", "type": "bool"}])
     with pytest.raises(ManifestValidationError, match="static.*settings"):
         PluginManifest.from_dict(_without_runtime([action]))
-
-
-def test_static_action_with_gestures_rejected() -> None:
-    with pytest.raises(ManifestValidationError, match="static.*gestures"):
-        PluginManifest.from_dict(_without_runtime([_static_action(gestures=["press"])]))
 
 
 def test_static_action_keeps_appearance_defaults_and_states() -> None:
@@ -351,26 +339,9 @@ def _minimal(fmt: int, contributes: dict) -> dict:
     }
 
 
-def test_format_1_actions_are_read_as_cards() -> None:
+def test_format_3_actions_are_not_cards() -> None:
     manifest = PluginManifest.from_dict(
-        _minimal(1, {"actions": [{"id": "com.acme.demo.one", "name": "One", "static": True}]})
-    )
-
-    assert_that([c.id for c in manifest.cards]).is_equal_to(["com.acme.demo.one"])
-
-
-def test_format_2_has_cards_and_they_are_not_aliased_from_actions() -> None:
-    manifest = PluginManifest.from_dict(
-        _minimal(2, {"cards": [{"id": "com.acme.demo.one", "name": "One", "static": True}]})
-    )
-
-    assert_that([c.id for c in manifest.cards]).is_equal_to(["com.acme.demo.one"])
-    assert_that(manifest.format).is_equal_to(2)
-
-
-def test_format_2_actions_are_not_cards() -> None:
-    manifest = PluginManifest.from_dict(
-        _minimal(2, {"actions": [{"id": "com.acme.demo.one", "name": "One"}], "icon_packs": []})
+        _minimal(3, {"actions": [{"id": "com.acme.demo.one", "name": "One"}], "icon_packs": []})
     )
 
     assert_that(manifest.cards).is_empty()
@@ -378,7 +349,7 @@ def test_format_2_actions_are_not_cards() -> None:
 
 
 def _variables(entries: list[Any], **extra: Any) -> dict[str, Any]:
-    data = _minimal(2, {"variables": entries})
+    data = _minimal(3, {"variables": entries})
     data.update({"runtime": {"type": "python", "entry": "plugin.py"}, "decker": ">=0.6", **extra})
     return data
 
@@ -448,7 +419,7 @@ def test_variables_only_plugin_is_valid() -> None:
 
 def test_plugin_contributing_nothing_is_rejected() -> None:
     with pytest.raises(ManifestValidationError, match="cards, actions, icon packs or variables"):
-        PluginManifest.from_dict(_minimal(2, {"cards": []}))
+        PluginManifest.from_dict(_minimal(3, {"cards": []}))
 
 
 @pytest.mark.parametrize(
@@ -476,7 +447,7 @@ def _sourced(where: str, **extra: Any) -> dict[str, Any]:
             {"id": "com.acme.demo.act", "name": "A", "settings": [_SOURCED_FIELD] if where == "action" else []}
         ],
     }
-    data = _minimal(2, contributes)
+    data = _minimal(3, contributes)
     data["runtime"] = {"type": "python", "entry": "plugin.py"}
     data["decker"] = ">=0.6"
     if where == "global":
@@ -497,7 +468,7 @@ def test_options_source_requires_a_decker_constraint(where: str) -> None:
 
 
 def test_options_source_requires_a_runtime() -> None:
-    data = _minimal(2, {"icon_packs": [{"id": "com.acme.demo.icons", "name": "I", "path": "icons"}]})
+    data = _minimal(3, {"icon_packs": [{"id": "com.acme.demo.icons", "name": "I", "path": "icons"}]})
     data["global_settings"] = [_SOURCED_FIELD]
     data["decker"] = ">=0.6"
     with pytest.raises(ManifestValidationError, match="options_source.*no runtime"):
@@ -521,3 +492,83 @@ def test_manifest_without_options_source_needs_no_decker() -> None:
     data["contributes"]["cards"][0]["settings"] = [{"key": "a", "type": "text", "label": "A"}]
     del data["decker"]
     assert_that(PluginManifest.from_dict(data).decker).is_none()
+
+
+def _with_actions(*actions: dict[str, Any], **card: Any) -> dict[str, Any]:
+    return {
+        "format": 3,
+        "id": "com.acme.demo",
+        "name": "Demo",
+        "version": "1.0.0",
+        "author": "Acme",
+        "runtime": {"type": "python", "entry": "plugin.py"},
+        "contributes": {"actions": list(actions), "cards": [{"id": "com.acme.demo.card", "name": "C", **card}]},
+    }
+
+
+_ACT: dict[str, Any] = {"id": "com.acme.demo.act", "name": "Act"}
+
+
+def test_action_scope_defaults_to_plugin() -> None:
+    assert_that(PluginManifest.from_dict(_with_actions(_ACT)).actions[0].scope).is_equal_to("plugin")
+
+
+def test_action_scope_global() -> None:
+    manifest = PluginManifest.from_dict(_with_actions({**_ACT, "scope": "global"}))
+    assert_that(manifest.actions[0].scope).is_equal_to("global")
+
+
+def test_bad_scope_is_an_error() -> None:
+    with pytest.raises(ManifestValidationError, match="scope"):
+        PluginManifest.from_dict(_with_actions({**_ACT, "scope": "universe"}))
+
+
+def test_returns_is_documentation_text() -> None:
+    manifest = PluginManifest.from_dict(_with_actions({**_ACT, "returns": "the answer"}))
+    assert_that(manifest.actions[0].returns).is_equal_to("the answer")
+    assert_that(PluginManifest.from_dict(_with_actions(_ACT)).actions[0].returns).is_equal_to("")
+    with pytest.raises(ManifestValidationError, match="returns"):
+        PluginManifest.from_dict(_with_actions({**_ACT, "returns": 3}))
+
+
+def test_card_bindings_parsed_with_defaults() -> None:
+    manifest = PluginManifest.from_dict(
+        _with_actions(_ACT, bindings={"press": {"action": "com.acme.demo.act", "args": {"a": 1}}})
+    )
+    bindings = manifest.cards[0].bindings
+    assert_that(bindings["press"].action).is_equal_to("com.acme.demo.act")
+    assert_that(dict(bindings["press"].args)).is_equal_to({"a": 1})
+    assert_that(bindings["double_press"].is_nothing).is_true()
+    assert_that(bindings["long_press"].is_nothing).is_true()
+
+
+def test_card_gestures_key_is_rejected() -> None:
+    with pytest.raises(ManifestValidationError, match="bindings instead of gestures"):
+        PluginManifest.from_dict(_with_actions(_ACT, gestures=["press"]))
+
+
+@pytest.mark.parametrize("key", ["card", "action", "action_settings", "behavior"])
+def test_retired_card_keys_are_rejected(key: str) -> None:
+    with pytest.raises(ManifestValidationError, match=key):
+        PluginManifest.from_dict(_with_actions(_ACT, **{key: "x"}))
+
+
+def test_binding_to_undeclared_own_action_is_an_error() -> None:
+    with pytest.raises(ManifestValidationError, match="does not declare"):
+        PluginManifest.from_dict(_with_actions(_ACT, bindings={"press": {"action": "com.acme.demo.missing"}}))
+
+
+def test_binding_to_foreign_action_is_accepted() -> None:
+    manifest = PluginManifest.from_dict(_with_actions(_ACT, bindings={"press": {"action": "com.other.act"}}))
+    assert_that(manifest.cards[0].bindings["press"].action).is_equal_to("com.other.act")
+
+
+def test_bad_binding_is_a_manifest_error() -> None:
+    with pytest.raises(ManifestValidationError, match="bindings"):
+        PluginManifest.from_dict(_with_actions(_ACT, bindings={"swipe": {"action": "com.other.act"}}))
+
+
+def test_static_card_may_declare_bindings() -> None:
+    data = _with_actions(_ACT, static=True, bindings={"press": {"action": "com.acme.demo.act"}})
+    del data["runtime"]
+    assert_that(PluginManifest.from_dict(data).cards[0].bindings["press"].action).is_equal_to("com.acme.demo.act")

@@ -560,7 +560,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             target=target,
             card=spec,
             recognizer=GestureRecognizer(self._gesture_emitter(target.context_id)),
-            gestures=_gestures_from(sorted(spec.gestures)),
+            gestures=frozenset({Gesture.PRESS}),
             settings=apply_schema(spec.settings, stored),
             appearance=dict(appearance or {}),
         )

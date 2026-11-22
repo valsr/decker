@@ -16,7 +16,7 @@ from decker.server.builtin_actions import ActionError, http_request
 
 def _manifest(runtime: bool, actions: list[dict[str, Any]]) -> PluginManifest:
     data: dict[str, Any] = {
-        "format": 2,
+        "format": 3,
         "id": "com.t.act",
         "name": "Act",
         "version": "1.0.0",
@@ -202,7 +202,7 @@ class TestHttpRequest:
 class TestManifestCardsAndActions:
     def _data(self, **contributes: Any) -> dict[str, Any]:
         return {
-            "format": 2,
+            "format": 3,
             "id": "com.t.audio",
             "name": "Audio",
             "version": "1.0.0",

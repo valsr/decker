@@ -32,7 +32,7 @@ def _plugin_packs(registry):
 
 def _plugin(tmp_path: Path, contributes: dict, runtime: bool = False, decker: bool = False) -> InstalledPlugin:
     data: dict = {
-        "format": 1,
+        "format": 3,
         "id": "com.t.p",
         "name": "T",
         "version": "1.0.0",
