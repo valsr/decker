@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from decker.client.widgets.bindings_edit import BindingsEdit, BindingsSpec
 from decker.client.widgets.key_preview import KeyPreview
 from decker.client.widgets.schema_form import AppearanceForm, SchemaForm
 from decker.common.appearance_schema import APPEARANCE_SCHEMA
@@ -44,6 +45,7 @@ class SaveOutcome:
 SaveCallback = Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], SaveOutcome]  # settings, appearance, bindings
 
 _SETTINGS_PREFIX = "settings."
+_BINDINGS_PREFIX = "bindings."
 
 
 def _run_job(job: Callable[[], str | None]) -> str | None:
@@ -75,7 +77,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._stored_norm: Any = None
         self._preview_provider: PreviewProvider | None = None
         self._dirty = False
-        self._baseline: tuple[dict[str, Any], dict[str, Any]] | None = None
+        self._baseline: tuple[dict[str, Any], dict[str, Any], dict[str, Any]] | None = None
 
         placeholder = QLabel("Hover a key and click ✎ (or focus it and press F2) to configure it")
         placeholder.setProperty("role", "muted")
@@ -86,6 +88,8 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._preview = KeyPreview()
         self._appearance_form = AppearanceForm()
         self._settings_form = SchemaForm()
+        self._bindings_edit = BindingsEdit()
+        self._bindings_box = QWidget()
         self._save_btn = QPushButton("Save")
         self._save_btn.setProperty("dirty", False)
         self._preview_timer = QTimer(self)
@@ -95,6 +99,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self.addWidget(self._build_form_page())  # page 1
         self._appearance_form.changed.connect(self._on_edited)
         self._settings_form.changed.connect(self._on_edited)
+        self._bindings_edit.changed.connect(self._on_edited)
 
     @property
     def is_dirty(self) -> bool:
@@ -139,6 +144,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         save_cb: SaveCallback,
         title: str = "",
         plugin_id: str = "",
+        bindings: BindingsSpec | None = None,
     ) -> None:
         """Populate and show the forms; identical values re-sent while shown leave edits in progress alone."""
         self._save_cb = save_cb
@@ -150,18 +156,22 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._stored_norm = appearance.get("background")
         if self._stored_norm == appearance_defaults.get("background"):
             self._stored_background = None
+        spec = bindings or BindingsSpec({}, {})
         loaded = (
             settings_schema,
             dict(settings),
             _resolved(appearance, appearance_defaults),
             dict(appearance_defaults),
             plugin_id,
+            spec,
         )
         if self.currentIndex() == _PAGE_FORM and loaded == self._loaded:
             return
         self._loaded = loaded
         self._appearance_form.set_schema(APPEARANCE_SCHEMA, appearance)
         self._settings_form.set_schema(settings_schema, settings, plugin_id)
+        self._bindings_edit.set_bindings(spec, plugin_id)
+        self._bindings_box.setVisible(bindings is not None)
         self.setCurrentIndex(_PAGE_FORM)
         self._baseline = self._current_values()
         self._refresh_state()
@@ -192,8 +202,20 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._preview.set_icon_requested.connect(self._browse_icon)
         self._preview.clear_icon_requested.connect(self._clear_icon)
 
+        box = QVBoxLayout(self._bindings_box)
+        box.setContentsMargins(0, 0, 0, 0)
+        heading = QLabel("Actions")
+        heading.setProperty("role", "title")
+        box.addWidget(heading)
+        box.addWidget(self._bindings_edit)
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.addWidget(self._settings_form)
+        body_layout.addWidget(self._bindings_box)
+        body_layout.addStretch(1)
         scroll = QScrollArea()
-        scroll.setWidget(self._settings_form)
+        scroll.setWidget(body)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         layout.addWidget(scroll, 1)
@@ -224,12 +246,13 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
             if (style := self._save_btn.style()) is not None:
                 style.unpolish(self._save_btn)
                 style.polish(self._save_btn)
-        self._save_btn.setEnabled(not self._settings_form.has_errors())
+        self._save_btn.setEnabled(not (self._settings_form.has_errors() or self._bindings_edit.has_errors()))
         icon = self._appearance_form.values().get("icon")
         self._preview.set_has_icon(isinstance(icon, dict) and bool(icon.get("ref")))
 
-    def _current_values(self) -> tuple[dict[str, Any], dict[str, Any]]:
-        return self._settings_form.values(), _resolved(self._appearance_form.values(), self._appearance_defaults)
+    def _current_values(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        appearance = _resolved(self._appearance_form.values(), self._appearance_defaults)
+        return self._settings_form.values(), appearance, self._bindings_edit.value()
 
     def _draft_appearance(self) -> dict[str, Any]:
         draft = {
@@ -259,11 +282,15 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._settings_form.set_errors(
             {key.removeprefix(_SETTINGS_PREFIX): msg for key, msg in errors.items() if key.startswith(_SETTINGS_PREFIX)}
         )
+        self._bindings_edit.set_errors(
+            {key.removeprefix(_BINDINGS_PREFIX): msg for key, msg in errors.items() if key.startswith(_BINDINGS_PREFIX)}
+        )
 
     def _on_save(self) -> None:
         if self._save_cb is None:
             return
         settings = self._settings_form.values()
+        bindings = self._bindings_edit.value()
         form_appearance = self._appearance_form.values()
         previous = (self._loaded, self._baseline)
         # Record the saved state first so a synchronous echo of it is recognised as identical and keeps later edits.
@@ -274,10 +301,11 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
                 _resolved(form_appearance, self._appearance_defaults),
                 self._loaded[3],
                 self._loaded[4],
+                BindingsSpec(self._loaded[5].defaults, bindings),
             )
         self._baseline = self._current_values()
         draft = self._draft_appearance()
-        outcome = self._save_cb(settings, draft, {})
+        outcome = self._save_cb(settings, draft, bindings)
         if not outcome.ok:
             self._loaded, self._baseline = previous
             self._route_errors(outcome.errors)

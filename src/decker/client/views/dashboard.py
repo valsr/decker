@@ -34,6 +34,7 @@ from decker.client.events import (
 )
 from decker.client.ui_state_store import UiStateStore
 from decker.client.views.base import BaseView
+from decker.client.widgets.bindings_edit import BindingsSpec
 from decker.client.widgets.button_grid import ButtonGridWidget
 from decker.client.widgets.card_config_panel import (
     CardConfigPanel,
@@ -691,6 +692,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             self._make_save_callback(index),
             title=str((card or {}).get("card_name") or ""),
             plugin_id=str(slot.get("plugin_uuid") or ""),
+            bindings=BindingsSpec(dict((card or {}).get("bindings") or {}), dict(slot.get("bindings") or {})),
         )
 
     def _sync_slot(self, key_index: int, state: dict[str, Any]) -> None:
@@ -708,14 +710,23 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             "settings": dict(state.get("settings") or {}),
             "appearance": dict(state.get("appearance") or {}),
             "appearance_defaults": dict(state.get("appearance_defaults") or {}),
+            "bindings": dict(state.get("bindings") or {}),
         }
         self._sync_draggable()
 
     def _make_save_callback(self, key_index: int) -> SaveCallback:
-        def _cb(settings: dict[str, Any], appearance: dict[str, Any], _bindings: dict[str, Any]) -> SaveOutcome:
-            settings_outcome = self._save_key_settings(key_index, settings)
-            appearance_saved = self._save_key_appearance(key_index, appearance)
-            return SaveOutcome(settings_outcome.ok and appearance_saved, settings_outcome.errors)
+        def _cb(settings: dict[str, Any], appearance: dict[str, Any], bindings: dict[str, Any]) -> SaveOutcome:
+            errors: dict[str, str] = {}
+            for save in (
+                lambda: self._save_key_settings(key_index, settings),
+                lambda: self._save_key_bindings(key_index, bindings),
+                lambda: SaveOutcome(self._save_key_appearance(key_index, appearance)),
+            ):
+                outcome = save()
+                errors.update(outcome.errors)
+                if not outcome.ok:  # a refused save stops the rest, so nothing after it is written
+                    return SaveOutcome(False, errors)
+            return SaveOutcome(True, errors)
 
         return _cb
 
@@ -723,6 +734,12 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         outcome = self._key_save_result("key_update_settings", key_index, settings)
         if outcome.ok and key_index in self._key_slots:
             self._key_slots[key_index]["settings"] = settings
+        return outcome
+
+    def _save_key_bindings(self, key_index: int, bindings: dict[str, Any]) -> SaveOutcome:
+        outcome = self._key_save_result("key_update_bindings", key_index, bindings, "bindings")
+        if outcome.ok and key_index in self._key_slots:
+            self._key_slots[key_index]["bindings"] = bindings
         return outcome
 
     def _save_key_appearance(self, key_index: int, appearance: dict[str, Any]) -> bool:
@@ -749,12 +766,14 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             return None
         return cm.call(method, device_id, page_id, key_index, json.dumps(payload))
 
-    def _key_save_result(self, method: str, key_index: int, payload: dict[str, Any]) -> SaveOutcome:
+    def _key_save_result(
+        self, method: str, key_index: int, payload: dict[str, Any], prefix: str = "settings"
+    ) -> SaveOutcome:
         result = self._key_call(method, key_index, payload)
         if not isinstance(result, str):
             return SaveOutcome(bool(result))
         data = json.loads(result)
-        errors = {f"settings.{key}": str(msg) for key, msg in (data.get("errors") or {}).items()}
+        errors = {f"{prefix}.{key}": str(msg) for key, msg in (data.get("errors") or {}).items()}
         return SaveOutcome(bool(data.get("ok")), errors)
 
     # ------------------------------------------------------------------

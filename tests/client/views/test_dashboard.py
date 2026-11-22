@@ -651,9 +651,76 @@ class TestKeyInteractions:
         assert_that(calls).is_equal_to(
             [
                 ("key_update_settings", "dev1", "p1", 2, json.dumps({"step": 2})),
+                ("key_update_bindings", "dev1", "p1", 2, json.dumps({})),
                 ("key_update_appearance", "dev1", "p1", 2, json.dumps({"background": "#ff0000"})),
             ]
         )
+
+    def _refusing_view(self, tmp_path, refused: str, errors: dict[str, str]) -> tuple[DashboardView, MagicMock]:
+        view = _make_view(tmp_path)
+        _active_dev1(view)
+        mock_cm = MagicMock()
+
+        def call(method: str, *_args: Any) -> Any:
+            if method == refused:
+                return json.dumps({"ok": False, "errors": errors})
+            return json.dumps({"ok": True, "errors": {}})
+
+        mock_cm.call.side_effect = call
+        AppContext.get().connection_manager = mock_cm
+        view._key_slots[2] = {  # pylint: disable=protected-access
+            "plugin_uuid": "p",
+            "card_uuid": "a",
+            "context_id": "c",
+            "settings": {},
+            "appearance_defaults": {},
+        }
+        return view, mock_cm
+
+    def test_refused_settings_stop_the_save_before_bindings_and_appearance(  # pylint: disable=unused-argument
+        self, qapp, tmp_path
+    ) -> None:
+        view, mock_cm = self._refusing_view(tmp_path, "key_update_settings", {"url": "bad"})
+
+        outcome = view._make_save_callback(2)(
+            {"url": "x"}, {"background": "#fff"}, {}
+        )  # pylint: disable=protected-access
+
+        assert_that(outcome.ok).is_false()
+        assert_that(dict(outcome.errors)).is_equal_to({"settings.url": "bad"})
+        assert_that([c.args[0] for c in mock_cm.call.call_args_list]).is_equal_to(["key_update_settings"])
+
+    def test_refused_bindings_prefix_errors_and_skip_appearance(  # pylint: disable=unused-argument
+        self, qapp, tmp_path
+    ) -> None:
+        view, mock_cm = self._refusing_view(tmp_path, "key_update_bindings", {"press.url": "bad", "long_press": "no"})
+
+        outcome = view._make_save_callback(2)(
+            {}, {"background": "#fff"}, {"press": {"action": "x"}}
+        )  # pylint: disable=protected-access
+
+        assert_that(outcome.ok).is_false()
+        assert_that(dict(outcome.errors)).is_equal_to({"bindings.press.url": "bad", "bindings.long_press": "no"})
+        assert_that([c.args[0] for c in mock_cm.call.call_args_list]).is_equal_to(
+            ["key_update_settings", "key_update_bindings"]
+        )
+        assert_that(view._key_slots[2].get("bindings")).is_none()  # pylint: disable=protected-access
+
+    def test_saved_bindings_update_the_slot_and_state_sync_carries_them(  # pylint: disable=unused-argument
+        self, qapp, tmp_path
+    ) -> None:
+        view, _cm = self._refusing_view(tmp_path, "nothing", {})
+        bindings = {"press": {"action": "com.decker.core.nothing"}}
+
+        view._make_save_callback(2)({}, {}, bindings)  # pylint: disable=protected-access
+        assert_that(view._key_slots[2]["bindings"]).is_equal_to(bindings)  # pylint: disable=protected-access
+
+        view._sync_slot(
+            2, {"plugin_uuid": "p", "bindings": {"long_press": {"action": "q"}}}
+        )  # pylint: disable=protected-access
+        assert_that(view._key_slots[2]["bindings"]).is_equal_to(
+            {"long_press": {"action": "q"}}
+        )  # pylint: disable=protected-access
 
 
 class TestPages:  # pylint: disable=protected-access

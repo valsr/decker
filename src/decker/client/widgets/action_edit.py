@@ -5,16 +5,20 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QStandardItemModel
+from PyQt6.QtCore import QPointF, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QStandardItemModel
 from PyQt6.QtWidgets import QComboBox, QWidget
 
+from decker.client.card_icons import decode_icon
 from decker.client.context import AppContext
 from decker.client.icon_picker import RpcCaller
+from decker.plugin.bindings import NOTHING_ACTION_ID
 
 _NONE = "(choose an action)"
 _MISSING = "(missing action)"
 _OFFLINE_HINT = "Connect to the server to list its actions"
+_NOTHING = "Do Nothing"
+_ICON_SIZE = 16
 
 
 def _app_rpc() -> RpcCaller | None:
@@ -33,14 +37,42 @@ def fetch_actions(rpc: RpcCaller | None) -> list[dict[str, Any]] | None:
     return [a for a in data if isinstance(a, dict)] if isinstance(data, list) else None
 
 
+def _nothing_icon() -> QIcon:
+    pixmap = QPixmap(_ICON_SIZE, _ICON_SIZE)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor("#888888"), 2))
+    low, high = 3.0, _ICON_SIZE - 3.0
+    painter.drawLine(QPointF(low, low), QPointF(high, high))
+    painter.drawLine(QPointF(low, high), QPointF(high, low))
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _action_icon(action: dict[str, Any]) -> QIcon:
+    pixmap = decode_icon(str(action.get("icon_b64") or ""))
+    return QIcon(pixmap) if pixmap is not None else QIcon()
+
+
 class ActionEdit(QComboBox):
-    """Pick one of the available actions; ``value()`` is its id, or ``""`` for none."""
+    """Pick an action; ``value()`` is its id, or ``""`` for none.
+
+    With an ``owner`` plugin it lists Do Nothing, the owner's actions and every global action; without one, the
+    global actions only.
+    """
 
     value_changed = pyqtSignal()
 
-    def __init__(self, rpc: Callable[[], RpcCaller | None] | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        rpc: Callable[[], RpcCaller | None] | None = None,
+        parent: QWidget | None = None,
+        owner: str | None = None,
+    ) -> None:
         super().__init__(parent)
         self._rpc = rpc or _app_rpc
+        self._owner = owner
         self._value = ""
         self._actions: list[dict[str, Any]] = []
         self._online = False
@@ -56,6 +88,11 @@ class ActionEdit(QComboBox):
         self._value = value if isinstance(value, str) else ""
         self._rebuild()
 
+    def set_owner(self, plugin_id: str) -> None:
+        """List the actions the plugin ``plugin_id`` may bind; keeps the shown value."""
+        self._owner = plugin_id
+        self._rebuild()
+
     def reload(self) -> None:
         """Re-read the actions from the server."""
         listed = fetch_actions(self._rpc())
@@ -63,14 +100,29 @@ class ActionEdit(QComboBox):
         self._actions = listed or []
         self._rebuild()
 
+    def _shown_actions(self) -> list[dict[str, Any]]:
+        shown = [
+            a
+            for a in self._actions
+            if a.get("action_uuid") != NOTHING_ACTION_ID
+            and (a.get("scope") == "global" or (self._owner is not None and a.get("plugin_uuid") == self._owner))
+        ]
+        return sorted(shown, key=lambda a: (str(a.get("action_name")), str(a.get("action_uuid"))))
+
     def _rebuild(self) -> None:
         self.blockSignals(True)
         self.clear()
-        self.addItem(_NONE, "")
-        for action in sorted(self._actions, key=lambda a: (str(a.get("plugin_name")), str(a.get("action_name")))):
-            self.addItem(f"{action.get('plugin_name')}: {action.get('action_name')}", str(action["action_uuid"]))
-        known = {str(a["action_uuid"]) for a in self._actions}
-        if self._value and self._online and self._value not in known:
+        if self._owner is None:
+            self.addItem(_NONE, "")
+        else:
+            self.addItem(_nothing_icon(), _NOTHING, NOTHING_ACTION_ID)
+        shown = self._shown_actions()
+        for action in shown:
+            self.addItem(_action_icon(action), str(action.get("action_name")), str(action["action_uuid"]))
+        listed = {str(a["action_uuid"]) for a in shown}
+        if self._owner is not None:
+            listed.add(NOTHING_ACTION_ID)
+        if self._value and self._online and self._value not in listed:
             self.addItem(_MISSING, self._value)
             model = self.model()
             item = model.item(self.count() - 1) if isinstance(model, QStandardItemModel) else None

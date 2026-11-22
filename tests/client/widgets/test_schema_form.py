@@ -440,6 +440,7 @@ class TestActionFields:  # pylint: disable=protected-access
             "plugin_name": "Tools",
             "action_uuid": "com.t.http",
             "action_name": "HTTP",
+            "scope": "global",
             "settings_schema": [{"key": "url", "type": "text", "label": "URL", "default": ""}],
         },
         {
@@ -447,6 +448,7 @@ class TestActionFields:  # pylint: disable=protected-access
             "plugin_name": "Tools",
             "action_uuid": "com.t.mute",
             "action_name": "Mute",
+            "scope": "global",
             "settings_schema": [],
         },
     ]
@@ -474,7 +476,7 @@ class TestActionFields:  # pylint: disable=protected-access
         combo = _action_edit(form)
 
         assert_that([combo.itemText(i) for i in range(combo.count())]).is_equal_to(
-            ["(choose an action)", "Tools: HTTP", "Tools: Mute"]
+            ["(choose an action)", "HTTP", "Mute"]
         )
         assert_that(form.values()["action"]).is_equal_to("com.t.mute")
 

@@ -396,6 +396,18 @@ class ActionParamsEdit(QWidget):
         """The action's settings as entered (the stored ones while its action cannot be shown)."""
         return self._form.values() if self._action and self._known else dict(self._pending)
 
+    def errors(self) -> dict[str, str]:
+        """Validation messages for the values entered, keyed by schema key."""
+        return self._form.errors()
+
+    def has_errors(self) -> bool:
+        """Whether any field of the action's form currently shows an error."""
+        return self._form.has_errors()
+
+    def set_errors(self, errors: Mapping[str, str]) -> None:
+        """Show server-reported errors on the action's fields until each is edited."""
+        self._form.set_errors(errors)
+
     def set_value(self, value: Any) -> None:
         """Remember stored settings; they show once ``set_action`` names their action. Emits nothing."""
         self._pending = dict(value) if isinstance(value, dict) else {}
