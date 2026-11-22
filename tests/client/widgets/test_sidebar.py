@@ -210,18 +210,39 @@ _ACTION_LIST: list[dict[str, Any]] = [
         "plugin_builtin": True,
         "action_uuid": "com.decker.core.http",
         "action_name": "HTTP Request",
+        "scope": "global",
     },
-    {"plugin_uuid": "com.t.audio", "plugin_name": "Audio", "action_uuid": "com.t.audio.up", "action_name": "Volume up"},
-    {"plugin_uuid": "com.t.audio", "plugin_name": "Audio", "action_uuid": "com.t.audio.mute", "action_name": "Mute"},
+    {
+        "plugin_uuid": "com.t.audio",
+        "plugin_name": "Audio",
+        "action_uuid": "com.t.audio.up",
+        "action_name": "Volume up",
+        "scope": "global",
+        "icon_b64": _COUNTER["icon_b64"],
+    },
+    {
+        "plugin_uuid": "com.t.audio",
+        "plugin_name": "Audio",
+        "action_uuid": "com.t.audio.mute",
+        "action_name": "Mute",
+        "scope": "global",
+    },
+    {
+        "plugin_uuid": "com.t.audio",
+        "plugin_name": "Audio",
+        "action_uuid": "com.t.audio.private",
+        "action_name": "Private",
+        "scope": "plugin",
+    },
+    {
+        "plugin_uuid": "com.decker.core",
+        "plugin_name": "Core",
+        "plugin_builtin": True,
+        "action_uuid": "com.decker.core.nothing",
+        "action_name": "Do Nothing",
+        "scope": "global",
+    },
 ]
-_PRESET: dict[str, Any] = {
-    "plugin_uuid": "com.t.audio",
-    "plugin_name": "Audio",
-    "card_uuid": "com.t.audio.upcard",
-    "card_name": "Volume Up",
-    "action": "com.t.audio.up",
-    "icon_b64": _COUNTER["icon_b64"],
-}
 
 
 def _texts_and_icons(pane):
@@ -282,28 +303,26 @@ class TestTabs:  # pylint: disable=protected-access
         assert_that(sidebar.action_sections).is_equal_to([("Audio", ["Mute"])])
         assert_that(sidebar.sections).is_empty()
 
-    def test_an_action_without_a_preset_card_uses_the_task_icon(self, qapp):  # pylint: disable=unused-argument
+    def test_actions_tab_hides_plugin_scoped_actions_and_do_nothing(
+        self, qapp
+    ) -> None:  # pylint: disable=unused-argument
         sidebar = SidebarWidget()
-        sidebar.set_cards([_PRESET])
+        sidebar.set_actions(_ACTION_LIST)
+
+        assert_that(sidebar.action_sections).is_equal_to(
+            [("Built in", ["HTTP Request"]), ("Audio", ["Volume up", "Mute"])]
+        )
+
+    def test_action_tile_uses_the_action_icon(self, qapp) -> None:  # pylint: disable=unused-argument
+        sidebar = SidebarWidget()
         sidebar.set_actions(_ACTION_LIST)
         icons = _texts_and_icons(sidebar._actions_pane)
 
         task = icons["Mute"].pixmap(ICON_SIZE, ICON_SIZE).toImage()
-        preset = icons["Volume up"].pixmap(ICON_SIZE, ICON_SIZE).toImage()
+        own = icons["Volume up"].pixmap(ICON_SIZE, ICON_SIZE).toImage()
 
-        assert_that(task == preset).is_false()
+        assert_that(own == task).is_false()
         assert_that(icons["HTTP Request"].pixmap(ICON_SIZE, ICON_SIZE).toImage() == task).is_true()
-
-    def test_a_preset_card_is_what_dragging_its_action_drops(self, qapp):  # pylint: disable=unused-argument
-        sidebar = SidebarWidget()
-        sidebar.set_cards([_PRESET])
-        sidebar.set_actions(_ACTION_LIST)
-        audio = sidebar._actions_pane.sections[1]  # Volume up is its first tile
-
-        payload = _drop_payload(audio, 0)
-
-        assert_that(payload["card_uuid"]).is_equal_to("com.t.audio.upcard")
-        assert_that(payload).does_not_contain_key("preset_action")
 
     def test_action_drag_drops_a_blank_card(self, qapp) -> None:  # pylint: disable=unused-argument
         sidebar = SidebarWidget()

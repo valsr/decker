@@ -613,6 +613,8 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             return
         context_id = uuid.uuid4().hex
         settings: dict[str, Any] = {}
+        preset = str(card_data.get("preset_action", ""))
+        bindings: dict[str, Any] = {"press": {"action": preset, "args": {}}} if preset else {}
         cm = AppContext.get().connection_manager
         if cm is None:
             return
@@ -625,6 +627,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             card_uuid,
             context_id,
             json.dumps(settings),
+            json.dumps(bindings),
         )
         if ok:
             self._key_slots[key_index] = {
@@ -632,6 +635,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
                 "card_uuid": card_uuid,
                 "context_id": context_id,
                 "settings": settings,
+                "bindings": bindings,
             }
             self._grid.set_key_label(key_index, "0")
             self._sync_draggable()
