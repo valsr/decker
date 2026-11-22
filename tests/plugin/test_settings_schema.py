@@ -582,3 +582,13 @@ def test_invalid_typed_value_is_a_strict_error() -> None:
 def test_rules_round_trip_through_schema_to_json() -> None:
     schema = _text_schema(required=True, pattern="[a-z]+", min_length=1, max_length=9, default="ab")
     assert_that(parse_settings_schema(schema_to_json(schema), "w")).is_equal_to(schema)
+
+
+def test_empty_value_for_a_non_optional_typed_field_is_a_strict_error() -> None:
+    schema = parse_settings_schema([{"key": "b", "type": "int", "label": "B"}], "here")
+    for empty in ("", None):
+        assert_that(validate_settings(schema, {"b": empty})).contains_key("b")
+        with pytest.raises(SettingsValidationError):
+            apply_schema(schema, {"b": empty}, strict=True)
+    optional = parse_settings_schema([{"key": "b", "type": "int", "label": "B", "optional": True}], "here")
+    assert_that(validate_settings(optional, {"b": ""})).is_empty()
