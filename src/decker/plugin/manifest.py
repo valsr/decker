@@ -1,10 +1,11 @@
-"""Plugin manifest (format v1) parsing and validation."""
+"""Plugin manifest (format 3) parsing and validation."""
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 
@@ -17,6 +18,7 @@ from decker.common.variables import (
     is_valid_pattern,
     match_pattern,
 )
+from decker.plugin.bindings import Binding, parse_manifest_bindings
 from decker.plugin.settings_schema import (
     SettingEntry,
     SettingField,
@@ -24,21 +26,10 @@ from decker.plugin.settings_schema import (
 )
 
 _SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?")
-SUPPORTED_FORMATS = (1, 2)
-CARDS_FORMAT = 2  # format 1 predates the card/action split: its ``contributes.actions`` entries are cards
+SUPPORTED_FORMATS = (3,)
 KNOWN_CONTRIBUTION_KINDS = frozenset({"cards", "actions", "icon_packs", "variables"})
-_LEGACY_CARD_KIND = "actions"
-VALID_GESTURES = frozenset({"press", "double_press", "long_press"})
 _RUNTIME_TYPES = ("python", "executable")
 _UUID_PATTERN = re.compile(r"[a-z0-9]+(\.[a-z0-9-]+)+")
-
-
-def _legacy_cards(fmt: int, contributes: dict[str, Any]) -> dict[str, Any]:
-    """Format 1 called what a key shows an action: read ``contributes.actions`` as the cards."""
-    if fmt >= CARDS_FORMAT or _LEGACY_CARD_KIND not in contributes:
-        return contributes
-    renamed = {("cards" if kind == _LEGACY_CARD_KIND else kind): value for kind, value in contributes.items()}
-    return renamed
 
 
 def is_valid_plugin_id(value: object) -> bool:
@@ -81,11 +72,11 @@ class CardSpec:
     name: str
     tooltip: str = ""
     icon: str | None = None
-    gestures: frozenset[str] = frozenset({"press"})
     states: tuple[StateSpec, ...] = ()
     settings: tuple[SettingEntry, ...] = ()
     appearance: dict[str, Any] = field(default_factory=dict, hash=False)
     static: bool = False
+    bindings: Mapping[str, Binding] = field(default_factory=dict, hash=False)
 
     @property
     def headless(self) -> bool:
@@ -102,6 +93,8 @@ class ActionSpec:
     tooltip: str = ""
     icon: str | None = None
     settings: tuple[SettingEntry, ...] = ()
+    scope: Literal["global", "plugin"] = "plugin"
+    returns: str = ""
 
 
 @dataclass(frozen=True)
@@ -156,6 +149,10 @@ class PluginManifest:
         fmt = data.get("format")
         if fmt is None:
             raise ManifestValidationError("manifest missing required field: format")
+        if type(fmt) is int and fmt in (1, 2):  # pylint: disable=unidiomatic-typecheck
+            raise ManifestValidationError(
+                f"manifest format {fmt} is no longer supported: Decker 0.7 needs format {SUPPORTED_FORMATS[0]}"
+            )
         if type(fmt) is not int or fmt not in SUPPORTED_FORMATS:  # pylint: disable=unidiomatic-typecheck
             raise ManifestValidationError(f"unsupported manifest format {fmt!r} (supported: {list(SUPPORTED_FORMATS)})")
         plugin_id = _parse_id(data.get("id"), "manifest id")
@@ -168,7 +165,6 @@ class PluginManifest:
         contributes = data.get("contributes")
         if not isinstance(contributes, dict) or not contributes:
             raise ManifestValidationError("manifest contributes must be a non-empty object")
-        contributes = _legacy_cards(fmt, contributes)
         unknown = sorted(set(contributes) - KNOWN_CONTRIBUTION_KINDS)
         if unknown:
             raise ManifestValidationError(
@@ -184,6 +180,7 @@ class PluginManifest:
             raise ManifestValidationError(
                 f"manifest contributes cards but declares no runtime (card {needs_runtime.id} is not static)"
             )
+        _check_own_bindings(cards, actions, plugin_id)
         variables = _parse_variables(contributes.get("variables", []))
         if variables:
             _require_variable_prerequisites(runtime, data.get("decker"))
@@ -305,14 +302,8 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
     if not isinstance(entry, dict) or "id" not in entry or "name" not in entry:
         raise ManifestValidationError(f"invalid card entry: {entry!r}")
     card_id = _parse_contribution_id(entry["id"], plugin_id, "card id")
+    _reject_retired_card_keys(entry, card_id)
     static = _parse_static(entry, card_id)
-    gestures = entry.get("gestures", ["press"])
-    if (
-        not isinstance(gestures, list)
-        or not gestures
-        or not all(isinstance(g, str) and g in VALID_GESTURES for g in gestures)
-    ):
-        raise ManifestValidationError(f"card {card_id} gestures must be a non-empty subset of {sorted(VALID_GESTURES)}")
     appearance = entry.get("appearance", {})
     if not isinstance(appearance, dict):
         raise ManifestValidationError(f"card {card_id} appearance must be an object")
@@ -325,11 +316,11 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
         name=str(entry["name"]),
         tooltip=str(entry.get("tooltip") or ""),
         icon=_optional_str(entry.get("icon")),
-        gestures=frozenset(gestures),
         states=states,
         settings=_parse_settings(entry.get("settings", []), f"card {card_id} settings"),
         appearance=dict(appearance),
         static=static,
+        bindings=_parse_card_bindings(entry, card_id),
     )
 
 
@@ -343,7 +334,49 @@ def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
         tooltip=str(entry.get("tooltip") or ""),
         icon=_optional_str(entry.get("icon")),
         settings=_parse_settings(entry.get("settings", []), f"action {action_id} settings"),
+        scope=_parse_scope(entry.get("scope", "plugin"), action_id),
+        returns=_parse_returns(entry.get("returns", ""), action_id),
     )
+
+
+def _parse_scope(value: Any, action_id: str) -> Literal["global", "plugin"]:
+    if value not in ("global", "plugin"):
+        raise ManifestValidationError(f"action {action_id} scope must be 'global' or 'plugin', got {value!r}")
+    return cast(Literal["global", "plugin"], value)
+
+
+def _parse_returns(value: Any, action_id: str) -> str:
+    if not isinstance(value, str):
+        raise ManifestValidationError(f"action {action_id} returns must be a string")
+    return value
+
+
+_RETIRED_CARD_KEYS = ("gestures", "card", "action", "action_settings", "behavior")
+
+
+def _reject_retired_card_keys(entry: dict[str, Any], card_id: str) -> None:
+    for key in _RETIRED_CARD_KEYS:
+        if key in entry:
+            raise ManifestValidationError(
+                f"card {card_id} has unknown key {key!r}: format 3 cards declare bindings instead of gestures"
+            )
+
+
+def _parse_card_bindings(entry: dict[str, Any], card_id: str) -> dict[str, Binding]:
+    try:
+        return parse_manifest_bindings(entry.get("bindings", {}), f"card {card_id} bindings")
+    except ValueError as exc:
+        raise ManifestValidationError(str(exc)) from exc
+
+
+def _check_own_bindings(cards: tuple[CardSpec, ...], actions: tuple[ActionSpec, ...], plugin_id: str) -> None:
+    own = {a.id for a in actions}
+    for card in cards:
+        for gesture, binding in card.bindings.items():
+            if binding.action.startswith(plugin_id + ".") and binding.action not in own:
+                raise ManifestValidationError(
+                    f"card {card.id} binds {gesture} to {binding.action!r}, which this plugin does not declare"
+                )
 
 
 def _parse_static(entry: dict[str, Any], card_id: str) -> bool:
@@ -351,7 +384,7 @@ def _parse_static(entry: dict[str, Any], card_id: str) -> bool:
     if not isinstance(static, bool):
         raise ManifestValidationError(f"card {card_id} static must be a boolean")
     if static:
-        for name in ("settings", "gestures"):
+        for name in ("settings",):
             if name in entry:
                 raise ManifestValidationError(f"static card {card_id} cannot declare {name}")
     return static

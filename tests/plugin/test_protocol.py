@@ -5,6 +5,7 @@ from assertpy import assert_that
 
 from decker.plugin.protocol import (
     MAX_LINE_BYTES,
+    MAX_VALUE_BYTES,
     PLUGIN_EVENTS,
     PROTOCOL_VERSION,
     SERVER_EVENTS,
@@ -68,7 +69,8 @@ def test_decode_rejects_oversized_line() -> None:
 
 
 def test_protocol_version() -> None:
-    assert_that(PROTOCOL_VERSION).is_equal_to(3)
+    assert_that(PROTOCOL_VERSION).is_equal_to(4)
+    assert_that(MAX_VALUE_BYTES).is_equal_to(1024 * 1024)
 
 
 def test_event_sets_match_spec() -> None:
@@ -80,9 +82,6 @@ def test_event_sets_match_spec() -> None:
                 "will_disappear",
                 "key_down",
                 "key_up",
-                "press",
-                "double_press",
-                "long_press",
                 "settings_changed",
                 "global_settings_changed",
                 "device_connected",
@@ -92,6 +91,9 @@ def test_event_sets_match_spec() -> None:
                 "get_variable",
                 "variables_changed",
                 "get_options",
+                "run_action",
+                "call_result",
+                "image_result",
             }
         )
     )
@@ -106,7 +108,6 @@ def test_event_sets_match_spec() -> None:
                 "show_ok",
                 "set_settings",
                 "set_global_settings",
-                "set_gestures",
                 "log",
                 "open_url",
                 "pong",
@@ -115,6 +116,11 @@ def test_event_sets_match_spec() -> None:
                 "variable_updated",
                 "variable_value",
                 "options_result",
+                "action_result",
+                "call_action",
+                "get_image",
+                "switch_page",
+                "switch_profile",
             }
         )
     )

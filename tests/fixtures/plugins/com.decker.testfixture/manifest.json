@@ -1,5 +1,5 @@
 {
-  "format": 1,
+  "format": 3,
   "id": "com.decker.testfixture",
   "name": "Test Fixture",
   "version": "1.0.0",
@@ -9,13 +9,12 @@
   "category": "Utilities",
   "runtime": { "type": "executable", "entry": "plugin.py" },
   "contributes": {
-    "actions": [
+    "cards": [
       {
         "id": "com.decker.testfixture.counter",
         "name": "Counter",
         "tooltip": "Press to count, long press to reset",
         "icon": "icons/counter",
-        "gestures": ["press", "long_press"],
         "appearance": { "background": "#1f618d" },
         "settings": [
           { "section": "Counting" },

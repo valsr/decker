@@ -27,7 +27,7 @@ def _plugin(
     tmp_path: Path, plugin_id: str, variables: list[dict[str, Any]], cards: list[dict[str, Any]] | None = None
 ) -> InstalledPlugin:
     data = {
-        "format": 2,
+        "format": 3,
         "id": plugin_id,
         "name": "V",
         "version": "1.0.0",
@@ -133,14 +133,14 @@ def _answer(proc: FakeProcess, name: str, value: Any, index: int = 0) -> None:
     _send(proc, "variable_value", {"request": request, "ok": True, "value": value})
 
 
-def test_hello_protocol_is_3(tmp_path: Path) -> None:
+def test_hello_protocol_is_4(tmp_path: Path) -> None:
     manager = _manager(tmp_path)
     procs = _fake_processes(manager)
     try:
         proc = _started(manager, procs, _plugin(tmp_path, "com.t.one", [{"name": "media_volume"}]))
 
         assert_that(proc.sent[0].event).is_equal_to("hello")
-        assert_that(proc.sent[0].payload["protocol"]).is_equal_to(3)
+        assert_that(proc.sent[0].payload["protocol"]).is_equal_to(4)
     finally:
         manager.destroy()
 
@@ -334,7 +334,7 @@ _LABEL_CARD = {
 
 def _static_plugin(tmp_path: Path) -> InstalledPlugin:
     data = {
-        "format": 2,
+        "format": 3,
         "id": _STATIC_ID,
         "name": "S",
         "version": "1.0.0",
@@ -403,7 +403,7 @@ def test_plugin_with_variables_starts_with_create(tmp_path: Path) -> None:
     plugin_dir = tmp_path / "plugins" / "com.t.disk"
     plugin_dir.mkdir(parents=True)
     manifest = {
-        "format": 2,
+        "format": 3,
         "id": "com.t.disk",
         "name": "D",
         "version": "1.0.0",

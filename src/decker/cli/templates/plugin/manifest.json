@@ -1,11 +1,11 @@
 {
-  "format": 2,
+  "format": 3,
   "id": "{{plugin_id}}",
   "name": "{{name}}",
   "version": "0.1.0",
   "author": "Your Name",
   "description": "A Decker plugin.",
-  "decker": ">=0.2",
+  "decker": ">=0.7",
   "runtime": {
     "type": "python",
     "entry": "plugin.py"
@@ -17,7 +17,6 @@
         "name": "{{name}}",
         "tooltip": "Press to say hello",
         "icon": "icons/card",
-        "gestures": ["press"],
         "states": [{ "image": "icons/card" }]
       }
     ]

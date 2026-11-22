@@ -33,7 +33,7 @@ def scaffold(plugin_id: str, dest: Path) -> Path:
     try:
         PluginManifest.from_dict(
             {
-                "format": 2,
+                "format": 3,
                 "id": plugin_id,
                 "name": "x",
                 "version": "0.1.0",

@@ -1,11 +1,11 @@
 {
-  "format": 2,
+  "format": 3,
   "id": "com.decker.vartest",
   "name": "Variable Test",
   "version": "1.0.0",
   "author": "Decker",
   "description": "Test-only plugin that publishes global variables.",
-  "decker": ">=0.6",
+  "decker": ">=0.7",
   "runtime": { "type": "python", "entry": "plugin.py" },
   "contributes": {
     "variables": [

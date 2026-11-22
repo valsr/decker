@@ -101,14 +101,14 @@ ACTION = "com.example.tool.show"
 
 def _manifest(version="1.0.0", plugin_id="com.example.tool", **extra) -> dict:
     data = {
-        "format": 1,
+        "format": 3,
         "id": plugin_id,
         "name": "Tool",
         "version": version,
         "author": "Me",
         "runtime": {"type": "executable", "entry": entry_name("tool.py")},
         "global_settings": [{"key": "token", "type": "text", "label": "Token", "default": "none"}],
-        "contributes": {"actions": [{"id": f"{plugin_id}.show", "name": "Show"}]},
+        "contributes": {"cards": [{"id": f"{plugin_id}.show", "name": "Show"}]},
     }
     data.update(extra)
     return data
@@ -263,12 +263,12 @@ def test_reinstall_replaces_and_reactivates_live_keys(env, tmp_path):
 def test_reinstall_keeps_the_key_settings(env, tmp_path):
     log1, log2 = tmp_path / "v1.log", tmp_path / "v2.log"
     manifest = _manifest()
-    manifest["contributes"]["actions"][0]["settings"] = [{"key": "n", "type": "int", "label": "N", "default": 1}]
+    manifest["contributes"]["cards"][0]["settings"] = [{"key": "n", "type": "int", "label": "N", "default": 1}]
     env.install(_package(log1, manifest))
     env.assign(settings={"n": 7})
     assert _wait_for(lambda: _lines(log1, "will_appear"))
     manifest2 = _manifest("2.0.0")
-    manifest2["contributes"]["actions"][0]["settings"] = manifest["contributes"]["actions"][0]["settings"]
+    manifest2["contributes"]["cards"][0]["settings"] = manifest["contributes"]["cards"][0]["settings"]
 
     env.install(_package(log2, manifest2))
 

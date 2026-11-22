@@ -1,8 +1,8 @@
 {
-  "format": 2,
+  "format": 3,
   "id": "com.decker.core",
   "name": "Core",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": "Decker",
   "description": "The actions Decker ships.",
   "icon": "icons/blank",
@@ -14,6 +14,7 @@
         "id": "com.decker.core.httprequest",
         "name": "HTTP Request",
         "tooltip": "Sends an HTTP request",
+        "scope": "global",
         "icon": "icons/blank",
         "settings": [
           {

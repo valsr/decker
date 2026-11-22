@@ -20,7 +20,7 @@ def _no_user(packs: list[dict]) -> list[dict]:
 
 def _plugin(tmp_path, path="pack", plugin_id="com.t.p", pack_id="com.t.p.icons") -> InstalledPlugin:
     data = {
-        "format": 1,
+        "format": 3,
         "id": plugin_id,
         "name": "T",
         "version": "1.0.0",
@@ -223,7 +223,7 @@ def test_plugin_version_follows_the_manifest(tmp_path):
 
 def _manifest_data():
     return {
-        "format": 1,
+        "format": 3,
         "id": "com.t.p",
         "name": "T",
         "version": "1.0.0",

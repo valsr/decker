@@ -34,7 +34,7 @@ def _options_plugin(
     if action:
         contributes["actions"] = [{"id": f"{_PLUGIN_ID}.act", "name": "A", "settings": [_choice(action)]}]
     data = {
-        "format": 2,
+        "format": 3,
         "id": _PLUGIN_ID,
         "name": "O",
         "version": "1.0.0",
@@ -239,7 +239,7 @@ def test_a_plugin_cannot_be_asked_for_another_plugins_source(tmp_path: Path) -> 
         proc_a = _started(manager, procs, _options_plugin(tmp_path, card="only_a"))
         other_id = "com.t.other"
         data = {
-            "format": 2,
+            "format": 3,
             "id": other_id,
             "name": "P",
             "version": "1.0.0",

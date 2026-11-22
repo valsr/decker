@@ -65,14 +65,14 @@ for line in sys.stdin:
 """
 
 _REC_MANIFEST: dict[str, Any] = {
-    "format": 1,
+    "format": 3,
     "id": "com.decker.rec",
     "name": "Recorder",
     "version": "1.0.0",
     "author": "Decker",
     "runtime": {"type": "executable", "entry": entry_name("rec.py")},
     "contributes": {
-        "actions": [
+        "cards": [
             {
                 "id": "com.decker.rec.show",
                 "name": "Show",
@@ -86,7 +86,7 @@ _REC_MANIFEST: dict[str, Any] = {
     },
 }
 
-_REC_MANIFEST["contributes"]["actions"].append(
+_REC_MANIFEST["contributes"]["cards"].append(
     {
         "id": "com.decker.rec.tpl",
         "name": "Templated",
@@ -99,13 +99,13 @@ _REC_MANIFEST["contributes"]["actions"].append(
     }
 )
 _STATIC_MANIFEST: dict[str, Any] = {
-    "format": 1,
+    "format": 3,
     "id": "com.t.static",
     "name": "Static",
     "version": "1.0.0",
     "author": "Decker",
     "contributes": {
-        "actions": [
+        "cards": [
             {
                 "id": "com.t.static.preset",
                 "name": "Preset",
@@ -119,7 +119,7 @@ _MIXED_MANIFEST = {
     **_REC_MANIFEST,
     "id": "com.t.mixed",
     "contributes": {
-        "actions": [
+        "cards": [
             {"id": "com.t.mixed.live", "name": "Live"},
             {"id": "com.t.mixed.preset", "name": "Preset", "static": True, "appearance": {"background": "#336699"}},
         ]
@@ -610,7 +610,7 @@ def _install_pack(env, tmp_path) -> InstalledPlugin:
     (root / "pack" / "dot.svg").write_bytes(_DOT_SVG)
     manifest = PluginManifest.from_dict(
         {
-            "format": 1,
+            "format": 3,
             "id": "com.t.ip",
             "name": "IP",
             "version": "1.0.0",
@@ -1358,11 +1358,11 @@ class TestStaticActions:
         actions = {a["card_uuid"]: a for a in env.manager.list_cards()}
 
         assert_that(actions[_STATIC_ACTION]["appearance"]).is_equal_to(
-            _STATIC_MANIFEST["contributes"]["actions"][0]["appearance"]
+            _STATIC_MANIFEST["contributes"]["cards"][0]["appearance"]
         )
 
 
-_STATIC_MANIFEST_DEFAULTS = _STATIC_MANIFEST["contributes"]["actions"][0]["appearance"]
+_STATIC_MANIFEST_DEFAULTS = _STATIC_MANIFEST["contributes"]["cards"][0]["appearance"]
 
 
 class TestTemplates:
@@ -1798,7 +1798,7 @@ def _install_gif_pack(env: Env, root: Path) -> None:
         (root / "pack" / name).write_bytes(data)
     manifest = PluginManifest.from_dict(
         {
-            "format": 1,
+            "format": 3,
             "id": "com.t.gifs",
             "name": "GIFs",
             "version": "1.0.0",

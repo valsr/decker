@@ -128,7 +128,7 @@ def test_undecodable_plugin_image_skipped() -> None:
 
 def test_unknown_appearance_key_in_manifest_rejected() -> None:
     data = {
-        "format": 1,
+        "format": 3,
         "id": "com.example.p",
         "name": "P",
         "version": "1.0.0",
@@ -136,10 +136,10 @@ def test_unknown_appearance_key_in_manifest_rejected() -> None:
         "description": "d",
         "decker": ">=0.2",
         "runtime": {"type": "python", "entry": "plugin.py", "python": ">=3.12", "requirements": []},
-        "contributes": {"actions": [{"id": "com.example.p.a", "name": "A", "appearance": {"background": "#112233"}}]},
+        "contributes": {"cards": [{"id": "com.example.p.a", "name": "A", "appearance": {"background": "#112233"}}]},
     }
     assert_that(PluginManifest.from_dict(data).cards[0].appearance).is_equal_to({"background": "#112233"})
-    data["contributes"]["actions"][0]["appearance"] = {"bogus": 1}  # type: ignore[index]
+    data["contributes"]["cards"][0]["appearance"] = {"bogus": 1}  # type: ignore[index]
     with pytest.raises(ManifestValidationError, match="com.example.p.a.*bogus"):
         PluginManifest.from_dict(data)
 
@@ -215,7 +215,7 @@ def test_unavailable_font_falls_back() -> None:
 
 def _manifest_data(appearance: dict[str, Any]) -> dict[str, Any]:
     return {
-        "format": 1,
+        "format": 3,
         "id": "com.example.p",
         "name": "P",
         "version": "1.0.0",
@@ -223,7 +223,7 @@ def _manifest_data(appearance: dict[str, Any]) -> dict[str, Any]:
         "description": "d",
         "decker": ">=0.2",
         "runtime": {"type": "python", "entry": "plugin.py", "python": ">=3.12", "requirements": []},
-        "contributes": {"actions": [{"id": "com.example.p.a", "name": "A", "appearance": appearance}]},
+        "contributes": {"cards": [{"id": "com.example.p.a", "name": "A", "appearance": appearance}]},
     }
 
 

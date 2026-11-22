@@ -48,7 +48,7 @@ def _install(env: Env, root: Path) -> InstalledPlugin:
         (root / "pack" / name).write_bytes(data)
     manifest = PluginManifest.from_dict(
         {
-            "format": 1,
+            "format": 3,
             "id": "com.t.bg",
             "name": "BG",
             "version": "1.0.0",
@@ -240,13 +240,13 @@ def test_pack_removal_redraws_a_manifest_default_background(env, tmp_path):
     root.mkdir()
     manifest = PluginManifest.from_dict(
         {
-            "format": 1,
+            "format": 3,
             "id": "com.t.bgpreset",
             "name": "BG preset",
             "version": "1.0.0",
             "author": "a",
             "contributes": {
-                "actions": [
+                "cards": [
                     {"id": "com.t.bgpreset.key", "name": "Key", "static": True, **{"appearance": _bg("blue.png")}}
                 ]
             },

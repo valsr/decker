@@ -1,11 +1,11 @@
 {
-  "format": 2,
+  "format": 3,
   "id": "com.decker.opttest",
   "name": "Options Test",
   "version": "1.0.0",
   "author": "Decker",
   "description": "Test-only plugin that supplies dynamic choice options.",
-  "decker": ">=0.6",
+  "decker": ">=0.7",
   "runtime": { "type": "python", "entry": "plugin.py" },
   "global_settings": [
     {
