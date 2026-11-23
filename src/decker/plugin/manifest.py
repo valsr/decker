@@ -120,6 +120,7 @@ class VariableSpec:
             raise ValueError("a variable declares exactly one of name and pattern")
 
 
+# One field per manifest key: a frozen dataclass of plain values, so the attribute count is not a design smell.
 @dataclass(frozen=True)
 class PluginManifest:  # pylint: disable=too-many-instance-attributes
     """Validated contents of a plugin's manifest.json."""
