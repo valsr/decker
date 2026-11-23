@@ -424,3 +424,46 @@ class TestForeignAccess:
         _foreign_send(env, "switch_page", {"page_id": "p1", "request": "req-1"})
 
         assert_that(env.pages.activations).is_empty()
+
+    def test_foreign_access_ends_when_the_result_arrives(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+        _in_flight(env)
+
+        env.manager._action_runner.on_result(
+            _COUNTER, {"request": "req-1", "ok": True}
+        )  # pylint: disable=protected-access
+        _foreign_send(env, "switch_page", {"page_id": "p1", "request": "req-1"})
+
+        assert_that(env.pages.activations).is_empty()
+
+    def test_a_real_exit_ends_a_waiting_call_promptly(self, env) -> None:
+        runner = ActionRunner(_QuietSupervisor(), lambda _a, _e: None, lambda _s, v, _d: dict(v))  # type: ignore[arg-type]
+        runner._actions = env.manager._action_runner._actions  # pylint: disable=protected-access
+        env.manager._action_runner = runner  # pylint: disable=protected-access
+        outcome: list[Any] = []
+        worker = threading.Thread(target=lambda: outcome.append(runner.execute(_foreign_call(env, 20.0))))
+        worker.start()
+        assert _wait_for(lambda: runner._pending)  # pylint: disable=protected-access
+
+        env.manager._on_plugin_exit(_COUNTER)  # pylint: disable=protected-access
+        worker.join(5)
+
+        assert_that(outcome[0].error).is_equal_to("the plugin stopped")
+
+    def test_a_late_exit_notification_spares_a_call_on_a_newer_process(self, env) -> None:
+        _counter_ready(env)
+        env.manager.activate_card(REC_TARGET)
+        _in_flight(env)
+
+        env.manager._on_plugin_exit(_COUNTER)  # pylint: disable=protected-access
+        _foreign_send(env, "switch_page", {"page_id": "p1", "request": "req-1"})
+
+        assert_that(env.pages.activations).is_equal_to([("dev-1", "p1")])
+
+    def test_unknown_events_from_a_plugin_keep_the_warning_set_bounded(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+
+        for number in range(50):
+            _foreign_send(env, f"made_up_{number}", {})
+
+        assert_that(env.manager._foreign_warned).is_equal_to({_COUNTER})  # pylint: disable=protected-access
