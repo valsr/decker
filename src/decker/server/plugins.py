@@ -211,7 +211,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._supervisor = PluginSupervisor(policy, PluginProcess, self._on_plugin_message, self._on_plugin_failed)
         self._supervisor.on_exit = self._on_plugin_exit
         self._action_runner = ActionRunner(self._supervisor, self._on_action_failed, self._resolve_args)
-        self._foreign_warned: set[tuple[str, str]] = set()
+        self._foreign_warned: set[str] = set()
         self.icon_packs = IconPackRegistry(on_failure=self._record_failure)
         self.variables = VariableStore(on_change=self._on_variables_changed)
         self._variable_runner = VariableRunner(
@@ -297,6 +297,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def unregister_actions(self, plugin_id: str) -> None:
         """Forget a plugin's actions and stop its process (the "actions" contribution handler)."""
+        self._foreign_warned.discard(plugin_id)
         self._action_runner.unregister(plugin_id)
         self._supervisor.unregister(plugin_id)
         with self._lock:
@@ -330,12 +331,12 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self.refresh_variable_users(names)
 
     def _on_plugin_exit(self, plugin_id: str) -> None:
-        self._action_runner.plugin_stopped(plugin_id)
         self._variable_runner.plugin_stopped(plugin_id)
         # Check-then-act: a restart landing between has_process() and plugin_stopped() would fail a fresh request
         # (a microsecond window; a generation-tagged on_exit would close it).
         if not self._supervisor.has_process(plugin_id):  # else a fresh process already serves a newer request
             self._options_runner.plugin_stopped(plugin_id)
+            self._action_runner.plugin_stopped(plugin_id)
         self.variables.drop_values(plugin_id)
 
     def _names_owned_by(self, plugin_id: str) -> frozenset[str]:
@@ -1072,18 +1073,17 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._on_switch_profile(live, message.payload)
 
     def _foreign_allowed(self, plugin_id: str, message: Message) -> bool:
-        """Whether a plugin may send this event to another plugin's card (only during a call that carried it)."""
         context = message.context or ""
         if message.event in _FOREIGN_EVENTS and self._action_runner.may_touch(
             plugin_id, message.payload.get("request"), context
         ):
             return True
-        key = (plugin_id, message.event)
-        if key in self._foreign_warned:
-            logging.debug("[%s] dropped %s for a card it does not own: %s", plugin_id, message.event, context)
+        event = message.event[:80]
+        if plugin_id in self._foreign_warned:
+            logging.debug("[%s] dropped %s for a card it does not own: %s", plugin_id, event, context[:80])
         else:
-            self._foreign_warned.add(key)
-            logging.warning("[%s] dropped %s for a card it does not own (%s)", plugin_id, message.event, context)
+            self._foreign_warned.add(plugin_id)
+            logging.warning("[%s] dropped %s for a card it does not own (%s)", plugin_id, event, context[:80])
         return False
 
     def _apply_sink_event(self, live: _Live, message: Message) -> tuple[bool, bool]:

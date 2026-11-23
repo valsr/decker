@@ -83,7 +83,7 @@ class ActionRunner:
             return False
         with self._lock:
             pending = self._pending.get(request)
-        if pending is None or pending.plugin_id != plugin_id or pending.call.card is None:
+        if pending is None or pending.plugin_id != plugin_id or pending.done.is_set() or pending.call.card is None:
             return False
         return pending.call.card.get("context") == context
 
@@ -143,7 +143,7 @@ class ActionRunner:
         """A plugin answered a ``run_action`` request."""
         request = payload.get("request")
         with self._lock:
-            pending = self._pending.get(request) if isinstance(request, str) else None
+            pending = self._pending.pop(request, None) if isinstance(request, str) else None
         if pending is None or pending.plugin_id != plugin_id:
             logging.debug("[%s] dropped an action result for an unknown request", plugin_id)
             return
@@ -199,6 +199,6 @@ class ActionRunner:
                 return ActionResult(False, "timed out")
             return pending.result
         finally:
-            self._supervisor.release(plugin_id)
             with self._lock:
                 self._pending.pop(request, None)
+            self._supervisor.release(plugin_id)
