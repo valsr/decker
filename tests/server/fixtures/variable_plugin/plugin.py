@@ -3,9 +3,9 @@
 import threading
 import time
 from pathlib import Path
-from typing import Any
 
 from decker_plugin_sdk import (
+    ActionCallContext,
     PluginContext,
     action,
     init,
@@ -57,6 +57,6 @@ def item_value(item: str) -> str:
 
 
 @action("com.decker.vartest.bump")
-def bump(_settings: dict[str, Any]) -> None:
+def bump(_ctx: ActionCallContext) -> None:
     _add(1000)
     signal_variable_updated("test_counter")

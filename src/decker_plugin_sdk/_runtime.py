@@ -6,17 +6,19 @@ import threading
 from collections import deque
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from typing import Any, BinaryIO, TypeVar
 
 from . import _options, _variables
+from ._actions import ActionCallContext, ActionFn, Input
 from ._context import MAX_LINE_BYTES, CardContext, encode_line
+from ._proxy import CardProxy, OwnCardProxy
 
 WORKERS = 4
 PLUGIN_WIDE = "\0plugin"  # queue key for context-less events
 
 _REGISTRY: dict[str, type["DeckerPlugin"]] = {}
 _T = TypeVar("_T", bound=type["DeckerPlugin"])
-_F = TypeVar("_F", bound=Callable[..., Any])
 
 
 class DeckerPlugin:
@@ -51,24 +53,6 @@ def card(card_id: str) -> "Callable[[_T], _T]":
     return decorate
 
 
-_ACTIONS: dict[str, Callable[[dict[str, Any]], Any]] = {}
-
-
-def action(action_id: str) -> "Callable[[_F], _F]":
-    """Register a function ``fn(settings: dict) -> None`` under a manifest action id; it runs when the action does."""
-
-    def decorate(fn: _F) -> _F:
-        _ACTIONS[action_id] = fn
-        return fn
-
-    return decorate
-
-
-def registered_actions() -> dict[str, Callable[[dict[str, Any]], Any]]:
-    """The actions registered so far with @action."""
-    return dict(_ACTIONS)
-
-
 def registered_cards() -> dict[str, type[DeckerPlugin]]:
     """The cards registered so far with @card."""
     return dict(_REGISTRY)
@@ -93,7 +77,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self,
         cards: Mapping[str, type[DeckerPlugin]],
         stdout: BinaryIO,
-        actions: Mapping[str, Callable[[dict[str, Any]], Any]] | None = None,
+        actions: Mapping[str, ActionFn] | None = None,
     ) -> None:
         self._cards = cards
         self._actions = actions or {}
@@ -104,6 +88,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._queues: dict[str, deque[dict[str, Any]]] = {}
         self._contexts: dict[str, tuple[DeckerPlugin, CardContext]] = {}
         self._global_settings: dict[str, Any] = {}
+        self._plugin_id: str = ""
         self._stopping = False
         self._vars = _variables.VariableHost(self.send, self.log_error)
         self._opts = _options.OptionsHost(self.send, self.log_error)
@@ -196,16 +181,56 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         if handler is None:
             self.send("action_result", None, {"request": request, "ok": False, "error": "no such action"})
             return
+        proxy: CardProxy | None = None
         try:
-            handler(self._dict(payload.get("args")))
+            ctx = self._action_context(payload)
+            proxy = ctx.card
+            handler(ctx)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.log_error(f"action {payload.get('action')} failed: {type(exc).__name__}: {exc}")
             self.send("action_result", None, {"request": request, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
             return
+        finally:
+            if proxy is not None:
+                proxy.close()
         self.send("action_result", None, {"request": request, "ok": True})
+
+    def _action_context(self, payload: dict[str, Any]) -> ActionCallContext:
+        request = str(payload.get("request"))
+        caller = payload.get("caller")
+        device = payload.get("device")
+        return ActionCallContext(
+            action=str(payload.get("action")),
+            request=request,
+            called_at=self._called_at(payload.get("called_at")),
+            input=Input(str(payload.get("input"))),
+            card=self._card_proxy(payload.get("card"), request),
+            args=self._dict(payload.get("args")),
+            caller=caller if isinstance(caller, str) else None,
+            _chain=str(payload.get("chain") or ""),
+            _depth=int(payload.get("depth") or 0),
+            _device=device if isinstance(device, str) else None,
+        )
+
+    @staticmethod
+    def _called_at(value: Any) -> datetime:
+        try:
+            parsed = datetime.fromisoformat(str(value))
+        except ValueError:
+            return datetime.now(timezone.utc)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    def _card_proxy(self, data: Any, request: str) -> CardProxy | None:
+        if not isinstance(data, dict):
+            return None
+        entry = self._contexts.get(str(data.get("context")))
+        if entry is not None and (not self._plugin_id or data.get("plugin") == self._plugin_id):
+            return OwnCardProxy(data, entry[1], entry[0])
+        return CardProxy(data, request, self.send)
 
     def _on_hello(self, payload: dict[str, Any]) -> None:
         settings = payload.get("global_settings")
+        self._plugin_id = str(payload.get("plugin_id") or "")
         self._global_settings = settings if isinstance(settings, dict) else {}
         self.send("ready")
         self._vars.start()
@@ -303,7 +328,7 @@ def run(
     cards: Mapping[str, type[DeckerPlugin]],
     stdin: BinaryIO,
     stdout: BinaryIO,
-    actions: Mapping[str, Callable[[dict[str, Any]], Any]] | None = None,
+    actions: Mapping[str, ActionFn] | None = None,
 ) -> int:
     """Serve the protocol on the given streams until shutdown or EOF; returns the exit code."""
     runtime = _Runtime(cards, stdout, actions)

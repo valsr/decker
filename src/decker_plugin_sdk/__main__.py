@@ -5,7 +5,8 @@ import os
 import sys
 from typing import BinaryIO, cast
 
-from ._runtime import registered_actions, registered_cards, run
+from ._actions import registered_actions
+from ._runtime import registered_cards, run
 
 
 def main(argv: list[str]) -> int:

@@ -145,7 +145,7 @@ def test_init_exception_skips_main_but_actions_still_run(rigs: list[Rig]) -> Non
     log = rig.recv_until("log")
     assert_that(log["payload"]["level"]).is_equal_to("error")
     assert_that(log["payload"]["message"]).contains("boom")
-    rig.send("run_action", {"request": 7, "action": "t.act", "args": {}})
+    rig.send("run_action", {"request": 7, "action": "t.act", "args": {}, "input": "plugin"})
     assert_that(rig.recv_until("action_result")["payload"]["ok"]).is_true()
     assert_that(calls).is_empty()
 
