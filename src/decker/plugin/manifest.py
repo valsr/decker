@@ -121,7 +121,7 @@ class VariableSpec:
 
 
 @dataclass(frozen=True)
-class PluginManifest:
+class PluginManifest:  # pylint: disable=too-many-instance-attributes
     """Validated contents of a plugin's manifest.json."""
 
     format: int
@@ -341,7 +341,7 @@ def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
 
 def _parse_scope(value: Any, action_id: str) -> Literal["global", "plugin"]:
     if value not in ("global", "plugin"):
-        raise ManifestValidationError(f"action {action_id} scope must be 'global' or 'plugin', got {value!r}")
+        raise ManifestValidationError(f"action {action_id} scope must be global or plugin, got {value!r}")
     return cast(Literal["global", "plugin"], value)
 
 
