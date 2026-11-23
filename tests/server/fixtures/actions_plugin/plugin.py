@@ -2,17 +2,16 @@
 
 import json
 from pathlib import Path
-from typing import Any
 
-from decker_plugin_sdk import action
+from decker_plugin_sdk import ActionCallContext, action
 
 
 @action("com.decker.acttest.mark")
-def mark(settings: dict[str, Any]) -> None:
+def mark(ctx: ActionCallContext) -> None:
     with Path(__file__).with_name("marks.log").open("a", encoding="utf-8") as log:
-        log.write(str(settings["tag"]))
+        log.write(str(ctx.args["tag"]))
 
 
 @action("com.decker.acttest.public")
-def public(settings: dict[str, Any]) -> None:
-    Path(__file__).with_name("public.log").write_text(json.dumps(settings), encoding="utf-8")
+def public(ctx: ActionCallContext) -> None:
+    Path(__file__).with_name("public.log").write_text(json.dumps(ctx.args), encoding="utf-8")

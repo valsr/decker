@@ -4,7 +4,7 @@ import os
 import threading
 import time
 
-from decker_plugin_sdk import CardContext, DeckerPlugin, action, card
+from decker_plugin_sdk import ActionCallContext, CardContext, DeckerPlugin, action, card
 
 BLOCK = threading.Event()
 SEEN: list[str] = []
@@ -36,7 +36,7 @@ ACTION_CALLS: list[dict] = []
 
 
 @action("test.echo.record")
-def record(settings: dict) -> None:
-    if settings.get("fail"):
+def record(ctx: ActionCallContext) -> None:
+    if ctx.args.get("fail"):
         raise ValueError("nope")
-    ACTION_CALLS.append(settings)
+    ACTION_CALLS.append(ctx.args)

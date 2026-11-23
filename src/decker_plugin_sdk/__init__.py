@@ -1,9 +1,10 @@
 """Dependency-free SDK for writing Decker plugins."""
 
+from ._actions import ActionCallContext, Input, action
 from ._context import CardContext
 from ._options import options
 from ._proxy import CardProxy, OwnCardProxy
-from ._runtime import DeckerPlugin, action, card, run
+from ._runtime import DeckerPlugin, card, run
 from ._variables import (
     PluginContext,
     get_variable,
@@ -17,9 +18,11 @@ from ._variables import (
 )
 
 __all__ = [
+    "ActionCallContext",
     "CardContext",
     "CardProxy",
     "DeckerPlugin",
+    "Input",
     "OwnCardProxy",
     "PluginContext",
     "action",

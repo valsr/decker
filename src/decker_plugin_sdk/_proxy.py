@@ -3,10 +3,12 @@
 from collections.abc import Mapping
 from datetime import datetime
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._context import CardContext, Sender
-from ._runtime import DeckerPlugin
+
+if TYPE_CHECKING:
+    from ._runtime import DeckerPlugin
 
 
 class CardProxy:
@@ -120,13 +122,13 @@ class CardProxy:
 class OwnCardProxy(CardProxy):
     """The plugin's own card: calls go through the live card context."""
 
-    def __init__(self, payload: Mapping[str, Any], ctx: CardContext, instance: DeckerPlugin) -> None:
+    def __init__(self, payload: Mapping[str, Any], ctx: CardContext, instance: "DeckerPlugin") -> None:
         super().__init__(payload, "", ctx._send)  # pylint: disable=protected-access
         self._ctx: CardContext = ctx
-        self._instance: DeckerPlugin = instance
+        self._instance: "DeckerPlugin" = instance
 
     @property
-    def instance(self) -> DeckerPlugin:
+    def instance(self) -> "DeckerPlugin":
         """The plugin instance that owns the card."""
         return self._instance
 

@@ -1,9 +1,6 @@
 """A minimal Decker plugin: a card whose press runs the plugin's hello action."""
 
-import sys
-from typing import Any
-
-from decker_plugin_sdk import DeckerPlugin, action, card
+from decker_plugin_sdk import ActionCallContext, DeckerPlugin, action, card
 
 
 @card("{{card_id}}")
@@ -12,5 +9,6 @@ class Hello(DeckerPlugin):
 
 
 @action("{{plugin_id}}.hello")
-def hello(settings: dict[str, Any]) -> None:
-    print("Hello from {{plugin_id}}!", file=sys.stderr)
+def hello(ctx: ActionCallContext) -> None:
+    if ctx.card is not None:
+        ctx.card.show_ok()
