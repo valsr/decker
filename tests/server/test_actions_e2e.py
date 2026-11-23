@@ -41,7 +41,6 @@ def _wait(predicate: Callable[[], bool], timeout: float = _DEADLINE) -> bool:
 
 
 class _Env:
-    """A real PluginManager around the fixture plugin; gestures go through the real recognizer and process."""
 
     def __init__(self, tmp_path: Path) -> None:
         plugins_dir = tmp_path / "plugins"

@@ -662,7 +662,9 @@ class TestKeysOnInactivePage:
         manager.dispatch_settings_changed.assert_not_called()
         manager.store_settings.assert_called_once()
 
-    def test_update_bindings_on_inactive_page_persists_without_notifying_plugin(self, service, manager, store, page2):
+    def test_update_bindings_on_inactive_page_persists_without_notifying_plugin(
+        self, service, manager, store, page2
+    ) -> None:
         store.assign("dev1", page2, 0, _make_target(), {})
         bindings = {"press": {"action": "com.p.act", "args": {"n": 1}}}
 
