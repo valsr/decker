@@ -6,7 +6,7 @@ from typing import Any
 
 from assertpy import assert_that
 
-from decker_plugin_sdk import ActionCallContext, DeckerPlugin, Input, run
+from decker_plugin_sdk import ActionCallContext, CardContext, DeckerPlugin, Input, run
 from decker_plugin_sdk._proxy import CardProxy, OwnCardProxy
 
 CALLED_AT = "2026-11-21T10:00:00.123+00:00"
@@ -15,6 +15,9 @@ CALLED_AT = "2026-11-21T10:00:00.123+00:00"
 class Counter(DeckerPlugin):
     def __init__(self) -> None:
         self.count: int = 0
+
+    def on_will_appear(self, ctx: CardContext) -> None:
+        ctx.set_title("up")  # lets a test wait until the card exists
 
 
 SEEN: list[ActionCallContext] = []
@@ -69,7 +72,7 @@ def _call(action_id: str, request: str, **extra: Any) -> dict[str, Any]:
 
 
 class _Host:
-    def __init__(self) -> None:
+    def __init__(self, plugin_id: str = "test.acts") -> None:
         in_r, in_w = os.pipe()
         out_r, out_w = os.pipe()
         self.to_plugin = os.fdopen(in_w, "wb")
@@ -79,7 +82,7 @@ class _Host:
         actions = {"a.rec": _record, "a.bump": _bump, "a.store": _store, "a.boom": _boom}
         self.thread = threading.Thread(target=lambda: run({"test.acts.c": Counter}, self._in, self._out, actions))
         self.thread.start()
-        self.send("hello", {"protocol": 4, "decker_version": "x", "plugin_id": "test.acts", "global_settings": {}})
+        self.send("hello", {"protocol": 4, "decker_version": "x", "plugin_id": plugin_id, "global_settings": {}})
         self.recv_until("ready")
 
     def send(self, event: str, payload: dict[str, Any], context: str | None = None) -> None:
@@ -102,8 +105,8 @@ class _Host:
             stream.close()
 
 
-def _with_host(body: Any) -> None:
-    host = _Host()
+def _with_host(body: Any, plugin_id: str = "test.acts") -> None:
+    host = _Host(plugin_id)
     try:
         body(host)
     finally:
@@ -176,6 +179,7 @@ def test_own_live_card_gives_own_proxy_with_instance() -> None:
             {"card": "test.acts.c", "device": "d", "key": {"index": 0, "column": 0, "row": 0}, "settings": {}},
             "c1",
         )
+        host.recv_until("set_title")
         for index in range(2):
             host.send("run_action", _call("a.bump", f"r{index}", input="press", card=_card_payload()))
             assert_that(host.recv_until("action_result")["payload"]["ok"]).is_true()
@@ -200,3 +204,22 @@ def test_foreign_card_proxy_is_closed_after_the_action_returns() -> None:
         assert_that(STORED[0].show_ok).raises(RuntimeError)
 
     _with_host(body)
+
+
+def test_card_is_never_own_without_a_plugin_id() -> None:
+    SEEN.clear()
+
+    def body(host: _Host) -> None:
+        host.send(
+            "will_appear",
+            {"card": "test.acts.c", "device": "d", "key": {"index": 0, "column": 0, "row": 0}, "settings": {}},
+            "c1",
+        )
+        host.recv_until("set_title")
+        host.send("run_action", _call("a.rec", "rn", card=_card_payload("")))
+        host.recv_until("action_result")
+        card = SEEN[-1].card
+        assert_that(isinstance(card, OwnCardProxy)).is_false()
+        assert_that(hasattr(card, "set_settings")).is_false()
+
+    _with_host(body, plugin_id="")

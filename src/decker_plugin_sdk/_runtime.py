@@ -224,7 +224,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         if not isinstance(data, dict):
             return None
         entry = self._contexts.get(str(data.get("context")))
-        if entry is not None and (not self._plugin_id or data.get("plugin") == self._plugin_id):
+        if entry is not None and bool(self._plugin_id) and data.get("plugin") == self._plugin_id:
             return OwnCardProxy(data, entry[1], entry[0])
         return CardProxy(data, request, self.send)
 
