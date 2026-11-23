@@ -37,6 +37,15 @@
         "settings": [
           { "key": "page", "type": "page", "label": "Page" }
         ]
+      },
+      {
+        "id": "com.decker.acttest.nav",
+        "name": "Navigate",
+        "tooltip": "Switches the calling device to a page",
+        "scope": "global",
+        "settings": [
+          { "key": "page", "type": "page", "label": "Page" }
+        ]
       }
     ]
   }

@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 from dataclasses import replace
 from typing import Any
@@ -12,11 +13,14 @@ from decker.plugin.icons import read_icon
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.protocol import Message
 from decker.plugin.target import CardTarget
+from decker.server.action_calls import ActionCall
+from decker.server.actions import ActionRunner, _Pending
 from decker.server.appearance import compose_key_image, resolve_appearance
 from tests.server.test_plugins import (
     _COUNTER,
     COUNTER_TARGET,
     REC_TARGET,
+    STATIC_TARGET,
     Env,
     _target,
     _wait_for,
@@ -322,3 +326,101 @@ class TestListings:
         assert_that(listed[_BUMP]["scope"]).is_equal_to("global")
         assert_that(listed[_INCREMENT]["scope"]).is_equal_to("plugin")
         assert_that(listed[_INCREMENT]).contains_key("returns")
+
+
+class _QuietSupervisor:
+    """Takes requests and never answers them, so a call stays in flight until its timeout."""
+
+    def is_failed(self, _plugin_id: str) -> bool:
+        return False
+
+    def acquire(self, _plugin_id: str) -> None:
+        pass
+
+    def release(self, _plugin_id: str) -> None:
+        pass
+
+    def send(self, _plugin_id: str, _message: Message) -> None:
+        pass
+
+
+def _foreign_call(env: Env, timeout: float | None = None) -> ActionCall:
+    """A call to the counter plugin carrying the card REC_TARGET (owned by another plugin)."""
+    card = {"context": REC_TARGET.context_id, "plugin": REC_TARGET.plugin_uuid}
+    return ActionCall(_BUMP, {}, "plugin", card=card, device="dev-1", timeout=timeout)
+
+
+def _in_flight(env: Env, request: str = "req-1") -> None:
+    runner = env.manager._action_runner  # pylint: disable=protected-access
+    runner._pending[request] = _Pending(_COUNTER, _foreign_call(env))  # pylint: disable=protected-access
+
+
+def _foreign_send(env: Env, event: str, payload: dict[str, Any]) -> None:
+    env.manager._route_context_message(  # pylint: disable=protected-access
+        _COUNTER, Message(event, REC_TARGET.context_id, payload)
+    )
+
+
+class TestForeignAccess:
+    def test_foreign_navigation_accepted_during_the_call(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+        _in_flight(env)
+
+        _foreign_send(env, "switch_page", {"page_id": "p1", "request": "req-1"})
+
+        assert_that(env.pages.activations).is_equal_to([("dev-1", "p1")])
+
+    def test_foreign_navigation_without_request_is_dropped(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+        _in_flight(env)
+
+        _foreign_send(env, "switch_page", {"page_id": "p1"})
+        _foreign_send(env, "switch_page", {"page_id": "p1", "request": "other"})
+
+        assert_that(env.pages.activations).is_empty()
+
+    def test_foreign_access_ends_when_the_call_times_out(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+        runner = ActionRunner(_QuietSupervisor(), lambda _a, _e: None, lambda _s, v, _d: dict(v))  # type: ignore[arg-type]
+        runner._actions = env.manager._action_runner._actions  # pylint: disable=protected-access
+        env.manager._action_runner = runner  # pylint: disable=protected-access
+        outcome: list[Any] = []
+        worker = threading.Thread(target=lambda: outcome.append(runner.execute(_foreign_call(env, 0.2))))
+        worker.start()
+        assert _wait_for(lambda: runner._pending)  # pylint: disable=protected-access
+        request = next(iter(runner._pending))  # pylint: disable=protected-access
+
+        _foreign_send(env, "switch_page", {"page_id": "p1", "request": request})
+        worker.join(5)
+        _foreign_send(env, "switch_page", {"page_id": "p3", "request": request})
+
+        assert_that(outcome[0].error).is_equal_to("timed out")
+        assert_that(env.pages.activations).is_equal_to([("dev-1", "p1")])
+
+    def test_foreign_set_settings_is_always_refused(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+        _in_flight(env)
+
+        _foreign_send(env, "set_settings", {"settings": {"x": 1}, "request": "req-1"})
+
+        assert_that(_live(env).settings).does_not_contain_key("x")
+
+    def test_foreign_access_is_limited_to_the_card_the_call_carried(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+        env.manager.activate_card(STATIC_TARGET)
+        _in_flight(env)
+
+        env.manager._route_context_message(  # pylint: disable=protected-access
+            _COUNTER, Message("switch_page", STATIC_TARGET.context_id, {"page_id": "p1", "request": "req-1"})
+        )
+
+        assert_that(env.pages.activations).is_empty()
+
+    def test_a_plugin_that_stopped_loses_its_access(self, env) -> None:
+        env.manager.activate_card(REC_TARGET)
+        _in_flight(env)
+
+        env.manager._action_runner.plugin_stopped(_COUNTER)  # pylint: disable=protected-access
+        _foreign_send(env, "switch_page", {"page_id": "p1", "request": "req-1"})
+
+        assert_that(env.pages.activations).is_empty()

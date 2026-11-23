@@ -160,6 +160,7 @@ class _Live:  # pylint: disable=too-many-instance-attributes
     delivered: dict[str, Any] = field(default_factory=dict)
 
 
+_FOREIGN_EVENTS: frozenset[str] = frozenset({"switch_page", "switch_profile", "show_ok", "show_alert"})
 _VARIABLE_EVENTS: frozenset[str] = frozenset(
     {"register_variable", "unregister_variable", "variable_updated", "variable_value"}
 )
@@ -210,6 +211,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._supervisor = PluginSupervisor(policy, PluginProcess, self._on_plugin_message, self._on_plugin_failed)
         self._supervisor.on_exit = self._on_plugin_exit
         self._action_runner = ActionRunner(self._supervisor, self._on_action_failed, self._resolve_args)
+        self._foreign_warned: set[tuple[str, str]] = set()
         self.icon_packs = IconPackRegistry(on_failure=self._record_failure)
         self.variables = VariableStore(on_change=self._on_variables_changed)
         self._variable_runner = VariableRunner(
@@ -328,6 +330,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self.refresh_variable_users(names)
 
     def _on_plugin_exit(self, plugin_id: str) -> None:
+        self._action_runner.plugin_stopped(plugin_id)
         self._variable_runner.plugin_stopped(plugin_id)
         # Check-then-act: a restart landing between has_process() and plugin_stopped() would fail a fresh request
         # (a microsecond window; a generation-tagged on_exit would close it).
@@ -1049,8 +1052,10 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def _route_context_message(self, plugin_id: str, message: Message) -> None:
         with self._lock:
             live = self._live.get(message.context or "")
-            if live is None or live.target.plugin_uuid != plugin_id:
+            if live is None:
                 logging.debug("[%s] dropped %s for inactive context %s", plugin_id, message.event, message.context)
+                return
+            if live.target.plugin_uuid != plugin_id and not self._foreign_allowed(plugin_id, message):
                 return
             handled, recompose = self._apply_sink_event(live, message)
         if recompose:
@@ -1065,6 +1070,21 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._on_switch_page(live, message.payload)
         elif message.event == "switch_profile":
             self._on_switch_profile(live, message.payload)
+
+    def _foreign_allowed(self, plugin_id: str, message: Message) -> bool:
+        """Whether a plugin may send this event to another plugin's card (only during a call that carried it)."""
+        context = message.context or ""
+        if message.event in _FOREIGN_EVENTS and self._action_runner.may_touch(
+            plugin_id, message.payload.get("request"), context
+        ):
+            return True
+        key = (plugin_id, message.event)
+        if key in self._foreign_warned:
+            logging.debug("[%s] dropped %s for a card it does not own: %s", plugin_id, message.event, context)
+        else:
+            self._foreign_warned.add(key)
+            logging.warning("[%s] dropped %s for a card it does not own (%s)", plugin_id, message.event, context)
+        return False
 
     def _apply_sink_event(self, live: _Live, message: Message) -> tuple[bool, bool]:
         """Update the instance (caller holds the lock); returns (handled, needs a recompose)."""
