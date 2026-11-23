@@ -26,9 +26,9 @@ class CardProxy:
         self._size: tuple[int, int] = (int(size[0]), int(size[1]))
         self._settings: Mapping[str, Any] = MappingProxyType(dict(payload.get("settings") or {}))
         self._last_paint: datetime | None = datetime.fromisoformat(last_paint) if last_paint else None
-        self._request = request
-        self._send = send
-        self._closed = False
+        self._request: str = request
+        self._send: Sender = send
+        self._closed: bool = False
 
     @property
     def context(self) -> str:
@@ -122,13 +122,18 @@ class OwnCardProxy(CardProxy):
 
     def __init__(self, payload: Mapping[str, Any], ctx: CardContext, instance: DeckerPlugin) -> None:
         super().__init__(payload, "", ctx._send)  # pylint: disable=protected-access
-        self._ctx = ctx
-        self._instance = instance
+        self._ctx: CardContext = ctx
+        self._instance: DeckerPlugin = instance
 
     @property
     def instance(self) -> DeckerPlugin:
         """The plugin instance that owns the card."""
         return self._instance
+
+    @property
+    def settings(self) -> Mapping[str, Any]:
+        """A read-only copy of the card's current settings."""
+        return MappingProxyType(dict(self._ctx.settings))
 
     def set_settings(self, settings: dict[str, Any]) -> None:
         """Store settings for the card; send only the keys you changed."""

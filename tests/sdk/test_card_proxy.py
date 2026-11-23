@@ -81,3 +81,12 @@ def test_own_proxy_calls_go_through_the_card_context() -> None:
     assert_that(sent).is_equal_to(
         [("set_settings", "ctx1", {"settings": {"x": 1}}), ("show_ok", "ctx1", {}), ("show_alert", "ctx1", {})]
     )
+
+
+def test_own_proxy_settings_follow_set_settings() -> None:
+    ctx = CardContext("ctx1", "card", "dev1", 3, 1, 0, settings={"a": 1})
+    proxy = OwnCardProxy(_payload(), ctx, DeckerPlugin())
+    proxy.set_settings({"a": 2})
+    assert_that(proxy.settings["a"]).is_equal_to(2)
+    with pytest.raises(TypeError):
+        proxy.settings["a"] = 5  # type: ignore[index]
