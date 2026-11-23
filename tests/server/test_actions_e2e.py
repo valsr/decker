@@ -25,6 +25,7 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "actions_plugin"
 _PLUGIN = "com.decker.acttest"
 _MARK = "com.decker.acttest.mark"
 _PUBLIC = "com.decker.acttest.public"
+_NAV = "com.decker.acttest.nav"
 _POLICY = SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0)
 _DEADLINE = 15.0
 _TILE = CardTarget(_PLUGIN, "com.decker.acttest.tile", "ctx-tile", "dev-1", 0)
@@ -154,3 +155,12 @@ def test_invalid_stored_args_never_reach_the_plugin_and_announce_action_failed(e
     assert_that(failed["action_id"]).is_equal_to(_MARK)
     assert_that(failed["error"]).contains("invalid arguments").contains("tag")
     assert_that(env.read("marks.log")).is_equal_to("")
+
+
+def test_global_action_navigates_the_blank_card_device(env: _Env) -> None:
+    env.manager.activate_card(_BLANK)
+    env.manager.set_bindings(_BLANK, {"press": {"action": _NAV, "args": {"page": "p1"}}})
+
+    env.press(_BLANK)
+
+    assert_that(_wait(lambda: env.pages.activations == [("dev-1", "p1")])).is_true()

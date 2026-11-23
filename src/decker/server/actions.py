@@ -36,8 +36,9 @@ ArgsResolver = Callable[[ActionSpec, Mapping[str, Any], str | None], dict[str, A
 
 
 class _Pending:
-    def __init__(self, plugin_id: str) -> None:
+    def __init__(self, plugin_id: str, call: ActionCall) -> None:
         self.plugin_id = plugin_id
+        self.call = call
         self.done = threading.Event()
         self.result = ActionResult(False, "no answer")
 
@@ -70,9 +71,29 @@ class ActionRunner:
         """Forget a plugin's actions; runs waiting on it end as failed."""
         with self._lock:
             self._actions = {a: entry for a, entry in self._actions.items() if entry[0].manifest.id != plugin_id}
-            waiting = [p for p in self._pending.values() if p.plugin_id == plugin_id]
-        for pending in waiting:
-            pending.result = ActionResult(False, "the plugin was removed")
+        self._end_pending(plugin_id, "the plugin was removed")
+
+    def plugin_stopped(self, plugin_id: str) -> None:
+        """The plugin's process ended: its calls in flight end as failed and lose their card access."""
+        self._end_pending(plugin_id, "the plugin stopped")
+
+    def may_touch(self, plugin_id: str, request: Any, context: str) -> bool:
+        """Whether ``plugin_id`` may touch the card ``context`` now: only while a call it was sent carrying it runs."""
+        if not isinstance(request, str):
+            return False
+        with self._lock:
+            pending = self._pending.get(request)
+        if pending is None or pending.plugin_id != plugin_id or pending.call.card is None:
+            return False
+        return pending.call.card.get("context") == context
+
+    def _end_pending(self, plugin_id: str, reason: str) -> None:
+        with self._lock:
+            waiting = {r: p for r, p in self._pending.items() if p.plugin_id == plugin_id}
+            for request in waiting:
+                del self._pending[request]
+        for pending in waiting.values():
+            pending.result = ActionResult(False, reason)
             pending.done.set()
 
     def spec(self, action_id: str) -> ActionSpec | None:
@@ -165,7 +186,7 @@ class ActionRunner:
         if self._supervisor.is_failed(plugin_id):
             return ActionResult(False, "the plugin has failed")
         request = uuid.uuid4().hex
-        pending = _Pending(plugin_id)
+        pending = _Pending(plugin_id, call)
         with self._lock:
             self._pending[request] = pending
         self._supervisor.acquire(plugin_id)  # starts the process when no card keeps it running

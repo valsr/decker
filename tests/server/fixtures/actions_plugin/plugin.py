@@ -15,3 +15,11 @@ def mark(ctx: ActionCallContext) -> None:
 @action("com.decker.acttest.public")
 def public(ctx: ActionCallContext) -> None:
     Path(__file__).with_name("public.log").write_text(json.dumps(ctx.args), encoding="utf-8")
+
+
+@action("com.decker.acttest.nav")
+def nav(ctx: ActionCallContext) -> None:
+    card = ctx.card
+    assert card is not None
+    card.go_to_page(ctx.args["page"]["page_id"])
+    card.show_ok()
