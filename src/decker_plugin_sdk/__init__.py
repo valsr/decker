@@ -2,6 +2,7 @@
 
 from ._context import CardContext
 from ._options import options
+from ._proxy import CardProxy, OwnCardProxy
 from ._runtime import DeckerPlugin, action, card, run
 from ._variables import (
     PluginContext,
@@ -17,7 +18,9 @@ from ._variables import (
 
 __all__ = [
     "CardContext",
+    "CardProxy",
     "DeckerPlugin",
+    "OwnCardProxy",
     "PluginContext",
     "action",
     "card",
