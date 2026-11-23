@@ -325,6 +325,16 @@ class TestKeyUpdateBindings:
         assert_that(result["ok"]).is_false()
         assert_that(result["errors"]).contains_key("press")
 
+    @pytest.mark.parametrize("payload", [[], "press", 5, None])
+    def test_key_update_bindings_refuses_a_non_object_payload(self, service, manager, store, payload) -> None:
+        store.assign("dev1", P1, 0, _make_target(), {})
+
+        result = json.loads(service.key_update_bindings("dev1", P1, 0, json.dumps(payload)))
+
+        assert_that(result).is_equal_to({"ok": False, "errors": {}})
+        assert_that(store.get("dev1", P1, 0).bindings).is_equal_to({})
+        manager.set_bindings.assert_not_called()
+
     def test_key_update_bindings_keeps_uninstalled_action(self, service, manager, store) -> None:
         store.assign("dev1", P1, 0, _make_target(), {})
         manager.validate_bindings.return_value = {}
@@ -651,6 +661,16 @@ class TestKeysOnInactivePage:
 
         manager.dispatch_settings_changed.assert_not_called()
         manager.store_settings.assert_called_once()
+
+    def test_update_bindings_on_inactive_page_persists_without_notifying_plugin(self, service, manager, store, page2):
+        store.assign("dev1", page2, 0, _make_target(), {})
+        bindings = {"press": {"action": "com.p.act", "args": {"n": 1}}}
+
+        result = json.loads(service.key_update_bindings("dev1", page2, 0, json.dumps(bindings)))
+
+        assert_that(result).is_equal_to({"ok": True, "errors": {}})
+        assert_that(store.get("dev1", page2, 0).bindings).is_equal_to(bindings)
+        manager.set_bindings.assert_not_called()
 
     def test_get_states_and_simulate_press_use_active_page(self, service, manager, store, page2):
         on_page2 = _make_target(ctx="p2")
