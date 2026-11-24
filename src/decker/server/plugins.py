@@ -1209,7 +1209,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             logging.debug("[%s] dropped get_deck_brightness without a string request", plugin_id)
             return
         try:
-            percent = self._saver_controller().brightness(device)  # type: ignore[arg-type]
+            percent = self._saver_controller().brightness(device, scan=False)  # type: ignore[arg-type]
             reply: dict[str, Any] = {"request": request, "device": device, "percent": percent}
         except ValueError as exc:
             reply = {"request": request, "error": str(exc)}
@@ -1217,7 +1217,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def _on_set_deck_brightness(self, plugin_id: str, payload: dict[str, Any]) -> None:
         try:
-            self._saver_controller().set_brightness(payload.get("device"), payload.get("percent"))  # type: ignore[arg-type]
+            device, percent = payload.get("device"), payload.get("percent")
+            self._saver_controller().set_brightness(device, percent, scan=False)  # type: ignore[arg-type]
         except ValueError as exc:
             logging.warning("[%s] set_deck_brightness refused: %s", plugin_id, exc)
 

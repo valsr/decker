@@ -2302,3 +2302,15 @@ def test_brightness_change_is_broadcast_to_every_plugin(saver_env):
 
     assert _wait_for(lambda: env.received("deck_brightness_changed"))
     assert_that(env.received("deck_brightness_changed")[0]["payload"]).is_equal_to({"device": "dev1", "percent": 55})
+
+
+def test_plugin_brightness_requests_never_enumerate_hardware(saver_env):
+    env, controller = saver_env
+    manager = controller._ctx.device_manager  # pylint: disable=protected-access
+    manager.list_devices = MagicMock(side_effect=AssertionError("USB was scanned"))  # type: ignore[method-assign]
+
+    _plugin_says(env, "set_deck_brightness", {"device": "nodev", "percent": 50})
+    _plugin_says(env, "get_deck_brightness", {"request": "r3", "device": "nodev"})
+
+    manager.list_devices.assert_not_called()
+    assert_that(env.sent[-1].payload).is_equal_to({"request": "r3", "error": "unknown device"})

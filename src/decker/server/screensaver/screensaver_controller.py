@@ -89,14 +89,14 @@ class ScreensaverController(Manager):
 
         self._commit(device_id, build)
 
-    def brightness(self, device_id: str) -> int:
-        """The device's normal brightness in percent."""
-        self._require_known(device_id)
+    def brightness(self, device_id: str, *, scan: bool = True) -> int:
+        """The device's normal brightness in percent; ``scan=False`` never enumerates hardware to find the device."""
+        self._require_known(device_id, scan=scan)
         return self._stored(device_id).brightness
 
-    def set_brightness(self, device_id: str, percent: int) -> int:
-        """Store a normal brightness clamped to 1-100, apply it and return the stored value."""
-        self._require_known(device_id)
+    def set_brightness(self, device_id: str, percent: int, *, scan: bool = True) -> int:
+        """Store a normal brightness clamped to 1-100, apply it and return the stored value (see ``brightness``)."""
+        self._require_known(device_id, scan=scan)
         if isinstance(percent, bool) or not isinstance(percent, int):
             raise ValueError("percent must be an integer")
         value = max(1, min(100, percent))
@@ -162,12 +162,12 @@ class ScreensaverController(Manager):
             _LOGGER.warning("screensaver settings of %s are invalid, using defaults: %s", device_id, exc)
             return ScreensaverSettings()
 
-    def _require_known(self, device_id: str) -> None:
+    def _require_known(self, device_id: str, scan: bool = True) -> None:
         manager = self._ctx.device_manager
         known = isinstance(device_id, str) and (
             device_id in manager.opened_device_ids()
             or self._ctx.device_state_store.get_device(device_id) is not None
-            or any(info.id == device_id for info in manager.list_devices())
+            or (scan and any(info.id == device_id for info in manager.list_devices()))
         )
         if not known:
             raise ValueError("unknown device")
