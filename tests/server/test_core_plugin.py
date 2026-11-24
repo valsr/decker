@@ -6,6 +6,7 @@ import os
 import queue
 import random
 import threading
+import time
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
@@ -20,6 +21,8 @@ from decker_plugin_sdk._actions import encode_value
 
 _PLUGIN = Path(__file__).parents[2] / "src" / "decker" / "builtin_plugins" / "com.decker.core" / "plugin.py"
 _HTTP = "com.decker.core.httprequest"
+_DELAY = "com.decker.core.delay"
+_MANIFEST = _PLUGIN.with_name("manifest.json")
 _WAIT = 10.0
 
 
@@ -42,7 +45,8 @@ class _Host:
         self._out = os.fdopen(out_w, "wb")
         self._from_plugin = os.fdopen(out_r, "rb")
         self._messages: queue.Queue[dict[str, Any] | None] = queue.Queue()
-        actions = {_HTTP: _load().http_request}
+        module = _load()
+        actions = {_HTTP: module.http_request, _DELAY: module.delay}
         self._thread = threading.Thread(target=lambda: run({}, self._in, self._out, actions))
         self._thread.start()
         self._reader = threading.Thread(target=self._read)
@@ -69,11 +73,11 @@ class _Host:
                 return message.get("payload") or {}
         raise AssertionError(f"no {event} message")
 
-    def call(self, args: dict[str, Any]) -> dict[str, Any]:
+    def call(self, args: dict[str, Any], action_id: str = _HTTP) -> dict[str, Any]:
         self._send(
             "run_action",
             {
-                "action": _HTTP,
+                "action": action_id,
                 "request": "r1",
                 "args": args,
                 "input": "plugin",
@@ -227,3 +231,48 @@ def test_unreachable_host_is_a_failure(host: _Host) -> None:
 
     assert_that(reply["ok"]).is_false()
     assert_that(reply["error"]).is_not_empty().does_not_contain("ActionError")
+
+
+def _manifest_action(action_id: str) -> dict[str, Any]:
+    actions = json.loads(_MANIFEST.read_text(encoding="utf-8"))["contributes"]["actions"]
+    return next(entry for entry in actions if entry["id"] == action_id)
+
+
+def test_delay_waits_the_given_seconds(host: _Host) -> None:
+    started = time.monotonic()
+    result = host.call({"seconds": 0.2}, _DELAY)
+    elapsed = time.monotonic() - started
+
+    assert_that(result["ok"]).is_true()
+    assert_that(elapsed).is_greater_than_or_equal_to(0.2)
+
+
+def test_delay_manifest_bounds() -> None:
+    entry = _manifest_action(_DELAY)
+    field = entry["settings"][0]
+
+    assert_that(entry["timeout"]).is_equal_to(65)
+    assert_that(entry["icon"]).is_equal_to("fas:hourglass-half")
+    assert_that(field).contains_entry(
+        {"key": "seconds"}, {"type": "float"}, {"min": 0}, {"max": 60}, {"default": 1.0}, {"decimals": 2}
+    )
+
+
+def test_sequence_manifest_declares_ten_steps() -> None:
+    entry = _manifest_action("com.decker.core.sequence")
+    keys = [field["key"] for field in entry["settings"] if "key" in field]
+
+    assert_that(entry["timeout"]).is_equal_to(300)
+    assert_that(entry["icon"]).is_equal_to("fas:list-ol")
+    assert_that(keys).contains(*[f"step_{n}" for n in range(1, 11)], "stop_on_error")
+    params = next(field for field in entry["settings"] if field.get("key") == "step_3_params")
+    assert_that(params).contains_entry({"type": "action_params"}, {"action_field": "step_3"})
+
+
+def test_steps_lists_set_steps_in_order_and_skips_empty() -> None:
+    module = _load()
+    args = {"step_1": "a.b", "step_1_params": {"x": 1}, "step_2": "", "step_3": "c.d", "step_3_params": "bad"}
+
+    assert_that(module._steps(args)).is_equal_to(
+        [(1, "a.b", {"x": 1}), (3, "c.d", {})]
+    )  # pylint: disable=protected-access

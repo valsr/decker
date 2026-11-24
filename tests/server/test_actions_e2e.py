@@ -38,6 +38,10 @@ _RELAY = "com.decker.acttest.relay"
 _PAINT = "com.decker.acttest.paint"
 _PROBE = "com.decker.acttest.probe"
 _CORE = "com.decker.core"
+_STEP = "com.decker.acttest.step"
+_NEXT = "com.decker.acttest.next"
+_SEQUENCE = "com.decker.core.sequence"
+_DELAY = "com.decker.core.delay"
 _HTTP = "com.decker.core.httprequest"
 _POLICY = SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0)
 _DEADLINE = 15.0
@@ -404,3 +408,75 @@ def test_plugin_set_icon_with_a_built_in_short_reference_lands_on_the_key(env: _
     assert_that(_wait(lambda: _is_green(env.key_pixel(2, centre, centre)))).described_as(
         "the built-in play icon never appeared"
     ).is_true()
+
+
+def _steps(*steps: tuple[str, dict[str, object]], **extra: object) -> dict[str, object]:
+    args: dict[str, object] = {}
+    for number, (action_id, params) in enumerate(steps, start=1):
+        if action_id:
+            args[f"step_{number}"] = action_id
+            args[f"step_{number}_params"] = params
+    return {**args, **extra}
+
+
+def _run_sequence(env: _Env, args: dict[str, object]) -> None:
+    env.manager.activate_card(_BLANK)
+    env.manager.set_bindings(_BLANK, {"press": {"action": _SEQUENCE, "args": args}})
+    env.press(_BLANK)
+
+
+def test_sequence_runs_steps_in_order_and_skips_empty(env: _Env) -> None:
+    _run_sequence(env, _steps((_STEP, {"n": 1}), ("", {}), (_STEP, {"n": 3})))
+
+    assert_that(_wait(lambda: env.read("steps.log") == "13")).described_as(env.read("steps.log")).is_true()
+    assert_that(env.bus.of("action_failed")).is_empty()
+
+
+def test_sequence_stops_on_error_naming_the_step(env: _Env) -> None:
+    _run_sequence(env, _steps((_STEP, {"n": 1}), (_STEP, {"n": 2, "fail": True}), (_STEP, {"n": 3})))
+
+    assert_that(_wait(lambda: bool(env.bus.of("action_failed")))).is_true()
+    assert_that(env.bus.of("action_failed")[0]["error"]).starts_with("step 2 (").contains("boom")
+    assert_that(env.read("steps.log")).is_equal_to("12")
+
+
+def test_sequence_continues_when_stop_on_error_is_off(env: _Env) -> None:
+    args = _steps((_STEP, {"n": 1, "fail": True}), (_STEP, {"n": 2}), stop_on_error=False)
+    _run_sequence(env, args)
+
+    assert_that(_wait(lambda: env.read("steps.log") == "12")).described_as(env.read("steps.log")).is_true()
+    assert_that(env.bus.of("action_failed")).is_empty()
+
+
+def test_sequence_with_invalid_step_params_fails_that_step(env: _Env) -> None:
+    _run_sequence(env, _steps((_STEP, {"n": 1}), (_STEP, {"n": "abc"}), (_STEP, {"n": 3})))
+
+    assert_that(_wait(lambda: bool(env.bus.of("action_failed")))).is_true()
+    assert_that(env.bus.of("action_failed")[0]["error"]).starts_with("step 2 (").contains("invalid arguments")
+    assert_that(env.read("steps.log")).is_equal_to("1")
+
+
+def test_sequence_step_switches_page_on_the_gesture_device(env: _Env) -> None:
+    _run_sequence(env, _steps((_NEXT, {})))
+
+    assert_that(_wait(lambda: env.pages.activations == [("dev-1", "p3")])).described_as("no page switch").is_true()
+
+
+def test_a_sequence_longer_than_the_default_timeout_is_not_cut_off(env: _Env) -> None:
+    env.manager._action_runner._timeout = 0.5  # pylint: disable=protected-access
+    args = _steps((_DELAY, {"seconds": 0.4}), (_DELAY, {"seconds": 0.4}), (_STEP, {"n": 7}))
+    _run_sequence(env, args)
+
+    assert_that(_wait(lambda: env.read("steps.log") == "7")).described_as("sequence was cut off").is_true()
+    assert_that(env.bus.of("action_failed")).is_empty()
+
+
+def test_nested_sequence_respects_depth_limit(env: _Env) -> None:
+    args: dict[str, object] = _steps((_STEP, {"n": 9}))
+    for _ in range(10):
+        args = _steps((_SEQUENCE, args))
+    _run_sequence(env, args)
+
+    assert_that(_wait(lambda: bool(env.bus.of("action_failed")))).is_true()
+    assert_that(env.bus.of("action_failed")[0]["error"]).contains("depth limit (8)")
+    assert_that(env.read("steps.log")).is_equal_to("")

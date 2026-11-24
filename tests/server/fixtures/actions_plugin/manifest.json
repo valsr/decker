@@ -6,7 +6,10 @@
   "author": "Decker",
   "description": "Test-only plugin that runs bound actions.",
   "decker": ">=0.7",
-  "runtime": { "type": "python", "entry": "plugin.py" },
+  "runtime": {
+    "type": "python",
+    "entry": "plugin.py"
+  },
   "contributes": {
     "cards": [
       {
@@ -20,8 +23,18 @@
         "name": "Tile",
         "tooltip": "A card whose gestures run plugin actions",
         "bindings": {
-          "press": { "action": "com.decker.acttest.mark", "args": { "tag": "p" } },
-          "long_press": { "action": "com.decker.acttest.mark", "args": { "tag": "l" } }
+          "press": {
+            "action": "com.decker.acttest.mark",
+            "args": {
+              "tag": "p"
+            }
+          },
+          "long_press": {
+            "action": "com.decker.acttest.mark",
+            "args": {
+              "tag": "l"
+            }
+          }
         }
       }
     ],
@@ -32,7 +45,13 @@
         "tooltip": "Appends a tag to marks.log",
         "scope": "plugin",
         "settings": [
-          { "key": "tag", "type": "text", "label": "Tag", "required": true, "pattern": "[a-z]+" }
+          {
+            "key": "tag",
+            "type": "text",
+            "label": "Tag",
+            "required": true,
+            "pattern": "[a-z]+"
+          }
         ]
       },
       {
@@ -41,7 +60,11 @@
         "tooltip": "Writes its arguments to public.log",
         "scope": "global",
         "settings": [
-          { "key": "page", "type": "page", "label": "Page" }
+          {
+            "key": "page",
+            "type": "page",
+            "label": "Page"
+          }
         ]
       },
       {
@@ -50,7 +73,11 @@
         "tooltip": "Switches the calling device to a page",
         "scope": "global",
         "settings": [
-          { "key": "page", "type": "page", "label": "Page" }
+          {
+            "key": "page",
+            "type": "page",
+            "label": "Page"
+          }
         ]
       },
       {
@@ -59,7 +86,12 @@
         "tooltip": "Returns twice its n",
         "scope": "plugin",
         "settings": [
-          { "key": "n", "type": "int", "label": "N", "default": 0 }
+          {
+            "key": "n",
+            "type": "int",
+            "label": "N",
+            "default": 0
+          }
         ]
       },
       {
@@ -75,7 +107,12 @@
         "tooltip": "Calls itself with n + 1 until refused",
         "scope": "plugin",
         "settings": [
-          { "key": "n", "type": "int", "label": "N", "default": 0 }
+          {
+            "key": "n",
+            "type": "int",
+            "label": "N",
+            "default": 0
+          }
         ]
       },
       {
@@ -96,6 +133,33 @@
         "id": "com.decker.acttest.relay",
         "name": "Relay",
         "tooltip": "Calls public for page p1 without naming a device",
+        "scope": "global",
+        "settings": []
+      },
+      {
+        "id": "com.decker.acttest.step",
+        "name": "Step",
+        "tooltip": "Appends n to steps.log; fails when asked",
+        "scope": "global",
+        "settings": [
+          {
+            "key": "n",
+            "type": "int",
+            "label": "N",
+            "default": 0
+          },
+          {
+            "key": "fail",
+            "type": "bool",
+            "label": "Fail",
+            "default": false
+          }
+        ]
+      },
+      {
+        "id": "com.decker.acttest.next",
+        "name": "Next page",
+        "tooltip": "Switches the call's device to the next page",
         "scope": "global",
         "settings": []
       }

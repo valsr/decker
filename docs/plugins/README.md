@@ -16,7 +16,7 @@ with a double-buffered Pillow canvas. Manifest format 3 and protocol 4 (Decker 0
 cards, card presets, `gestures`, `set_gestures` and the `slots` setting type; formats 1 and 2 are refused. `{page_name}`-style
 templates, `page` settings and `switch_page` are described in the manifest, settings-schema and protocol pages above.
 Decker ships two built-in plugins: Blank (static cards, including Page Name and Page Count) and Core (the Do Nothing
-action and the HTTP Request action, which runs in a Core plugin process).
+action, and the HTTP Request, Delay and Sequence actions, which run in a Core plugin process).
 
 Plugins run with your user's permissions and are not sandboxed. Only install plugins from authors you trust.
 

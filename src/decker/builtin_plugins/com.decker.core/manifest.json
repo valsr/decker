@@ -7,7 +7,10 @@
   "description": "The actions Decker ships.",
   "icon": "icons/blank",
   "decker": ">=0.7",
-  "runtime": { "type": "python", "entry": "plugin.py" },
+  "runtime": {
+    "type": "python",
+    "entry": "plugin.py"
+  },
   "category": "Utilities",
   "contributes": {
     "cards": [],
@@ -32,17 +35,200 @@
             "type": "choice",
             "label": "Method",
             "options": [
-              { "label": "GET", "value": "GET" },
-              { "label": "POST", "value": "POST" },
-              { "label": "PUT", "value": "PUT" },
-              { "label": "PATCH", "value": "PATCH" },
-              { "label": "DELETE", "value": "DELETE" }
+              {
+                "label": "GET",
+                "value": "GET"
+              },
+              {
+                "label": "POST",
+                "value": "POST"
+              },
+              {
+                "label": "PUT",
+                "value": "PUT"
+              },
+              {
+                "label": "PATCH",
+                "value": "PATCH"
+              },
+              {
+                "label": "DELETE",
+                "value": "DELETE"
+              }
             ]
           },
-          { "key": "url", "type": "text", "label": "URL", "placeholder": "https://example.com/hook" },
-          { "key": "body", "type": "text", "label": "Body", "multiline": true },
-          { "key": "content_type", "type": "text", "label": "Content type", "placeholder": "application/json" },
-          { "key": "timeout", "type": "int", "label": "Timeout (seconds)", "default": 10, "min": 1, "max": 120 }
+          {
+            "key": "url",
+            "type": "text",
+            "label": "URL",
+            "placeholder": "https://example.com/hook"
+          },
+          {
+            "key": "body",
+            "type": "text",
+            "label": "Body",
+            "multiline": true
+          },
+          {
+            "key": "content_type",
+            "type": "text",
+            "label": "Content type",
+            "placeholder": "application/json"
+          },
+          {
+            "key": "timeout",
+            "type": "int",
+            "label": "Timeout (seconds)",
+            "default": 10,
+            "min": 1,
+            "max": 120
+          }
+        ]
+      },
+      {
+        "id": "com.decker.core.delay",
+        "name": "Delay",
+        "tooltip": "Waits before the next step",
+        "scope": "global",
+        "icon": "fas:hourglass-half",
+        "timeout": 65,
+        "settings": [
+          {
+            "key": "seconds",
+            "type": "float",
+            "label": "Seconds",
+            "default": 1.0,
+            "min": 0,
+            "max": 60,
+            "step": 0.1,
+            "decimals": 2
+          }
+        ]
+      },
+      {
+        "id": "com.decker.core.sequence",
+        "name": "Sequence",
+        "tooltip": "Runs up to ten actions one after another",
+        "scope": "global",
+        "icon": "fas:list-ol",
+        "timeout": 300,
+        "settings": [
+          {
+            "key": "step_1",
+            "type": "action",
+            "label": "Step 1"
+          },
+          {
+            "key": "step_1_params",
+            "type": "action_params",
+            "action_field": "step_1",
+            "label": "Step 1 settings"
+          },
+          {
+            "key": "step_2",
+            "type": "action",
+            "label": "Step 2"
+          },
+          {
+            "key": "step_2_params",
+            "type": "action_params",
+            "action_field": "step_2",
+            "label": "Step 2 settings"
+          },
+          {
+            "key": "step_3",
+            "type": "action",
+            "label": "Step 3"
+          },
+          {
+            "key": "step_3_params",
+            "type": "action_params",
+            "action_field": "step_3",
+            "label": "Step 3 settings"
+          },
+          {
+            "key": "step_4",
+            "type": "action",
+            "label": "Step 4"
+          },
+          {
+            "key": "step_4_params",
+            "type": "action_params",
+            "action_field": "step_4",
+            "label": "Step 4 settings"
+          },
+          {
+            "key": "step_5",
+            "type": "action",
+            "label": "Step 5"
+          },
+          {
+            "key": "step_5_params",
+            "type": "action_params",
+            "action_field": "step_5",
+            "label": "Step 5 settings"
+          },
+          {
+            "key": "step_6",
+            "type": "action",
+            "label": "Step 6"
+          },
+          {
+            "key": "step_6_params",
+            "type": "action_params",
+            "action_field": "step_6",
+            "label": "Step 6 settings"
+          },
+          {
+            "key": "step_7",
+            "type": "action",
+            "label": "Step 7"
+          },
+          {
+            "key": "step_7_params",
+            "type": "action_params",
+            "action_field": "step_7",
+            "label": "Step 7 settings"
+          },
+          {
+            "key": "step_8",
+            "type": "action",
+            "label": "Step 8"
+          },
+          {
+            "key": "step_8_params",
+            "type": "action_params",
+            "action_field": "step_8",
+            "label": "Step 8 settings"
+          },
+          {
+            "key": "step_9",
+            "type": "action",
+            "label": "Step 9"
+          },
+          {
+            "key": "step_9_params",
+            "type": "action_params",
+            "action_field": "step_9",
+            "label": "Step 9 settings"
+          },
+          {
+            "key": "step_10",
+            "type": "action",
+            "label": "Step 10"
+          },
+          {
+            "key": "step_10_params",
+            "type": "action_params",
+            "action_field": "step_10",
+            "label": "Step 10 settings"
+          },
+          {
+            "key": "stop_on_error",
+            "type": "bool",
+            "label": "Stop on error",
+            "default": true
+          }
         ]
       }
     ]
