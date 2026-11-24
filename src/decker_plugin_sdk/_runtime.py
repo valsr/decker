@@ -208,7 +208,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         try:
             ctx = self._action_context(payload)
             proxy = ctx.card
-            token = _FRAME.set(CallFrame(ctx._chain, ctx._depth))  # pylint: disable=protected-access
+            token = _FRAME.set(CallFrame(ctx._chain, ctx._depth, str(request)))  # pylint: disable=protected-access
             value = handler(ctx)
             problem = encode_value(value)
             result: dict[str, Any] = {"request": request, "ok": problem is None}

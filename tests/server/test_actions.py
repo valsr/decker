@@ -366,6 +366,7 @@ class TestCallAction:
             {"depth": True},
             {"chain": 5},
             {"device": 5},
+            {"parent": 5},
             {"action": 7},
         ],
     )
@@ -506,40 +507,65 @@ class TestTimeLimit:
         assert_that(runner.timeout_for(_call("com.t.act.long"))).is_equal_to(120.0)
         assert_that(runner.timeout_for(_call("com.t.act.long", timeout=10_000))).is_equal_to(MAX_CALL_TIMEOUT_S)
 
-    def _parent(self, runner: ActionRunner, remaining: float) -> ActionCall:
+    def _parent(self, runner: ActionRunner, remaining: float, request: str = "parent") -> str:
         parent = _call("com.t.act.echo")
         pending = _Pending("com.t.act", parent)
         pending.deadline = time.monotonic() + remaining
-        runner._pending["parent"] = pending  # pylint: disable=protected-access
-        return parent
+        runner._pending[request] = pending  # pylint: disable=protected-access
+        return parent.chain
+
+    @staticmethod
+    def _nested(runner: ActionRunner, chain: str, **fields: Any) -> ActionResult:
+        payload = {
+            "request": "n1",
+            "action": "com.t.act.long",
+            "args": {},
+            "chain": chain,
+            "parent": "parent",
+            **fields,
+        }
+        return runner._plugin_call("com.t.act", payload)  # pylint: disable=protected-access
 
     def test_nested_call_is_capped_by_parent_remaining_time(self) -> None:
         runner, _ = self._silent([_ECHO, _LONG])
-        parent = self._parent(runner, 1.0)
+        chain = self._parent(runner, 1.0)
         started = time.monotonic()
 
-        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1))
+        result = self._nested(runner, chain)
 
         assert_that(result.error).is_equal_to("timed out")
         assert_that(time.monotonic() - started).is_between(0.5, 3)
 
     def test_nested_call_with_no_time_left_is_not_sent(self) -> None:
         runner, supervisor = self._silent([_ECHO, _LONG])
-        parent = self._parent(runner, -1.0)
+        chain = self._parent(runner, -1.0)
 
-        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1))
+        result = self._nested(runner, chain)
 
         assert_that(result.error).is_equal_to("the calling action ran out of time")
         supervisor.send.assert_not_called()
 
-    def test_a_short_lived_sibling_does_not_cap_another_nested_call(self) -> None:
+    def test_a_same_plugin_sibling_does_not_cap_another_nested_call(self) -> None:
+        runner, _ = self._silent([_ECHO, _SLOW, _LONG])
+        chain = self._parent(runner, 60.0)
+        seen: list[ActionCall] = []
+        runner._execute = lambda call: seen.append(call) or ActionResult(True)  # type: ignore[method-assign,func-returns-value]  # pylint: disable=protected-access
+        self._nested(runner, chain, action="com.t.act.slow", timeout=2)
+        sibling = _Pending("com.t.act", seen[0])
+        sibling.deadline = time.monotonic() + 0.01
+        runner._pending["sibling"] = sibling  # pylint: disable=protected-access
+
+        self._nested(runner, chain)
+
+        assert_that(runner.timeout_for(seen[1])).is_between(55, 61)
+
+    def test_an_unknown_or_foreign_parent_gives_no_cap(self) -> None:
         runner, _ = self._silent([_ECHO, _LONG])
-        parent = self._parent(runner, 60.0)
-        sibling = _call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1, timeout=2)
-        sibling_pending = _Pending("com.t.act", sibling)
-        sibling_pending.deadline = time.monotonic() + 0.01
-        runner._pending["sibling"] = sibling_pending  # pylint: disable=protected-access
+        chain = self._parent(runner, 0.5)
+        seen: list[ActionCall] = []
+        runner._execute = lambda call: seen.append(call) or ActionResult(True)  # type: ignore[method-assign,func-returns-value]  # pylint: disable=protected-access
+        self._nested(runner, chain, parent="nope")
+        runner._pending["parent"].plugin_id = "com.other"  # pylint: disable=protected-access
+        self._nested(runner, chain)
 
-        wait = runner.timeout_for(_call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1))
-
-        assert_that(wait).is_between(55, 61)
+        assert_that([runner.timeout_for(c) for c in seen]).is_equal_to([120.0, 120.0])

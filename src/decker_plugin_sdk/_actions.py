@@ -75,6 +75,7 @@ class CallFrame:
 
     chain: str
     depth: int
+    request: str
 
 
 _FRAME: contextvars.ContextVar[CallFrame | None] = contextvars.ContextVar("decker_call_frame", default=None)
@@ -134,7 +135,7 @@ class CallHost:
             message["timeout"] = timeout
         frame = _FRAME.get()
         if frame is not None:
-            message.update(chain=frame.chain, depth=frame.depth + 1)
+            message.update(chain=frame.chain, depth=frame.depth + 1, parent=frame.request)
         if device:
             message["device"] = device
         waiter = _Waiter()

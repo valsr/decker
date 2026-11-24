@@ -62,7 +62,7 @@ discarded.
 | `switch_profile` | yes | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"profile_id": 2}`: switch the key's device to that profile's default page (see [Profiles](#profiles)) |
 | `set_global_settings` | | `{"settings": {...}}`, validated against `global_settings` and saved |
 | `action_result` | | `{"request": "<id>", "ok": true, "value": ...}` (`value` optional) or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. `value` is any JSON, at most 1 MiB encoded, larger is an error. The server gives up after the call's timeout (the caller's `timeout`, else the action's manifest `timeout`, else 30 s) and shows the user the error |
-| `call_action` | | `{"request": "<id>", "action": "<action id>", "args": {...}, "timeout": 30, "chain": "<id>", "depth": 0, "device": "<device id>"}` (all but `request` and `action` optional): run an action and get its value, see [Action calls](#action-calls) |
+| `call_action` | | `{"request": "<id>", "action": "<action id>", "args": {...}, "timeout": 30, "chain": "<id>", "parent": "<request id>", "depth": 0, "device": "<device id>"}` (all but `request` and `action` optional): run an action and get its value, see [Action calls](#action-calls) |
 | `get_image` | | `{"request": "<id>", "context": "<ctx>", "call": "<run_action request>"}`: ask for a key's current plugin image, see [Painting](#painting) |
 | `register_variable` | | `{"name": "<concrete name>"}`: announce a name inside one of your declared patterns (see [Variables](#variables)) |
 | `unregister_variable` | | `{"name": "<concrete name>"}`: withdraw it and its value |
@@ -114,6 +114,9 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
   plugin is running (own depth plus one) and refuses a call deeper than **8**. The limit therefore relies on the
   caller forwarding `chain`: the Python SDK does it for you inside an action, but a raw-protocol plugin that omits
   `chain` starts a new chain at the `depth` it sends (0 if none) and is not limited by the chain. Forward `chain` yourself.
+- **Parent.** `parent` (optional) is the `request` id of the `run_action` the call is made from. It caps the call's
+  timeout to that run's remaining time; the Python SDK sends it inside an action. Without it, or when it names no live run
+  of the caller, only the call's own timeout applies.
 - **Device.** A chain that started from a card carries its device, so actions called inside it resolve `page` and
   `profile` arguments and templates for that device. `device` in `call_action` sets one explicitly. With neither,
   `page`/`profile` arguments arrive as their unset values and device templates expand to empty text.
