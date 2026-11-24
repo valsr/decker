@@ -6,7 +6,7 @@ import sys
 import threading
 import uuid
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -17,6 +17,9 @@ if TYPE_CHECKING:
     from PIL.Image import Image
 
 FRAME_INTERVAL = 1 / 30
+# The server drops messages above 100 msg/s (burst 200) and kills a plugin that keeps flooding; 2 frames per
+# 1/30 s tick is about 60 frames/s, which leaves room for every other message. Keys over budget stay dirty.
+MAX_FRAMES_PER_TICK = 2
 IMAGE_TIMEOUT = 5.0
 NO_PILLOW = "the canvas needs Pillow: add pillow to your plugin's requirements"
 
@@ -42,8 +45,14 @@ class _ImageWait:
 class FrameTicker:
     """Sends the latest snapshot of every dirty key from one daemon thread, about 30 times a second."""
 
-    def __init__(self, send: Sender, interval: float = FRAME_INTERVAL) -> None:
+    def __init__(
+        self,
+        send: Sender,
+        interval: float = FRAME_INTERVAL,
+        blocking: Callable[[], AbstractContextManager[None]] = nullcontext,
+    ) -> None:
         self._send: Sender = send
+        self._blocking: Callable[[], AbstractContextManager[None]] = blocking
         self._interval: float = interval
         self._lock: threading.Lock = threading.Lock()
         self._send_lock: threading.Lock = threading.Lock()
@@ -65,10 +74,11 @@ class FrameTicker:
                 self._thread.start()
 
     def tick(self) -> None:
-        """Send every dirty key's snapshot now."""
+        """Send up to MAX_FRAMES_PER_TICK dirty snapshots: cards of other plugins first, then the oldest dirty."""
         with self._send_lock:
             with self._lock:
-                items, self._dirty = self._dirty, {}
+                ordered = sorted(self._dirty, key=lambda target: target.request is None)  # stable: oldest first
+                items = {target: self._dirty.pop(target) for target in ordered[:MAX_FRAMES_PER_TICK]}
             self._send_items(items)
 
     def flush(self, request: str) -> None:
@@ -109,7 +119,8 @@ class FrameTicker:
             payload["call"] = call
         try:
             self._send("get_image", None, payload)
-            arrived = wait.done.wait(IMAGE_TIMEOUT)
+            with self._blocking():
+                arrived = wait.done.wait(IMAGE_TIMEOUT)
         finally:
             with self._lock:
                 self._waits.pop(request, None)
@@ -148,9 +159,16 @@ class FrameTicker:
                 _warn(f"frame for {target.context[:40]} not sent: {type(exc).__name__}: {exc}")
                 continue
             if target.request is None:
-                with self._lock:
-                    self._frames[target.context] = png
-                    self._painted[target.context] = datetime.now(timezone.utc)
+                self.record(target.context, png)
+
+    def record(self, context: str, png: bytes | None) -> None:
+        """Note that a frame was sent for the context; ``png`` is kept as the canvas seed (None: not a PNG)."""
+        with self._lock:
+            if png is None:
+                self._frames.pop(context, None)
+            else:
+                self._frames[context] = png
+            self._painted[context] = datetime.now(timezone.utc)
 
 
 class Canvas:

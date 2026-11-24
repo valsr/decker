@@ -2,9 +2,11 @@
 
 import base64
 import json
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -44,21 +46,24 @@ class CardContext:
     _frames: "FrameTicker | None" = field(default=None, repr=False, compare=False)
     _paint: Callable[[], None] = field(default=lambda: None, repr=False, compare=False)
     _canvas: "Canvas | None" = field(default=None, init=False, repr=False, compare=False)
+    _canvas_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False, compare=False)
 
     @property
     def canvas(self) -> "Canvas":
         """The key's drawing surface (needs Pillow); it starts from the last frame this plugin sent."""
-        if self._canvas is None:
-            from ._canvas import (  # pylint: disable=import-outside-toplevel
-                Canvas,
-                FrameTarget,
-            )
+        with self._canvas_lock:
+            if self._canvas is None:
+                from ._canvas import (  # pylint: disable=import-outside-toplevel
+                    Canvas,
+                    FrameTarget,
+                )
 
-            frames = self._frames
-            if frames is None:
-                raise RuntimeError("the canvas works only inside a running plugin")
-            self._canvas = Canvas(frames, FrameTarget(self.context), self.size, lambda: frames.last_frame(self.context))
-        return self._canvas
+                frames = self._frames
+                if frames is None:
+                    raise RuntimeError("the canvas works only inside a running plugin")
+                loader = partial(frames.last_frame, self.context)
+                self._canvas = Canvas(frames, FrameTarget(self.context), self.size, loader)
+            return self._canvas
 
     @property
     def last_paint(self) -> datetime | None:
@@ -75,6 +80,7 @@ class CardContext:
     def set_image(self, data: bytes, format: str = "png") -> None:  # pylint: disable=redefined-builtin
         """Show an image (png, jpeg or svg bytes) on the key."""
         self._emit("set_image", {"image": base64.b64encode(data).decode("ascii"), "format": format})
+        self._record(data if format == "png" else None)
 
     def set_icon(self, ref: str, color: str | None = None) -> None:
         """Show an icon from an installed icon pack (``pack:<pack id>/<path>``); SVGs are filled with ``color``."""
@@ -82,10 +88,16 @@ class CardContext:
         if color is not None:
             payload["color"] = color
         self._emit("set_image", payload)
+        self._record(None)
 
     def clear_image(self) -> None:
         """Remove any plugin-provided image from the key."""
         self._emit("set_image", {"image": None})
+        self._record(None)
+
+    def _record(self, png: bytes | None) -> None:
+        if self._frames is not None:
+            self._frames.record(self.context, png)
 
     def set_title(self, title: str) -> None:
         """Set the key title."""
