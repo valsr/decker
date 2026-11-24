@@ -29,10 +29,10 @@ discarded.
 | Event | Context | Payload |
 |-------|---------|---------|
 | `hello` | | `{"protocol": 4, "decker_version": "0.7.0", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
-| `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...}, "bindings": {...}, "state": 0}`. `size` is the key's pixel size; `bindings` the card's effective [bindings](package-and-manifest.md#bindings) as `{gesture: {"action", "args"}}`, read-only |
+| `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...}, "bindings": {...}, "state": 0}`. `size` is the key's pixel size; `bindings` the card's effective [bindings](package-and-manifest.md#bindings) as `{gesture: {"action", "args"}}`, read-only; `args` arrive resolved like `settings` (a `page` argument as the page object, a `profile` argument as the profile object, opted-in text expanded), and stay as stored for Do Nothing and for an action that is not installed |
 | `will_disappear` | yes | none |
 | `key_down`, `key_up` | yes | none (raw key events, for visual feedback; gestures are not sent to cards) |
-| `settings_changed` | yes | `{"settings": {...}, "bindings": {...}}`; also sent when the key's bindings are edited |
+| `settings_changed` | yes | `{"settings": {...}, "bindings": {...}}`; also sent when the key's bindings are edited, or when a resolved binding argument changes (for example a page is renamed) |
 | `run_action` | | the call details, see [Action calls](#action-calls): run one of your [actions](package-and-manifest.md#actions) with its validated arguments and answer with `action_result` carrying the same `request`. Runs are independent of any key and may overlap |
 | `call_result` | | `{"request": "<id>", "ok": true, "value": ...}` or `{"request": "<id>", "ok": false, "error": "text"}`, answering your `call_action` (see [Action calls](#action-calls)) |
 | `image_result` | | `{"request": "<id>", "image": "<base64 PNG>"\|null, "format": "png"}`, answering `get_image` (see [Painting](#painting)) |
@@ -154,7 +154,7 @@ Settings fields that declare `"template": true` arrive with `{page_name}`, `{pag
 and `{profile_id}` already replaced for the key's
 device; the stored value stays as the user typed it, so a plugin must not write expanded text back: with
 `set_settings`, send only the keys you changed. The server re-sends `settings_changed` when a page is renamed, added or
-deleted or the device switches pages and a delivered value changes. Templates in `global_settings` are not expanded.
+deleted or the device switches pages and a delivered value, or a resolved argument of a binding, changes. Templates in `global_settings` are not expanded.
 
 ## Profiles
 

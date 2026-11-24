@@ -89,6 +89,17 @@
         "tooltip": "Logs a bump",
         "icon": "icons/counter",
         "scope": "global"
+      },
+      {
+        "id": "com.decker.testfixture.goto",
+        "name": "Go",
+        "tooltip": "Takes a page and a profile",
+        "icon": "icons/counter",
+        "scope": "global",
+        "settings": [
+          {"key": "page", "type": "page", "label": "Page"},
+          {"key": "profile", "type": "profile", "label": "Profile"}
+        ]
       }
     ]
   }
