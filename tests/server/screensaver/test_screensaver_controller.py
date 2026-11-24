@@ -2,6 +2,8 @@ import io
 import json
 import logging
 import sqlite3
+import threading
+import time
 from dataclasses import replace
 
 import pytest
@@ -291,3 +293,26 @@ def test_brightness_survives_wake(stack):
     controller.deactivate(DEV)
 
     assert_that([c for c in devices.calls if c[0] == "brightness"][-1]).is_equal_to(("brightness", DEV, 35))
+
+
+def test_a_user_edit_during_a_brightness_change_is_not_lost(stack):
+    controller = _controller(stack)
+    store = stack[0].screensaver_store
+    real_get = store.get
+    first = threading.Event()
+
+    def slow_get(device_id):
+        result = real_get(device_id)
+        if threading.current_thread().name == "brightness" and not first.is_set():
+            first.set()
+            time.sleep(0.4)  # the window between the read and the write
+        return result
+
+    store.get = slow_get
+    worker = threading.Thread(target=controller.set_brightness, args=(DEV, 30), name="brightness")
+    worker.start()
+    first.wait(2)
+    controller.set(DEV, _json(timeout_minutes=7), loopback=True)
+    worker.join()
+
+    assert_that(controller.get(DEV)["timeout_minutes"]).is_equal_to(7)

@@ -3,6 +3,7 @@
 import io
 import json
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import asdict, replace
 from typing import TYPE_CHECKING, Any
@@ -44,6 +45,7 @@ class ScreensaverController(Manager):
     def __init__(self) -> None:
         self._context: "ServerContext | None" = None
         self._brightness_listeners: list[Callable[[str, int], None]] = []
+        self._edit_lock = threading.Lock()  # keeps a read-merge-write from reverting a concurrent edit
 
     def create(self, context: "ServerContext") -> None:
         """Bind the server context."""
@@ -80,8 +82,12 @@ class ScreensaverController(Manager):
         """Validate and store settings and apply them; never activates the screensaver."""
         self._require_known(device_id)
         settings = _parse(settings_json)
-        self._check_paths(device_id, settings, loopback)
-        self._commit(device_id, settings)
+
+        def build(current: ScreensaverSettings) -> ScreensaverSettings:
+            self._check_paths(current, settings, loopback)
+            return settings
+
+        self._commit(device_id, build)
 
     def brightness(self, device_id: str) -> int:
         """The device's normal brightness in percent."""
@@ -94,19 +100,21 @@ class ScreensaverController(Manager):
         if isinstance(percent, bool) or not isinstance(percent, int):
             raise ValueError("percent must be an integer")
         value = max(1, min(100, percent))
-        self._commit(device_id, replace(self._stored(device_id), brightness=value))
+        self._commit(device_id, lambda current: replace(current, brightness=value))
         return value
 
     def add_brightness_listener(self, listener: Callable[[str, int], None]) -> None:
         """Call ``listener(device_id, percent)`` after an edit changed a device's normal brightness."""
         self._brightness_listeners.append(listener)
 
-    def _commit(self, device_id: str, settings: ScreensaverSettings) -> None:
-        previous = self._stored(device_id).brightness
-        self._store.set(device_id, settings)
+    def _commit(self, device_id: str, build: Callable[[ScreensaverSettings], ScreensaverSettings]) -> None:
+        with self._edit_lock:
+            previous = self._stored(device_id)
+            settings = build(previous)
+            self._store.set(device_id, settings)
         self._engine.apply_settings(device_id)
         self._ctx.event_bus.push(SCREENSAVER_SETTINGS_CHANGED_EVENT, json.dumps({"device_id": device_id}))
-        if settings.brightness != previous:
+        if settings.brightness != previous.brightness:
             for listener in list(self._brightness_listeners):
                 try:
                     listener(device_id, settings.brightness)
@@ -127,7 +135,7 @@ class ScreensaverController(Manager):
         """A PNG of the draft settings composed at the device's canvas layout; a dark canvas without an image."""
         self._require_known(device_id)
         settings = _parse(settings_json)
-        self._check_paths(device_id, settings, loopback)
+        self._check_paths(self._stored(device_id), settings, loopback)
         layout = self._layout(device_id, settings)
         image = self._source_image(settings, layout)
         if image is None:
@@ -142,8 +150,8 @@ class ScreensaverController(Manager):
         """Announce that a device's screensaver started or stopped; carries no error text."""
         self._ctx.event_bus.push(SCREENSAVER_CHANGED_EVENT, json.dumps({"device_id": device_id, "active": active}))
 
-    def _check_paths(self, device_id: str, settings: ScreensaverSettings, loopback: bool) -> None:
-        current = self._stored(device_id)
+    @staticmethod
+    def _check_paths(current: ScreensaverSettings, settings: ScreensaverSettings, loopback: bool) -> None:
         if not loopback and (settings.image_path != current.image_path or settings.folder_path != current.folder_path):
             raise PermissionError(_REMOTE_PATHS_DENIED)
 
