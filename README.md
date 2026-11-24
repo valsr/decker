@@ -24,7 +24,7 @@ Decker supports the following Elgato Stream Deck models:
 | Device discovery, stable device ids | Supported |
 | Profiles and pages per device, per-key cards and long press | Supported |
 | Key appearance: title, fonts, colours, icon override, live preview | Supported |
-| Image library (icon packs from plugins, User pack, built-in Font Awesome Free icons as `fab:`/`far:`/`fas:` references, System Icons on Linux) | Supported |
+| Image library (User pack as `user:<id>` references, built-in Font Awesome Free icons as `fab:`/`far:`/`fas:` references, System Icons on Linux, icon packs from plugins) | Supported |
 | Animated GIF key faces | Supported |
 | Key background images (none, solid colour or image from the image library; see [docs/key-backgrounds.md](docs/key-backgrounds.md)) | Supported |
 | Gesture bindings (every card binds Press, Double press and Long press to an action with arguments, or to Do Nothing; edit them in the card editor) | Supported |

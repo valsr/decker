@@ -13,12 +13,16 @@ from PyQt6.QtCore import (
     QIODevice,
     QMimeData,
     QPoint,
+    QPointF,
+    QRectF,
     QSize,
     Qt,
     QTimer,
     pyqtSignal,
 )
 from PyQt6.QtGui import (
+    QBrush,
+    QColor,
     QDrag,
     QEnterEvent,
     QFocusEvent,
@@ -27,6 +31,8 @@ from PyQt6.QtGui import (
     QKeyEvent,
     QMouseEvent,
     QMovie,
+    QPainter,
+    QPen,
     QPixmap,
     QResizeEvent,
     QShowEvent,
@@ -55,6 +61,7 @@ _PLUS_ICON = Path(__file__).resolve().parents[2] / "assets" / "plus-circle.svg"
 _BADGE_COLOR = "#2ecc71"  # the copy badge's green
 _ICON_PX = 68  # px, the key image inside its button
 _BADGE_SIZE = 30  # px, the label holding the badge
+_DELETE_ICON_PX = 18  # px, the red delete circle inside its 30 px button (the image library draws the same badge)
 
 
 def _exec_drag(drag: QDrag) -> None:
@@ -89,6 +96,24 @@ def _play_icon(color: str) -> QIcon | None:
     return QIcon(
         pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
     )
+
+
+def _delete_icon() -> QIcon:
+    """A red circle with a white cross, like the image library's delete badge (drawn at 2x for crisp edges)."""
+    side = _DELETE_ICON_PX * 2
+    pixmap = QPixmap(side, side)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen_width = max(2.0, side / 14)
+    painter.setPen(QPen(QColor(255, 255, 255), pen_width))
+    painter.setBrush(QBrush(QColor(190, 40, 40, 230)))
+    painter.drawEllipse(QRectF(pen_width / 2, pen_width / 2, side - pen_width, side - pen_width))
+    inset = side * 0.32
+    painter.drawLine(QPointF(inset, inset), QPointF(side - inset, side - inset))
+    painter.drawLine(QPointF(side - inset, inset), QPointF(inset, side - inset))
+    painter.end()
+    return QIcon(pixmap)
 
 
 class _RunButton(QToolButton):
@@ -132,6 +157,7 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
     long_pressed = pyqtSignal(int)
     edit_clicked = pyqtSignal(int)
     run_clicked = pyqtSignal(int)
+    delete_clicked = pyqtSignal(int)
     key_dropped = pyqtSignal(int, int, bool)  # from index, to index (this key), copy
 
     def __init__(self, index: int, key_info: KeyInfo) -> None:
@@ -144,6 +170,7 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
         self.setAcceptDrops(True)
         self.clicked.connect(lambda _checked=False: self.edit_clicked.emit(self.index))
         self._run_button = self._build_run_button()
+        self._delete_button = self._build_delete_button()
         self._draggable = False
         self._drag_start: QPoint | None = None
         self._dragged = False  # a drag began during this press, so its remaining moves and release are not clicks
@@ -177,8 +204,41 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
         self._scope = scope
 
     def set_draggable(self, draggable: bool) -> None:
-        """Whether this key can be dragged (keys with a card can; empty ones cannot)."""
+        """Whether this key can be dragged and cleared (keys with a card can; empty ones cannot)."""
         self._draggable = draggable
+        if not draggable:
+            self._delete_button.hide()
+        elif self.underMouse() or self.hasFocus():
+            self._show_hover_buttons()
+
+    def _build_delete_button(self) -> QToolButton:
+        button = QToolButton(self)
+        button.setObjectName("keyDeleteButton")
+        button.setIcon(_delete_icon())
+        button.setIconSize(QSize(_DELETE_ICON_PX, _DELETE_ICON_PX))
+        button.setToolTip("Clear this key")
+        button.setAutoRaise(True)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        button.setFixedSize(_RUN_SIZE, _RUN_SIZE)
+        button.setAcceptDrops(False)
+        button.clicked.connect(lambda _checked=False: self.delete_clicked.emit(self.index))
+        button.hide()
+        button.move(self._delete_position())
+        return button
+
+    def _delete_position(self) -> QPoint:
+        return QPoint(self.width() - _RUN_SIZE - _RUN_MARGIN, self.height() - _RUN_SIZE - _RUN_MARGIN)
+
+    def _show_hover_buttons(self) -> None:
+        self._run_button.show()
+        self._run_button.raise_()
+        if self._draggable:
+            self._delete_button.show()
+            self._delete_button.raise_()
+
+    def _hide_hover_buttons(self) -> None:
+        self._run_button.hide()
+        self._delete_button.hide()
 
     def _build_run_button(self) -> _RunButton:
         button = _RunButton(self)
@@ -216,16 +276,16 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
         return QPoint(self.width() - _RUN_SIZE - _RUN_MARGIN, _RUN_MARGIN)
 
     def resizeEvent(self, a0: QResizeEvent | None) -> None:  # noqa: N802  # pylint: disable=invalid-name
-        """Keep the play button in the top-right corner."""
+        """Keep the play button in the top-right corner and the delete button in the bottom-right one."""
         super().resizeEvent(a0)
         self._run_button.move(self._run_position())
+        self._delete_button.move(self._delete_position())
         self._copy_badge.move(_RUN_MARGIN, self.height() - _BADGE_SIZE - _RUN_MARGIN)
 
     def enterEvent(self, event: QEnterEvent | None) -> None:  # noqa: N802  # pylint: disable=invalid-name
-        """Show the play button while the pointer is over the key."""
+        """Show the play (and, on a key with a card, delete) button while the pointer is over the key."""
         super().enterEvent(event)
-        self._run_button.show()
-        self._run_button.raise_()
+        self._show_hover_buttons()
 
     def keyPressEvent(self, e: QKeyEvent | None) -> None:  # noqa: N802  # pylint: disable=invalid-name
         """F2 (or the Menu key) selects the key for editing, as clicking it does."""
@@ -235,21 +295,21 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
         super().keyPressEvent(e)
 
     def focusInEvent(self, e: QFocusEvent | None) -> None:  # noqa: N802  # pylint: disable=invalid-name
-        """Show the play button while the key has keyboard focus, so it is visible without a pointer."""
+        """Show the hover buttons while the key has keyboard focus, so they are visible without a pointer."""
         super().focusInEvent(e)
-        self._run_button.show()
+        self._show_hover_buttons()
 
     def focusOutEvent(self, e: QFocusEvent | None) -> None:  # noqa: N802  # pylint: disable=invalid-name
-        """Hide the play button again unless the pointer is still on the key."""
+        """Hide the hover buttons again unless the pointer is still on the key."""
         super().focusOutEvent(e)
         if not self.underMouse():
-            self._run_button.hide()
+            self._hide_hover_buttons()
 
     def leaveEvent(self, a0: QEvent | None) -> None:  # noqa: N802  # pylint: disable=invalid-name
-        """Hide the play button once the pointer is outside the key and its button."""
+        """Hide the hover buttons once the pointer is outside the key and its buttons."""
         super().leaveEvent(a0)
         if not self.underMouse():
-            self._run_button.hide()
+            self._hide_hover_buttons()
 
     def set_label(self, label: str) -> None:
         """Update the display label (shows label if set, otherwise key number)."""
@@ -456,6 +516,7 @@ class ButtonGridWidget(QWidget):
 
     key_pressed = pyqtSignal(int)
     key_edit_requested = pyqtSignal(int)
+    key_delete_requested = pyqtSignal(int)
     key_long_pressed = pyqtSignal(int)
     card_dropped = pyqtSignal(int, object)
     key_moved = pyqtSignal(int, int, bool)  # from index, to index, copy
@@ -493,6 +554,7 @@ class ButtonGridWidget(QWidget):
             button = KeyButtonWidget(index, key)
             button.run_clicked.connect(self.key_pressed.emit)
             button.edit_clicked.connect(self.key_edit_requested.emit)
+            button.delete_clicked.connect(self.key_delete_requested.emit)
             button.long_pressed.connect(self.key_long_pressed.emit)
             button.card_dropped.connect(self.card_dropped.emit)
             button.key_dropped.connect(self.key_moved.emit)

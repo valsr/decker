@@ -11,11 +11,18 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QTabWidget,
 )
 
 import decker.client.widgets.card_config_panel as panel_module
 from decker.client.widgets import dynamic_choice_edit
-from decker.client.widgets.card_config_panel import CardConfigPanel, SaveOutcome
+from decker.client.widgets.bindings_edit import BindingsSpec
+from decker.client.widgets.card_config_panel import (
+    ACTIONS_TAB,
+    CARD_TAB,
+    CardConfigPanel,
+    SaveOutcome,
+)
 from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.common.text_style import TEXT_STYLE_DEFAULTS
 
@@ -604,7 +611,9 @@ class TestBackgroundIntegration:  # pylint: disable=protected-access
 
 
 class TestFrozenTop:  # pylint: disable=protected-access
-    def test_only_the_plugin_settings_scroll_under_a_separator(self, qapp):  # pylint: disable=unused-argument
+    def test_card_settings_and_actions_scroll_in_tabs_under_the_frozen_top(
+        self, qapp
+    ):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         _show(panel)
         page = panel.widget(1)
@@ -614,10 +623,34 @@ class TestFrozenTop:  # pylint: disable=protected-access
 
         items = [layout.itemAt(i) for i in range(layout.count())]
         widgets = [item.widget() for item in items if item is not None and item.widget() is not None]
-        assert_that([type(w).__name__ for w in widgets][-2:]).is_equal_to(["QFrame", "QScrollArea"])
-        scroll = widgets[-1]
-        assert isinstance(scroll, QScrollArea)
-        assert_that(panel._settings_form.parent()).is_same_as(scroll.widget())
+        tabs = widgets[-1]
+        assert isinstance(tabs, QTabWidget)
+        assert_that([tabs.tabText(i) for i in range(tabs.count())]).is_equal_to([CARD_TAB, ACTIONS_TAB])
+        card, actions = tabs.widget(0), tabs.widget(1)
+        assert isinstance(card, QScrollArea) and isinstance(actions, QScrollArea)
+        assert_that(panel._settings_form.parent()).is_same_as(card.widget())
+        assert_that(panel._bindings_edit.parent()).is_same_as(actions.widget())
+
+    def test_the_actions_tab_hides_without_bindings_and_an_empty_card_says_so(
+        self, qapp
+    ):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        panel.show_card_config([], {}, {}, {}, lambda *_a: SaveOutcome(True))
+
+        assert_that(panel._tabs.isTabVisible(1)).is_false()
+        assert_that(panel._no_settings.isHidden()).is_false()
+
+        panel.show_card_config(
+            [{"key": "n", "type": "int", "label": "N", "default": 1}],
+            {},
+            {},
+            {},
+            lambda *_a: SaveOutcome(True),
+            bindings=BindingsSpec({}, {}),
+        )
+
+        assert_that(panel._tabs.isTabVisible(1)).is_true()
+        assert_that(panel._no_settings.isHidden()).is_true()
 
     def test_the_appearance_rows_are_title_background_icon(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()

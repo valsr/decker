@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from decker.client.widgets.action_edit import ActionEdit
 from decker.client.widgets.schema_form import ActionParamsEdit
@@ -16,7 +23,8 @@ _GESTURES: tuple[tuple[str, str], ...] = (
     ("double_press", "Double press"),
     ("long_press", "Long press"),
 )
-_RESET_TEXT = "Reset to default"
+RESET_TOOLTIP = "Reset to default"
+_RESET_GLYPH = "↺"
 
 
 @dataclass(frozen=True)
@@ -34,28 +42,30 @@ def _split(binding: Mapping[str, Any] | None) -> tuple[str, dict[str, Any]]:
     return (action if isinstance(action, str) else NOTHING_ACTION_ID), (dict(args) if isinstance(args, dict) else {})
 
 
-class _BindingRow(QWidget):
+class _BindingRow(QGroupBox):
     # pylint: disable=missing-function-docstring
 
     changed = pyqtSignal()
 
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__(title, parent)
         self._default: tuple[str, dict[str, Any]] = (NOTHING_ACTION_ID, {})
         self._shown_action = NOTHING_ACTION_ID
         self._action_edit = ActionEdit(owner="")
         self._params = ActionParamsEdit()
-        self._reset = QPushButton(_RESET_TEXT)
+        self._reset = QToolButton()
+        self._reset.setText(_RESET_GLYPH)  # a plain glyph reads the same under every icon theme
+        self._reset.setToolTip(RESET_TOOLTIP)
+        self._reset.setAccessibleName(RESET_TOOLTIP)
         self._error = QLabel()
         self._error.setProperty("role", "error")
         self._error.setWordWrap(True)
         self._error.hide()
         header = QHBoxLayout()
-        header.addWidget(QLabel(f"{title}:"))
+        header.addWidget(QLabel("Action:"))
         header.addWidget(self._action_edit, 1)
         header.addWidget(self._reset)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(header)
         layout.addWidget(self._params)
         layout.addWidget(self._error)
@@ -123,7 +133,7 @@ class _BindingRow(QWidget):
 
 
 class BindingsEdit(QWidget):
-    """Three rows (press, double press, long press); ``value()`` holds only what differs from the manifest."""
+    """Three titled groups (press, double press, long press); ``value()`` holds only what differs from the manifest."""
 
     changed = pyqtSignal()
 

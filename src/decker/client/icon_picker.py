@@ -49,14 +49,14 @@ from PyQt6.QtWidgets import (
 from decker.client.card_icons import decode_icon, placeholder_pixmap
 from decker.client.icon_cache import IconThumbnailCache, icon_cache
 from decker.client.icon_import_dialog import IconImportDialog
-from decker.common.icon_ref import icon_display_name
+from decker.common.icon_ref import USER_PACK_ID, icon_display_name
 
 _IMAGE_FILE_FILTER = "Images (*.svg *.png *.jpg *.jpeg *.gif)"
 _THUMB_SIZE = 64
 MAX_IMPORT_BYTES = 4 * 1024 * 1024  # the server's per-icon limit
 _FILTER_DELAY_MS = 150
 _DATA_ROLE = Qt.ItemDataRole.UserRole
-USER_PACK_ID = "decker.user"
+_FIXED_NODES = ("decker.builtin", "decker.system")  # the Built-In and System Icons nodes, in this order
 
 
 class RpcCaller(Protocol):  # pylint: disable=too-few-public-methods
@@ -125,13 +125,13 @@ def _blank_pixmap() -> QPixmap:
 
 
 def _kind_badge(pixmap: QPixmap, name: str) -> QPixmap:
-    """A copy of ``pixmap`` with a third-size corner badge: a play button for GIFs, a colour wheel for SVGs."""
+    """A copy of ``pixmap`` with a third-size top-right badge: a play button for GIFs, a colour wheel for SVGs."""
     suffix = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if suffix not in ("gif", "svg") or pixmap.isNull():
         return pixmap
     result = QPixmap(pixmap)
     side = max(1, min(result.width(), result.height()) // 3)
-    box = QRectF(result.width() - side, result.height() - side, side, side)
+    box = QRectF(result.width() - side, 0, side, side)  # the bottom right is the delete badge's corner
     painter = QPainter(result)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setPen(QPen(QColor(255, 255, 255), max(1.0, side / 14)))
@@ -155,7 +155,7 @@ def _kind_badge(pixmap: QPixmap, name: str) -> QPixmap:
 
 
 class _DeleteBadgeDelegate(QStyledItemDelegate):
-    """Draws a one-third-size delete badge at the top right of User images and reports clicks on it."""
+    """Draws a one-third-size delete badge at the bottom right of User images and reports clicks on it."""
 
     delete_clicked = pyqtSignal(QModelIndex)
 
@@ -174,7 +174,7 @@ class _DeleteBadgeDelegate(QStyledItemDelegate):
             else opt.rect
         )
         side = icon.width() / 3
-        return QRectF(icon.right() - side, icon.top(), side, side)
+        return QRectF(icon.left() + icon.width() - side, icon.top() + icon.height() - side, side, side)
 
     def paint(self, painter: Any, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         super().paint(painter, option, index)
@@ -310,18 +310,16 @@ class IconBrowserDialog(QDialog):  # pylint: disable=too-few-public-methods,too-
             self._cache.update_packs(self._packs)
         except Exception:  # pylint: disable=broad-exception-caught
             logging.warning("Icon thumbnail cache could not be updated", exc_info=True)
-        everything = QTreeWidgetItem(["All images"])
+        everything = QTreeWidgetItem(["All Images"])
         everything.setData(0, _DATA_ROLE, ("all", ""))
         self._tree.addTopLevelItem(everything)
-        plugins: dict[str, QTreeWidgetItem] = {}
         user_pack = next((p for p in self._packs if str(p["id"]) == USER_PACK_ID), None)
-        if user_pack is not None:  # the user's own images sit right under "All images", not under a plugin node
+        if user_pack is not None:  # the user's own images sit right under "All Images", not under a plugin node
             user = QTreeWidgetItem([str(user_pack.get("name", "User"))])
             user.setData(0, _DATA_ROLE, ("pack", USER_PACK_ID))
             self._tree.addTopLevelItem(user)
-        for pack in self._packs:
-            if str(pack["id"]) == USER_PACK_ID:
-                continue
+        plugins: dict[str, QTreeWidgetItem] = {}
+        for pack in sorted((p for p in self._packs if str(p["id"]) != USER_PACK_ID), key=_pack_order):
             plugin_id = str(pack.get("plugin_id", ""))
             node = plugins.get(plugin_id)
             if node is None:
@@ -472,6 +470,14 @@ class IconBrowserDialog(QDialog):  # pylint: disable=too-few-public-methods,too-
         if entry is not None:
             self.icon_chosen.emit(*entry)
             self.accept()
+
+
+def _pack_order(pack: dict[str, Any]) -> tuple[int, str, str]:
+    """Built-In first, then System Icons, then plugins by name; packs keep the server's order inside a node."""
+    plugin_id = str(pack.get("plugin_id", ""))
+    if plugin_id in _FIXED_NODES:
+        return _FIXED_NODES.index(plugin_id), "", ""
+    return len(_FIXED_NODES), str(pack.get("plugin_name") or plugin_id).lower(), plugin_id
 
 
 def _status_text(has_entries: bool, failed: bool, searching: bool) -> str:

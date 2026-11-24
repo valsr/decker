@@ -4,12 +4,16 @@ from typing import Any
 import pytest
 from assertpy import assert_that
 from PyQt6.QtGui import QStandardItemModel
-from PyQt6.QtWidgets import QLabel, QPushButton
+from PyQt6.QtWidgets import QGroupBox, QLabel, QToolButton
 
 from decker.client.context import AppContext
 from decker.client.widgets import dynamic_choice_edit, schema_form
 from decker.client.widgets.action_edit import ActionEdit
-from decker.client.widgets.bindings_edit import BindingsEdit, BindingsSpec
+from decker.client.widgets.bindings_edit import (
+    RESET_TOOLTIP,
+    BindingsEdit,
+    BindingsSpec,
+)
 from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.plugin.bindings import NOTHING_ACTION_ID
 
@@ -78,8 +82,8 @@ def _texts(combo: ActionEdit) -> list[str]:
     return [combo.itemText(i) for i in range(combo.count())]
 
 
-def _reset_buttons(edit: BindingsEdit) -> list[QPushButton]:
-    return [b for b in edit.findChildren(QPushButton) if b.text() == "Reset to default"]
+def _reset_buttons(edit: BindingsEdit) -> list[QToolButton]:
+    return [b for b in edit.findChildren(QToolButton) if b.toolTip() == RESET_TOOLTIP]
 
 
 def _visible_texts(edit: BindingsEdit) -> list[str]:
@@ -90,12 +94,48 @@ class TestBindingsEdit:  # pylint: disable=protected-access
     def test_dropdown_lists_nothing_own_actions_and_globals_only(self) -> None:
         edit = _edit()
 
-        assert_that(_texts(_combos(edit)[0])).is_equal_to(["Do Nothing", "Own", "Say", "Shared", "Web"])
+        assert_that(_texts(_combos(edit)[0])).is_equal_to(
+            ["Do Nothing", "", "com.a", "Own", "Shared", "", "com.b", "Say", "Web"]
+        )
 
     def test_generic_action_field_lists_only_globals(self) -> None:
         combo = ActionEdit()
 
-        assert_that(_texts(combo)).is_equal_to(["(choose an action)", "Say", "Shared", "Web"])
+        assert_that(_texts(combo)).is_equal_to(["(choose an action)", "", "com.a", "Shared", "", "com.b", "Say", "Web"])
+
+    def test_each_gesture_is_a_titled_group_with_an_action_label_and_reset(self) -> None:
+        edit = _edit()
+
+        groups = edit.findChildren(QGroupBox)
+
+        assert_that([g.title() for g in groups]).is_equal_to(["Press", "Double press", "Long press"])
+        for group in groups:
+            assert_that([label.text() for label in group.findChildren(QLabel)]).contains("Action:")
+        assert_that(_reset_buttons(edit)).is_length(3)
+
+    def test_plugin_headers_and_separators_cannot_be_chosen(self) -> None:
+        edit = _edit()
+        combo = _combos(edit)[0]
+        model = combo.model()
+        assert isinstance(model, QStandardItemModel)
+
+        headers = [i for i in range(combo.count()) if combo.itemText(i) in ("com.a", "com.b")]
+        items = [model.item(i) for i in headers]
+
+        assert_that([item.isEnabled() for item in items if item is not None]).is_equal_to([False, False])
+        assert_that([item.font().bold() for item in items if item is not None]).is_equal_to([True, True])
+        assert_that([combo.itemData(i) for i in headers]).is_equal_to([None, None])
+
+    def test_groups_follow_the_plugin_name_not_its_id(self) -> None:
+        actions = [{**_action("com.z", "first", "global"), "plugin_name": "Alpha"}, _action("com.b", "web", "global")]
+
+        class _Rpc:
+            def call(self, method: str, *_args: Any) -> Any:
+                return json.dumps(actions) if method == "plugins_actions_list" else None
+
+        AppContext.get().connection_manager = _Rpc()  # type: ignore[assignment]
+
+        assert_that(_texts(ActionEdit())).is_equal_to(["(choose an action)", "", "Alpha", "First", "", "com.b", "Web"])
 
     def test_row_shows_manifest_default_until_changed(self) -> None:
         edit = _edit(defaults={"press": _OWN})
@@ -215,7 +255,7 @@ class TestBindingRowFixes:  # pylint: disable=protected-access
         edit.set_bindings(BindingsSpec({}, {"press": {"action": "com.a.shared"}}), "com.a")
 
         combo = _combos(edit)[0]
-        assert_that(_texts(combo)).is_equal_to(["Do Nothing", "Own", "Say", "Shared", "Web"])
+        assert_that(_texts(combo)).is_equal_to(["Do Nothing", "", "com.a", "Own", "Shared", "", "com.b", "Say", "Web"])
         assert_that(combo.value()).is_equal_to("com.a.shared")
         assert_that(combo.currentText()).is_equal_to("Shared")
 

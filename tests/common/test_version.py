@@ -39,12 +39,12 @@ def test_decker_version_falls_back_to_zero(monkeypatch: pytest.MonkeyPatch):
     assert_that(version.decker_version()).is_equal_to("0")
 
 
-def test_package_declares_0_7_0():
+def test_package_declares_0_7_1():
     import tomllib
     from pathlib import Path
 
     data = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8"))
-    assert_that(data["tool"]["poetry"]["version"]).is_equal_to("0.7.0")
+    assert_that(data["tool"]["poetry"]["version"]).is_equal_to("0.7.1")
 
 
 def test_gates_across_the_0_3_bump():

@@ -1,4 +1,4 @@
-"""Settings → Plugins tab: installed plugins, install/uninstall, global settings and load failures."""
+"""Settings → Plugins tab: installed plugins (failed ones grayed), install/uninstall/update and global settings."""
 
 import base64
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPixmap
+from PyQt6.QtGui import QIcon, QPalette, QPixmap
 from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -128,16 +128,22 @@ def _contribution_summary(plugin: dict[str, Any]) -> str:
     return " · ".join(parts) or "no contributions"
 
 
-def _plugin_icon(plugin: dict[str, Any]) -> QIcon:
+def _plugin_icon(plugin: dict[str, Any], failed: bool = False) -> QIcon:
     pixmap = QPixmap()
     encoded = plugin.get("icon_b64")
     if encoded:
         pixmap.loadFromData(base64.b64decode(encoded))
-    return QIcon(pixmap)
+    icon = QIcon(pixmap)
+    return QIcon(icon.pixmap(pixmap.size(), QIcon.Mode.Disabled)) if failed and not pixmap.isNull() else icon
+
+
+def _failure_tooltip(plugin: dict[str, Any], error: str) -> str:
+    description = str(plugin.get("description", ""))
+    return f"Failed: {error}" + (f"\n\n{description}" if description else "")
 
 
 class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
-    """Lists installed plugins and manages install, uninstall, global settings and load failures."""
+    """Lists installed plugins (failed ones grayed, error on hover) and manages install, uninstall and settings."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -156,8 +162,6 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         self._settings_form: SchemaForm = SchemaForm()
         self._apply_settings_btn: QPushButton = QPushButton("Apply plugin settings")
         self._settings_title: QLabel = QLabel("Plugin settings")
-        self._failed_list: QListWidget = QListWidget()
-        self._no_failures_label: QLabel = QLabel("No plugins failed to load.")
         self._selected_id: str | None = None
         self._host_label: str = FALLBACK_HOST_LABEL
 
@@ -178,6 +182,7 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         except (ValueError, TypeError):
             plugins = []
         self._plugins = {str(p["id"]): p for p in plugins}
+        self._failed_plugins = self._fetch_failures(manager, self._failed_plugins)
         self._host_label = parse_host_label(manager.call("platform_info") if manager is not None else None)
         self._render_plugins()
         allowed = refresh_install_allowed()
@@ -187,9 +192,29 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         self._repositories.refresh()
 
     def set_failed_plugins(self, failures: dict[str, str]) -> None:
-        """Replace the failed-plugin list (plugin UUID → error message)."""
+        """Replace the failed plugins (plugin UUID → error message); they show grayed in the list."""
         self._failed_plugins = dict(failures)
-        self._refresh_failed_plugins()
+        self._render_plugins()
+
+    @staticmethod
+    def _fetch_failures(manager: Any, previous: dict[str, str]) -> dict[str, str]:
+        raw = manager.call("plugins_load_failures") if manager is not None else None
+        try:
+            failures = json.loads(raw) if raw else None
+        except (ValueError, TypeError):
+            failures = None
+        if not isinstance(failures, list):
+            return previous  # unknown: keep what the failure events reported
+        return {
+            str(f["plugin_uuid"]): str(f.get("error", ""))
+            for f in failures
+            if isinstance(f, dict) and "plugin_uuid" in f
+        }
+
+    def _rows(self) -> dict[str, dict[str, Any]]:
+        """Installed plugins plus folders that failed to load (no manifest, so only their folder name is known)."""
+        broken = {uuid: {"id": uuid, "name": uuid} for uuid in self._failed_plugins if uuid not in self._plugins}
+        return {**broken, **self._plugins}
 
     def _build(self) -> None:
         from decker.client.widgets.repositories_section import (  # pylint: disable=import-outside-toplevel,cyclic-import
@@ -208,7 +233,6 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         self._apply_settings_btn.clicked.connect(self._on_apply_settings)
         self._status_label.setWordWrap(True)
         self._status_label.setProperty("role", "muted")
-        self._no_failures_label.setProperty("role", "muted")
         self._settings_title.setProperty("role", "title")
         self._set_settings_visible(False)
 
@@ -227,48 +251,59 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         layout.addWidget(self._settings_title)
         layout.addWidget(self._settings_form)
         layout.addWidget(self._apply_settings_btn)
-        layout.addWidget(QLabel("Failed plugins"))
-        layout.addWidget(self._no_failures_label)
-        layout.addWidget(self._failed_list, 1)
-        self._refresh_failed_plugins()
 
     def _render_plugins(self) -> None:
         self._plugin_list.blockSignals(True)
         self._plugin_list.clear()
-        for plugin_id, plugin in sorted(self._plugins.items(), key=lambda kv: str(kv[1].get("name", kv[0])).lower()):
-            text = (
-                f"{plugin.get('name', plugin_id)}  v{plugin.get('version', '')} · {plugin.get('author', '')}\n"
-                f"{_contribution_summary(plugin)}"
-            )
-            if plugin_id in self._updates:
-                text += f" · Update available: {self._updates[plugin_id]}"
-            badge = platform_badge(plugin, self._host_label)
-            if badge:
-                text += f" · {badge}"
-            item = QListWidgetItem(_plugin_icon(plugin), text)
-            item.setData(_PLUGIN_ID_ROLE, plugin_id)
-            item.setToolTip(str(plugin.get("description", "")))
+        rows = self._rows()
+        for plugin_id, plugin in sorted(rows.items(), key=lambda kv: str(kv[1].get("name", kv[0])).lower()):
+            item = self._plugin_item(plugin_id, plugin)
             self._plugin_list.addItem(item)
             if plugin_id == self._selected_id:
                 self._plugin_list.setCurrentItem(item)
         self._plugin_list.blockSignals(False)
-        if self._selected_id not in self._plugins:
+        if self._selected_id not in rows:
             self._selected_id = None
         self._show_selection()
+
+    def _plugin_item(self, plugin_id: str, plugin: dict[str, Any]) -> QListWidgetItem:
+        error = self._failed_plugins.get(plugin_id)
+        if plugin_id in self._plugins:
+            text = (
+                f"{plugin.get('name', plugin_id)}  v{plugin.get('version', '')} · {plugin.get('author', '')}\n"
+                f"{_contribution_summary(plugin)}"
+            )
+        else:
+            text = f"{plugin_id}\nCould not be loaded"
+        if error is not None:
+            text += " · Failed"
+        if plugin_id in self._updates:
+            text += f" · Update available: {self._updates[plugin_id]}"
+        badge = platform_badge(plugin, self._host_label)
+        if badge:
+            text += f" · {badge}"
+        item = QListWidgetItem(_plugin_icon(plugin, error is not None), text)
+        item.setData(_PLUGIN_ID_ROLE, plugin_id)
+        if error is None:
+            item.setToolTip(str(plugin.get("description", "")))
+        else:
+            item.setToolTip(_failure_tooltip(plugin, error))
+            item.setForeground(self.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text))
+        return item
 
     def _on_selection_changed(self, current: QListWidgetItem | None, _previous: Any = None) -> None:
         self._selected_id = str(current.data(_PLUGIN_ID_ROLE)) if current is not None else None
         self._show_selection()
 
     def _show_selection(self) -> None:
-        plugin = self._plugins.get(self._selected_id or "")
+        plugin = self._rows().get(self._selected_id or "")
         builtin = bool(plugin and plugin.get("builtin"))
         self._uninstall_btn.setEnabled(plugin is not None and not builtin and install_allowed())
         self._uninstall_btn.setToolTip(
             "This plugin is built into Decker" if builtin else "" if install_allowed() else NOT_ALLOWED_TOOLTIP
         )
         self._show_update_button(plugin)
-        schema = plugin.get("global_settings_schema") if plugin else None
+        schema = plugin.get("global_settings_schema") if plugin else None  # a folder that failed to load has none
         if plugin is None or not schema:
             self._set_settings_visible(False)
             return
@@ -284,7 +319,7 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
             self._update_btn.setToolTip(f"Update to {available}" if install_allowed() else NOT_ALLOWED_TOOLTIP)
 
     def _on_update_clicked(self) -> None:
-        plugin = self._plugins.get(self._selected_id or "")
+        plugin = self._rows().get(self._selected_id or "")
         manager = AppContext.get().connection_manager
         if plugin is None or manager is None or str(plugin["id"]) not in self._updates:
             return
@@ -316,7 +351,7 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         self._get_more_dialog.activateWindow()
 
     def _on_uninstall_clicked(self) -> None:
-        plugin = self._plugins.get(self._selected_id or "")
+        plugin = self._rows().get(self._selected_id or "")
         manager = AppContext.get().connection_manager
         if plugin is None or manager is None:
             return
@@ -331,6 +366,7 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
         if answer != QMessageBox.StandardButton.Yes:
             return
         if manager.call("plugin_uninstall", plugin["id"]):
+            self._failed_plugins.pop(str(plugin["id"]), None)
             self._status_label.setText(f"Uninstalled {plugin['name']}.")
         else:
             self._status_label.setText(f"Could not uninstall {plugin['name']}. {_FAILURE_HINT}")
@@ -369,11 +405,4 @@ class PluginsTab(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def _on_plugin_load_failed(self, event: PluginLoadFailedEvent) -> None:
         self._failed_plugins[event.plugin_uuid] = event.error
-        self._refresh_failed_plugins()
-
-    def _refresh_failed_plugins(self) -> None:
-        self._failed_list.clear()
-        for plugin_uuid, error in sorted(self._failed_plugins.items()):
-            self._failed_list.addItem(f"{plugin_uuid}: {error}")
-        self._no_failures_label.setVisible(not self._failed_plugins)
-        self._failed_list.setVisible(bool(self._failed_plugins))
+        self._render_plugins()

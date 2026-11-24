@@ -1,4 +1,4 @@
-"""Bottom panel for configuring the selected key: live preview, appearance rows and card settings."""
+"""Bottom panel for configuring the selected key: preview, appearance rows, then Card and Actions tabs."""
 
 import logging
 import threading
@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QStackedWidget,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -28,6 +29,9 @@ from decker.common.text_style import fold_legacy_title
 _PAGE_PLACEHOLDER = 0
 _PAGE_FORM = 1
 _PREVIEW_DEBOUNCE_MS = 150
+CARD_TAB = "Card"
+ACTIONS_TAB = "Actions"
+_NO_CARD_SETTINGS = "This card has no settings"
 
 _TOP = Qt.AlignmentFlag.AlignTop
 
@@ -62,7 +66,7 @@ def _run_in_thread(job: Callable[[], str | None], done: Callable[[str | None], N
 
 
 class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attributes
-    """Stacked config panel: page 0 = placeholder, page 1 = preview, appearance rows, Save and card settings."""
+    """Stacked config panel: page 0 = placeholder, page 1 = preview, appearance, Save and the Card/Actions tabs."""
 
     _preview_ready = pyqtSignal(int, object)
 
@@ -89,7 +93,9 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._appearance_form = AppearanceForm()
         self._settings_form = SchemaForm()
         self._bindings_edit = BindingsEdit()
-        self._bindings_box = QWidget()
+        self._no_settings = QLabel(_NO_CARD_SETTINGS)
+        self._no_settings.setProperty("role", "muted")
+        self._tabs = QTabWidget()
         self._save_btn = QPushButton("Save")
         self._save_btn.setProperty("dirty", False)
         self._preview_timer = QTimer(self)
@@ -171,7 +177,8 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._appearance_form.set_schema(APPEARANCE_SCHEMA, appearance)
         self._settings_form.set_schema(settings_schema, settings, plugin_id)
         self._bindings_edit.set_bindings(spec, plugin_id)
-        self._bindings_box.setVisible(bindings is not None)
+        self._no_settings.setVisible(not settings_schema)
+        self._tabs.setTabVisible(1, bindings is not None)
         self.setCurrentIndex(_PAGE_FORM)
         self._baseline = self._current_values()
         self._refresh_state()
@@ -192,33 +199,15 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         top = QHBoxLayout()
         top.addLayout(left)
         top.addWidget(self._appearance_form, 1, _TOP)
-        layout.addLayout(top)  # everything above the separator stays put while the plugin's settings scroll
-
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator)
+        layout.addLayout(top)  # everything above the tabs stays put while the tab's contents scroll
 
         self._preview.set_icon_requested.connect(self._browse_icon)
         self._preview.clear_icon_requested.connect(self._clear_icon)
 
-        box = QVBoxLayout(self._bindings_box)
-        box.setContentsMargins(0, 0, 0, 0)
-        heading = QLabel("Actions")
-        heading.setProperty("role", "title")
-        box.addWidget(heading)
-        box.addWidget(self._bindings_edit)
-        body = QWidget()
-        body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.addWidget(self._settings_form)
-        body_layout.addWidget(self._bindings_box)
-        body_layout.addStretch(1)
-        scroll = QScrollArea()
-        scroll.setWidget(body)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        layout.addWidget(scroll, 1)
+        self._tabs.setDocumentMode(True)  # tabs on a rule across the panel, no frame round the pages
+        self._tabs.addTab(_scrolling(self._no_settings, self._settings_form), CARD_TAB)
+        self._tabs.addTab(_scrolling(self._bindings_edit), ACTIONS_TAB)
+        layout.addWidget(self._tabs, 1)
         return page
 
     def _icon_edit(self) -> Any:
@@ -314,6 +303,21 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
             self._stored_norm = form_appearance.get("background")
             self.refresh_preview_soon()
         self._refresh_state()
+
+
+def _scrolling(*widgets: QWidget) -> QScrollArea:
+    """A frameless scroll area stacking ``widgets`` at the top."""
+    body = QWidget()
+    body_layout = QVBoxLayout(body)
+    body_layout.setContentsMargins(0, 8, 0, 0)
+    for widget in widgets:
+        body_layout.addWidget(widget)
+    body_layout.addStretch(1)
+    scroll = QScrollArea()
+    scroll.setWidget(body)
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    return scroll
 
 
 def _merged(appearance: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:

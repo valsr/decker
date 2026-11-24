@@ -17,12 +17,12 @@ on Linux, the System Icons.
 ## Stored value
 
 ```json
-{ "type": "image", "color": "#1f618d", "image": { "ref": "pack:decker.user/sunset.png" } }
+{ "type": "image", "color": "#1f618d", "image": { "ref": "user:sunset" } }
 ```
 
 - `type` is `none`, `color` or `image`; it decides which of the other fields is used.
 - `color` is `#rrggbb` (or `#rrggbbaa`); it is kept when you switch modes.
-- `image.ref` is `pack:<pack id>/<path>`.
+- `image.ref` is `pack:<pack id>/<path>`, a built-in short form such as `fas:play`, or `user:<id>` for an image the user imported.
 
 Legacy values that are a bare colour string (`"#1f618d"`) still work and need no migration: they are read as
 `{"type": "color", "color": "#1f618d"}`. A plugin manifest can therefore keep giving a plain colour string as the

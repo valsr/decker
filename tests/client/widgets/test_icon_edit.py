@@ -453,3 +453,39 @@ def test_browser_tint_follows_the_thumbnail_option(qapp, monkeypatch, tmp_path) 
     edit.set_tint_thumbnail(False)
 
     assert_that(_browse_tint(edit, monkeypatch)).is_equal_to([NO_TINT])
+
+
+class _UserRpc(FakeRpc):
+    def call(self, method: str, *args: Any) -> str | None:
+        if method == "iconpack_icons" and args == ("decker.user",):
+            self.calls.append((method, *args))
+            return json.dumps(["logo.svg", "photo.png"])
+        return super().call(method, *args)
+
+
+class TestUserReferences:
+    def test_choosing_a_user_image_stores_the_short_reference(self, qapp, tmp_path):
+        edit = _edit(_UserRpc(), IconThumbnailCache(tmp_path))
+
+        edit._on_icon_chosen("decker.user", "logo.svg")
+
+        assert_that(edit.value()["ref"]).is_equal_to("user:logo")
+        assert_that(edit._name.text()).is_equal_to("logo")
+
+    def test_a_user_svg_takes_a_fill_colour_and_a_user_png_does_not(self, qapp, tmp_path):
+        edit = _edit(_UserRpc(), IconThumbnailCache(tmp_path))
+        edit.set_toolbar(True)
+
+        edit.set_value({"ref": "user:logo", "color": "#ffffff"})
+        assert_that(edit._colour.isVisibleTo(edit)).is_true()
+        edit.set_value({"ref": "user:photo", "color": "#ffffff"})
+        assert_that(edit._colour.isVisibleTo(edit)).is_false()
+
+    def test_the_user_listing_is_asked_once(self, qapp, tmp_path):
+        rpc = _UserRpc()
+        edit = _edit(rpc, IconThumbnailCache(tmp_path))
+
+        edit.set_value({"ref": "user:logo", "color": "#ffffff"})
+        edit.set_value({"ref": "user:photo", "color": "#ffffff"})
+
+        assert_that(rpc.methods("iconpack_icons")).is_length(1)

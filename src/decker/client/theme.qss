@@ -135,6 +135,17 @@ QToolButton#keyRunButton:hover {
     background-color: $hover;
 }
 
+/* The hover delete button on a key: its red disc is the icon itself, so no background of its own. */
+QToolButton#keyDeleteButton {
+    background-color: transparent;
+    border: none;
+    padding: 0;
+}
+
+QToolButton#keyDeleteButton:hover {
+    background-color: transparent;
+}
+
 QToolButton:pressed,
 QToolButton:checked {
     background-color: $pressed;

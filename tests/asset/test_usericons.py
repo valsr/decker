@@ -238,3 +238,12 @@ def test_delete_icon_removes_a_listed_icon_only(tmp_path: Path) -> None:
     assert_that(store.list_icons()).is_equal_to(["keep.svg"])
     assert_that(store.delete_icon("gone.svg")).is_false()
     assert_that(store.delete_icon("../outside.svg")).is_false()
+
+
+def test_read_icon_accepts_a_bare_id(tmp_path: Path) -> None:
+    (tmp_path / "logo.svg").write_bytes(b"<svg/>")
+    icons = UserIcons(tmp_path)
+
+    assert_that(icons.resolve("logo")).is_equal_to("logo.svg")
+    assert_that(icons.read_icon("logo")).is_equal_to(b"<svg/>")
+    assert_that(icons.read_icon("missing")).is_none()

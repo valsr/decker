@@ -154,6 +154,60 @@ def _leave(widget) -> None:
     QApplication.sendEvent(widget, QEvent(QEvent.Type.Leave))
 
 
+class TestKeyDeleteButton:  # pylint: disable=protected-access,unused-argument
+    def test_a_key_with_a_card_shows_the_delete_button_on_hover_only(self, qapp):
+        button = _key()
+        button.set_draggable(True)
+        button.show()
+        assert_that(button._delete_button.isVisible()).is_false()
+
+        _enter(button)
+        assert_that(button._delete_button.isVisible()).is_true()
+        _leave(button)
+        assert_that(button._delete_button.isVisible()).is_false()
+
+    def test_an_empty_key_never_shows_the_delete_button(self, qapp):
+        button = _key()
+        button.show()
+
+        _enter(button)
+
+        assert_that(button._run_button.isVisible()).is_true()
+        assert_that(button._delete_button.isVisible()).is_false()
+
+    def test_the_delete_button_sits_in_the_bottom_right_corner(self, qapp):
+        button = _key()
+        button.show()
+
+        geometry = button._delete_button.geometry()
+
+        assert_that((geometry.width(), geometry.height())).is_equal_to((30, 30))
+        assert_that(button.width() - geometry.right() - 1).is_equal_to(4)
+        assert_that(button.height() - geometry.bottom() - 1).is_equal_to(4)
+
+    def test_clicking_it_emits_delete_clicked_and_not_edit_clicked(self, qapp):
+        button = _key(6)
+        deleted: list[int] = []
+        edited: list[int] = []
+        button.delete_clicked.connect(deleted.append)
+        button.edit_clicked.connect(edited.append)
+
+        button._delete_button.click()
+
+        assert_that(deleted).is_equal_to([6])
+        assert_that(edited).is_empty()
+
+    def test_the_grid_forwards_it_as_key_delete_requested(self, qapp):
+        grid = ButtonGridWidget()
+        grid.build(_make_keys(5))
+        requested: list[int] = []
+        grid.key_delete_requested.connect(requested.append)
+
+        grid._buttons[2]._delete_button.click()
+
+        assert_that(requested).is_equal_to([2])
+
+
 class TestKeyPlayButton:  # pylint: disable=protected-access,unused-argument
     def test_play_button_is_hidden_until_the_pointer_enters(self, qapp):
         button = _key()
