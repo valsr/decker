@@ -10,7 +10,7 @@ from PIL import Image
 
 from decker.asset.iconresize import ImageImportError, ImportOptions
 from decker.asset.usericons import ImportResult, UserIcons, normalize_id
-from decker.plugin.icons import max_icon_bytes
+from decker.common.icon_limits import max_icon_bytes
 
 
 def test_normalize_id_lowercases_and_replaces_runs_of_other_characters() -> None:

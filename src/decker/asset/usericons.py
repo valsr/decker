@@ -16,8 +16,8 @@ from decker.asset.iconresize import (
     preview_png,
 )
 from decker.asset.svgcheck import validate_svg
+from decker.common.icon_limits import max_icon_bytes
 from decker.common.paths import user_icons
-from decker.plugin.icons import max_icon_bytes
 
 USER_PACK_ID = "decker.user"
 USER_PLUGIN_ID = "decker.user"

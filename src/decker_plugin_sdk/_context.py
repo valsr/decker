@@ -83,7 +83,7 @@ class CardContext:
         self._record(data if format == "png" else None)
 
     def set_icon(self, ref: str, color: str | None = None) -> None:
-        """Show an icon from an installed icon pack (``pack:<pack id>/<path>``); SVGs are filled with ``color``."""
+        """Show an icon by ``pack:<pack id>/<path>`` or built-in ``fas:play`` reference; SVGs are filled with ``color``."""
         payload: dict[str, Any] = {"icon": ref}
         if color is not None:
             payload["color"] = color

@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from decker.common import config
+from decker.common.icon_limits import max_icon_bytes
 from decker.common.icon_ref import BUILTIN_PACK_IDS, parse_builtin_ref
 
 BUILTIN_PLUGIN_ID = "decker.builtin"
@@ -64,11 +64,7 @@ class BuiltinIcons:
         pack_root = self._root / folder
         try:
             path = (pack_root / name).resolve()
-            if (
-                not path.is_relative_to(pack_root)
-                or not path.is_file()
-                or path.stat().st_size > config.get_as("icons.max_file_size", int)
-            ):
+            if not path.is_relative_to(pack_root) or not path.is_file() or path.stat().st_size > max_icon_bytes():
                 return None
             return path.read_bytes()
         except (OSError, ValueError) as exc:
