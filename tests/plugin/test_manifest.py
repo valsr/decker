@@ -589,3 +589,11 @@ def test_runtimeless_static_card_may_bind_a_foreign_action() -> None:
 def test_static_card_may_declare_bindings() -> None:
     data = _with_actions(_ACT, static=True, bindings={"press": {"action": "com.acme.demo.act"}})
     assert_that(PluginManifest.from_dict(data).cards[0].bindings["press"].action).is_equal_to("com.acme.demo.act")
+
+
+def test_action_timeout_is_parsed_and_bounded() -> None:
+    assert_that(PluginManifest.from_dict(_with_actions(_ACT)).actions[0].timeout).is_none()
+    assert_that(PluginManifest.from_dict(_with_actions({**_ACT, "timeout": 120})).actions[0].timeout).is_equal_to(120)
+    for bad in (0, 301, 1.5, True, "10"):
+        with pytest.raises(ManifestValidationError, match="timeout"):
+            PluginManifest.from_dict(_with_actions({**_ACT, "timeout": bad}))

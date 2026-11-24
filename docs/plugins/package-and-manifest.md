@@ -192,6 +192,7 @@ them with `call_action`.
 | `scope` | `"global"` (any plugin's cards and code may use it, and it is listed in the Actions tab) or `"plugin"` (only this plugin's cards and code). Default `"plugin"`, so nothing is public by accident. Any other value is a manifest error. |
 | `settings` | [Settings schema](settings-schema.md) for the action's arguments, including the validation rules `required`, `pattern`, `min_length` and `max_length`. |
 | `returns` | Optional text describing the return value. Documentation only: it is shown to users and never checked. |
+| `timeout` | Optional whole seconds, 1 to 300: how long a run may take before the server gives up. Default 30. A caller's own `timeout` wins, and a nested call never outlives the action that made it. |
 
 A plugin with actions needs a `runtime`: Decker starts the plugin and sends `run_action` (see the
 [protocol](protocol.md)). Decker itself ships two actions in the built-in Core plugin, both `global`: **Do Nothing**

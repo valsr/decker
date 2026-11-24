@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -43,6 +44,7 @@ class _Pending:
         self.call = call
         self.done = threading.Event()
         self.result = ActionResult(False, "no answer")
+        self.deadline = 0.0
 
 
 class ActionRunner:
@@ -280,11 +282,29 @@ class ActionRunner:
         args = self._resolve(spec, validated, call.device)
         return self._run_in_plugin(plugin.manifest.id, call, args)
 
+    def timeout_for(self, call: ActionCall) -> float:
+        """Seconds the call may take: its own timeout, else the action's, else the default; never past its parent."""
+        spec = self.spec(call.action)
+        if call.timeout is not None:
+            wait = call.timeout
+        elif spec is not None and spec.timeout is not None:
+            wait = float(spec.timeout)
+        else:
+            wait = self._timeout
+        wait = min(wait, MAX_CALL_TIMEOUT_S)
+        with self._lock:
+            deadlines = [p.deadline for p in self._pending.values() if p.call.chain == call.chain]
+        return min(wait, min(deadlines) - time.monotonic()) if deadlines else wait
+
     def _run_in_plugin(self, plugin_id: str, call: ActionCall, args: Mapping[str, Any]) -> ActionResult:
         if self._supervisor.is_failed(plugin_id):
             return ActionResult(False, "the plugin has failed")
+        wait = self.timeout_for(call)
+        if wait <= 0:
+            return ActionResult(False, "the calling action ran out of time")
         request = uuid.uuid4().hex
         pending = _Pending(plugin_id, call)
+        pending.deadline = time.monotonic() + wait
         with self._lock:
             self._pending[request] = pending
         self._supervisor.acquire(plugin_id)  # starts the process when no card keeps it running
@@ -293,7 +313,7 @@ class ActionRunner:
                 plugin_id,
                 Message("run_action", None, call.payload(request, args)),
             )
-            if not pending.done.wait(call.timeout or self._timeout):
+            if not pending.done.wait(wait):
                 return ActionResult(False, "timed out")
             return pending.result
         finally:

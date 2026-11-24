@@ -16,7 +16,7 @@ from decker_plugin_sdk import (
     call_action_async,
     run,
 )
-from decker_plugin_sdk._actions import CallHost
+from decker_plugin_sdk._actions import MAX_TIMEOUT, CallHost
 from decker_plugin_sdk._pool import ElasticPool
 
 WAIT = 5.0
@@ -196,7 +196,7 @@ def test_call_action_returns_call_result_value() -> None:
         call = host.recv_until("call_action")["payload"]
         assert_that(call["action"]).is_equal_to("t.target")
         assert_that(call["args"]).is_equal_to({"k": 7})
-        assert_that(call["timeout"]).is_equal_to(30.0)
+        assert_that(call).does_not_contain_key("timeout")
         host.send("call_result", {"request": "unknown", "ok": True, "value": 0})  # ignored
         host.send("call_result", {"request": call["request"], "ok": True, "value": {"answer": 42}})
         assert_that(host.recv_until("action_result")["payload"]["value"]).is_equal_to({"answer": 42})
@@ -387,3 +387,21 @@ def test_reply_racing_the_local_timeout_is_returned(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(threading.Event, "wait", racing_wait)
     assert_that(host.call("t.target", None, 1.0, None)).is_equal_to("late")
+
+
+def test_sdk_call_without_timeout_omits_it_and_waits_the_maximum(monkeypatch: pytest.MonkeyPatch) -> None:
+    host, sent = _calls()
+    waits: list[float | None] = []
+
+    def recording_wait(event: threading.Event, timeout: float | None = None) -> bool:
+        if not host._pending:  # pylint: disable=protected-access
+            return True
+        waits.append(timeout)
+        host.deliver({"request": next(iter(host._pending)), "ok": True, "value": 1})  # pylint: disable=protected-access
+        return True
+
+    monkeypatch.setattr(threading.Event, "wait", recording_wait)
+    host.call("t.target", None, None, None)
+
+    assert_that(sent[0][1]).does_not_contain_key("timeout")
+    assert_that(waits[0]).is_equal_to(MAX_TIMEOUT + 1)

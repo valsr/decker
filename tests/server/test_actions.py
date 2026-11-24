@@ -1,6 +1,7 @@
 import json
 import queue
 import threading
+import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -466,3 +467,67 @@ class TestManifestCardsAndActions:
             PluginManifest.from_dict(
                 self._data(actions=[{"id": "com.t.audio.x", "name": "X", "settings": [{"key": "a", "type": "nope"}]}])
             )
+
+
+_SLOW = {"id": "com.t.act.slow", "name": "Slow", "timeout": 2}
+_LONG = {"id": "com.t.act.long", "name": "Long", "timeout": 120}
+
+
+class TestTimeLimit:
+    def _silent(self, actions: list[dict[str, Any]]) -> tuple[ActionRunner, MagicMock]:
+        supervisor = MagicMock()
+        supervisor.is_failed.return_value = False
+        runner, _ = _runner(supervisor, timeout=30.0)
+        runner.register(_plugin(actions))
+        return runner, supervisor
+
+    def test_a_gesture_waits_the_declared_timeout(self) -> None:
+        runner, _ = self._silent([_SLOW])
+        started = time.monotonic()
+
+        result = runner.execute(_call("com.t.act.slow"))
+
+        assert_that(result.error).is_equal_to("timed out")
+        assert_that(time.monotonic() - started).is_between(1.5, 5)
+
+    def test_explicit_call_timeout_wins_over_declared(self) -> None:
+        runner, _ = self._silent([_LONG])
+        started = time.monotonic()
+
+        result = runner.execute(_call("com.t.act.long", timeout=1))
+
+        assert_that(result.error).is_equal_to("timed out")
+        assert_that(time.monotonic() - started).is_between(0.8, 3)
+
+    def test_the_runner_default_applies_without_a_declared_timeout(self) -> None:
+        runner, _ = self._silent([_ECHO, _LONG])
+
+        assert_that(runner.timeout_for(_call("com.t.act.echo"))).is_equal_to(30.0)
+        assert_that(runner.timeout_for(_call("com.t.act.long"))).is_equal_to(120.0)
+        assert_that(runner.timeout_for(_call("com.t.act.long", timeout=10_000))).is_equal_to(MAX_CALL_TIMEOUT_S)
+
+    def _parent(self, runner: ActionRunner, remaining: float) -> ActionCall:
+        parent = _call("com.t.act.echo")
+        pending = _Pending("com.t.act", parent)
+        pending.deadline = time.monotonic() + remaining
+        runner._pending["parent"] = pending  # pylint: disable=protected-access
+        return parent
+
+    def test_nested_call_is_capped_by_parent_remaining_time(self) -> None:
+        runner, _ = self._silent([_ECHO, _LONG])
+        parent = self._parent(runner, 1.0)
+        started = time.monotonic()
+
+        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act"))
+
+        assert_that(result.error).is_equal_to("timed out")
+        assert_that(time.monotonic() - started).is_between(0.5, 3)
+
+    def test_nested_call_with_no_time_left_is_not_sent(self) -> None:
+        runner, supervisor = self._silent([_ECHO, _LONG])
+        parent = self._parent(runner, -1.0)
+
+        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act"))
+
+        assert_that(result.error).is_equal_to("the calling action ran out of time")
+        supervisor.send.assert_not_called()

@@ -29,6 +29,7 @@ _SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)
 SUPPORTED_FORMATS = (3,)
 KNOWN_CONTRIBUTION_KINDS = frozenset({"cards", "actions", "icon_packs", "variables"})
 _RUNTIME_TYPES = ("python", "executable")
+MAX_ACTION_TIMEOUT_S = 300
 _UUID_PATTERN = re.compile(r"[a-z0-9]+(\.[a-z0-9-]+)+")
 
 
@@ -95,6 +96,7 @@ class ActionSpec:
     settings: tuple[SettingEntry, ...] = ()
     scope: Literal["global", "plugin"] = "plugin"
     returns: str = ""
+    timeout: int | None = None
 
 
 @dataclass(frozen=True)
@@ -339,7 +341,18 @@ def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
         settings=_parse_settings(entry.get("settings", []), f"action {action_id} settings"),
         scope=_parse_scope(entry.get("scope", "plugin"), action_id),
         returns=_parse_returns(entry.get("returns", ""), action_id),
+        timeout=_parse_timeout(entry.get("timeout"), action_id),
     )
+
+
+def _parse_timeout(value: Any, action_id: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= MAX_ACTION_TIMEOUT_S:
+        raise ManifestValidationError(
+            f"action {action_id} timeout must be a whole number of seconds, 1-{MAX_ACTION_TIMEOUT_S}"
+        )
+    return value
 
 
 def _parse_scope(value: Any, action_id: str) -> Literal["global", "plugin"]:
