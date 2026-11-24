@@ -26,6 +26,9 @@ _PLUGIN = "com.decker.acttest"
 _MARK = "com.decker.acttest.mark"
 _PUBLIC = "com.decker.acttest.public"
 _NAV = "com.decker.acttest.nav"
+_CHAIN = "com.decker.acttest.chain"
+_RECURSE = "com.decker.acttest.recurse"
+_RELAY = "com.decker.acttest.relay"
 _POLICY = SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0)
 _DEADLINE = 15.0
 _TILE = CardTarget(_PLUGIN, "com.decker.acttest.tile", "ctx-tile", "dev-1", 0)
@@ -164,3 +167,35 @@ def test_global_action_navigates_the_blank_card_device(env: _Env) -> None:
     env.press(_BLANK)
 
     assert_that(_wait(lambda: env.pages.activations == [("dev-1", "p1")])).is_true()
+
+
+def test_action_calls_own_plugin_action_and_gets_value(env: _Env) -> None:
+    env.activate_tile()
+    env.manager.set_bindings(_TILE, {"press": {"action": _CHAIN, "args": {}}})
+
+    env.press(_TILE)
+
+    assert_that(_wait(lambda: env.read("chain.log") != "")).described_as("chain.log was never written").is_true()
+    assert_that(env.read("chain.log")).is_equal_to("42")
+
+
+def test_recursion_stops_at_depth_8_with_an_error(env: _Env) -> None:
+    env.activate_tile()
+    env.manager.set_bindings(_TILE, {"press": {"action": _RECURSE, "args": {"n": 0}}})
+
+    env.press(_TILE)
+
+    assert_that(_wait(lambda: env.read("recurse.err") != "")).described_as("recursion never refused").is_true()
+    assert_that(env.read("recurse.log")).is_equal_to("8")
+    assert_that(env.read("recurse.err")).contains("depth limit (8)")
+
+
+def test_call_inside_a_gesture_chain_resolves_page_args_for_the_card_device(env: _Env) -> None:
+    env.manager.activate_card(_BLANK)
+    env.manager.set_bindings(_BLANK, {"press": {"action": _RELAY, "args": {}}})
+
+    env.press(_BLANK)
+
+    assert_that(_wait(lambda: env.read("public.log") != "")).described_as("public.log was never written").is_true()
+    received = json.loads(env.read("public.log"))
+    assert_that(received["page"]).contains_entry({"page_id": "p1"}, {"name": "Home"})

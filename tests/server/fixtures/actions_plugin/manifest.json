@@ -46,6 +46,38 @@
         "settings": [
           { "key": "page", "type": "page", "label": "Page" }
         ]
+      },
+      {
+        "id": "com.decker.acttest.double",
+        "name": "Double",
+        "tooltip": "Returns twice its n",
+        "scope": "plugin",
+        "settings": [
+          { "key": "n", "type": "int", "label": "N", "default": 0 }
+        ]
+      },
+      {
+        "id": "com.decker.acttest.chain",
+        "name": "Chain",
+        "tooltip": "Calls double and logs the value",
+        "scope": "global",
+        "settings": []
+      },
+      {
+        "id": "com.decker.acttest.recurse",
+        "name": "Recurse",
+        "tooltip": "Calls itself with n + 1 until refused",
+        "scope": "plugin",
+        "settings": [
+          { "key": "n", "type": "int", "label": "N", "default": 0 }
+        ]
+      },
+      {
+        "id": "com.decker.acttest.relay",
+        "name": "Relay",
+        "tooltip": "Calls public for page p1 without naming a device",
+        "scope": "global",
+        "settings": []
       }
     ]
   }
