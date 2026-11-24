@@ -12,7 +12,7 @@ to build one without reading Decker's source.
 
 Cards only draw; actions do the work. Every card binds its `press`, `double_press` and `long_press` gestures to an action
 with arguments (or to the built-in Do Nothing), plugin code can call actions with `call_action`, and cards can draw
-with a double-buffered Pillow canvas. Manifest format 3 and protocol 4 (Decker 0.7) replaced the Run Action and Switch
+with a double-buffered Pillow canvas. Manifest format 3 and protocol 4 (Decker 0.7; protocol 5 in 0.7.2 added action timeouts, device hotplug and deck brightness) replaced the Run Action and Switch
 cards, card presets, `gestures`, `set_gestures` and the `slots` setting type; formats 1 and 2 are refused. `{page_name}`-style
 templates, `page` settings and `switch_page` are described in the manifest, settings-schema and protocol pages above.
 Decker ships two built-in plugins: Blank (static cards, including Page Name and Page Count) and Core (the Do Nothing
