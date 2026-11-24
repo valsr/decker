@@ -1,5 +1,6 @@
 """About dialog: client and server versions, authors, repository and licence notes."""
 
+import html
 import json
 from importlib import metadata
 from typing import Any
@@ -23,14 +24,14 @@ _LOGO_SIZE = 96
 
 
 def server_version(connection_manager: Any) -> str | None:
-    """The server's version from its status RPC, or None when not connected or the call fails."""
+    """The server's version from its status RPC; None when not connected or the call fails, 'unknown' for an old server."""
     if connection_manager is None or not connection_manager.is_connected:
         return None
     try:
         version = json.loads(connection_manager.call("status")).get("version")
     except (TypeError, ValueError, AttributeError):
         return None
-    return version or None
+    return str(version) if version else "unknown"
 
 
 def _authors() -> list[str]:
@@ -79,7 +80,7 @@ class AboutDialog(QDialog):
     def _body_html(server: str | None) -> str:
         lines = [
             f"Client version: {decker_version()}",
-            f"Server version: {server if server else 'not connected'}",
+            f"Server version: {html.escape(server) if server else 'not connected'}",
             f"Authors: {', '.join(_authors())}",
             f'Repository: <a href="{REPOSITORY_URL}">{REPOSITORY_URL}</a>',
             "MIT License",
