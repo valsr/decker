@@ -467,3 +467,16 @@ class TestForeignAccess:
             _foreign_send(env, f"made_up_{number}", {})
 
         assert_that(env.manager._foreign_warned).is_equal_to({_COUNTER})  # pylint: disable=protected-access
+
+
+class TestCallActionRouting:
+    def test_call_action_from_a_plugin_reaches_the_runner(self, env) -> None:
+        seen: list[tuple[str, Any]] = []
+        runner = env.manager._action_runner  # pylint: disable=protected-access
+        runner.on_plugin_call = lambda plugin_id, payload: seen.append((plugin_id, payload))
+
+        env.manager._route_message(  # pylint: disable=protected-access
+            _COUNTER, Message("call_action", None, {"request": "r", "action": _INCREMENT})
+        )
+
+        assert_that(seen).is_equal_to([(_COUNTER, {"request": "r", "action": _INCREMENT})])
