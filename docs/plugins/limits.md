@@ -18,6 +18,12 @@
 | Dynamic choice options (`options_source`) | at most 256 options per source; values and labels are cut to 256 characters; a stored value is at most 256 characters |
 | Options source name | 64 characters |
 | Options ask (`get_options`) | the plugin has 5 s to answer; on a timeout the client gets an error and no options |
+| Action or call result value (`action_result`, `call_result`) | 1 MiB encoded as JSON (`MAX_VALUE_BYTES = 1024 * 1024`); a larger value is an error |
+| Action call timeout | 30 s by default; `call_action` may ask for more, capped at 300 s |
+| Action call depth | a chain of calls may nest 8 deep; deeper calls are refused (the server counts it from the `chain` the caller forwards) |
+| Canvas frame tick | about 30 per second; at most 2 frames per tick (about 60 per second), so the canvas stays under the flood limit; a key not sent stays dirty for the next tick |
+| Canvas image fetch (`get_image`) | the plugin waits up to 5 s for `image_result` |
+| HTTP Request action | body up to 512 KiB read and decoded, then trimmed so the encoded result fits 1 MiB; the request timeout setting allows 1 to 120 s but Core clamps it to 25 s, because a gesture call waits 30 s |
 | Raster image from `set_image` | at most 4096 x 4096 pixels |
 | Icon file (pack icon or card or action `icon`) | at most 4 MiB; larger files are ignored |
 | Animated GIF (`set_image` bytes or pack icon) | at most 4 MiB, 300 frames, 4096 x 4096 pixels per frame, and 96 million pixels in total (frames x width x height, so 300 frames of 480 x 480 fit but 100 frames of 1024 x 1024 do not; both are enforced from the frame headers and again as frames are read, counting a frame that is bigger than the header's screen at its grown size); frame delays under 20 ms play as 100 ms; a GIF over any limit stays a still first frame |
@@ -34,6 +40,11 @@
   can start a lazy plugin and holds an RPC thread for up to 5 s. Sustained high rates can also hit the plugin's message
   rate limit (see Flood below): a plugin that stays above about 100 messages per second for 5 s is killed, and three
   kills within 60 s mark it failed.
+- The canvas needs Pillow in the plugin's environment: add `pillow` to `runtime.requirements` (built-in plugins use the
+  server's Pillow). Without it, using the canvas raises a `RuntimeError`; the SDK itself needs no packages.
+- A plugin with actions starts when one of its actions runs (a gesture or a `call_action`) and, like one with cards, stops about
+  10 s after its last use. Built-in plugins with a `runtime` (Core) run on the server's own interpreter and SDK, with no uv
+  environment.
 - Each plugin runs in its own process group; stopping or killing it also stops helper processes it started.
 - **Crashes**: restart with backoff (0.5 s, 2 s, 5 s). Three crashes within 60 s mark the plugin failed: its keys
   are cleared and labelled "Plugin failed", and clients are notified. Re-saving a key's settings retries it; so

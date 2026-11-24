@@ -134,7 +134,7 @@ def test_unknown_appearance_key_in_manifest_rejected() -> None:
         "version": "1.0.0",
         "author": "A",
         "description": "d",
-        "decker": ">=0.2",
+        "decker": ">=0.7",
         "runtime": {"type": "python", "entry": "plugin.py", "python": ">=3.12", "requirements": []},
         "contributes": {"cards": [{"id": "com.example.p.a", "name": "A", "appearance": {"background": "#112233"}}]},
     }
@@ -221,7 +221,7 @@ def _manifest_data(appearance: dict[str, Any]) -> dict[str, Any]:
         "version": "1.0.0",
         "author": "A",
         "description": "d",
-        "decker": ">=0.2",
+        "decker": ">=0.7",
         "runtime": {"type": "python", "entry": "plugin.py", "python": ">=3.12", "requirements": []},
         "contributes": {"cards": [{"id": "com.example.p.a", "name": "A", "appearance": appearance}]},
     }

@@ -39,7 +39,7 @@ def _options_plugin(
         "name": "O",
         "version": "1.0.0",
         "author": "a",
-        "decker": ">=0.6",
+        "decker": ">=0.7",
         "runtime": {"type": "python", "entry": "plugin.py"},
         "global_settings": ([_choice(global_)] if global_ else []) + [{"section": "Heading"}],
         "contributes": contributes,
@@ -244,7 +244,7 @@ def test_a_plugin_cannot_be_asked_for_another_plugins_source(tmp_path: Path) -> 
             "name": "P",
             "version": "1.0.0",
             "author": "a",
-            "decker": ">=0.6",
+            "decker": ">=0.7",
             "runtime": {"type": "python", "entry": "plugin.py"},
             "contributes": {"cards": [{"id": f"{other_id}.card", "name": "C", "settings": [_choice("only_b")]}]},
         }

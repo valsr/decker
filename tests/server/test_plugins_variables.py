@@ -32,7 +32,7 @@ def _plugin(
         "name": "V",
         "version": "1.0.0",
         "author": "a",
-        "decker": ">=0.6",
+        "decker": ">=0.7",
         "runtime": {"type": "python", "entry": "plugin.py"},
         "contributes": {"variables": variables, **({"cards": cards} if cards else {})},
     }
@@ -408,7 +408,7 @@ def test_plugin_with_variables_starts_with_create(tmp_path: Path) -> None:
         "name": "D",
         "version": "1.0.0",
         "author": "a",
-        "decker": ">=0.6",
+        "decker": ">=0.7",
         "runtime": {"type": "python", "entry": "plugin.py"},
         "contributes": {"variables": [{"name": "disk_free"}]},
     }

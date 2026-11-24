@@ -43,7 +43,7 @@ def _plugin(tmp_path: Path, contributes: dict, runtime: bool = False, decker: bo
     if runtime:
         data["runtime"] = {"type": "python", "entry": "plugin.py"}
     if decker:
-        data["decker"] = ">=0.6"
+        data["decker"] = ">=0.7"
     return InstalledPlugin(PluginManifest.from_dict(data), tmp_path)
 
 

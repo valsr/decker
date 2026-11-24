@@ -10,7 +10,13 @@ to build one without reading Decker's source.
 - [Limits, lifecycle and the launch environment](limits.md)
 - [Plugin repositories](repositories.md): index format, update checks, hosting your own repository
 
-Presets (`"static"` cards, and cards that run an action), `{page_name}`-style templates, `page` settings and `switch_page` are described in the manifest, settings-schema and protocol pages above; Decker itself ships two built-in plugins, Blank (static cards, including Page Name and Page Count) and Core (the Run Action card and the HTTP Request action).
+Cards only draw; actions do the work. Every card binds its `press`, `double_press` and `long_press` gestures to an action
+with arguments (or to the built-in Do Nothing), plugin code can call actions with `call_action`, and cards can draw
+with a double-buffered Pillow canvas. Manifest format 3 and protocol 4 (Decker 0.7) replaced the Run Action and Switch
+cards, card presets, `gestures`, `set_gestures` and the `slots` setting type; formats 1 and 2 are refused. `{page_name}`-style
+templates, `page` settings and `switch_page` are described in the manifest, settings-schema and protocol pages above.
+Decker ships two built-in plugins: Blank (static cards, including Page Name and Page Count) and Core (the Do Nothing
+action and the HTTP Request action, which runs in a Core plugin process).
 
 Plugins run with your user's permissions and are not sandboxed. Only install plugins from authors you trust.
 
@@ -18,8 +24,8 @@ Plugins run with your user's permissions and are not sandboxed. Only install plu
 
 | Kind | What it is | Needs a runtime |
 |------|------------|-----------------|
-| `cards` | What a key shows: they appear in the card list (the key picker) and run as a separate process, unless they are static presets or presets of Run Action | for code-backed cards |
-| `actions` | Headless things to do (a function with settings, e.g. an HTTP request), run from the Run Action card or a preset card | yes |
+| `cards` | What a key shows: they appear in the card list (the key picker). Each binds its gestures to actions. A card that is not static runs as a separate process | for code-backed cards (not `static`) |
+| `actions` | Headless things to do (a function with settings, e.g. an HTTP request). `scope` says who may use them: `global` (any card, any plugin's code) or `plugin` (only this plugin). Cards run them through their bindings | yes |
 | `icon_packs` | A folder of images browsable from the image library | no |
 | `variables` | Global text values other text can use as `{name}`; the plugin starts with the server and keeps running | yes (and a `decker` constraint) |
 
