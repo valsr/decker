@@ -1,5 +1,6 @@
 """Test-only plugin: actions that leave files behind so a test can see them run."""
 
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
@@ -76,3 +77,9 @@ def paint(ctx: ActionCallContext) -> None:
     with card_proxy.canvas.paint() as img:
         width, height = img.size
         img.paste((0, 0, 255, 255), (width // 3, height // 3, width * 2 // 3, height * 2 // 3))
+
+
+@action("com.decker.acttest.probe")
+def probe(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    found = {name: importlib.util.find_spec(name) is not None for name in ("PIL", "psutil", "yaml", "rpyc", "decker")}
+    Path(__file__).with_name("probe.log").write_text(json.dumps(found), encoding="utf-8")

@@ -36,6 +36,7 @@ _CHAIN = "com.decker.acttest.chain"
 _RECURSE = "com.decker.acttest.recurse"
 _RELAY = "com.decker.acttest.relay"
 _PAINT = "com.decker.acttest.paint"
+_PROBE = "com.decker.acttest.probe"
 _CORE = "com.decker.core"
 _HTTP = "com.decker.core.httprequest"
 _POLICY = SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0)
@@ -82,11 +83,14 @@ class _Env:
 
     @staticmethod
     def _expose_pillow(venv: Path) -> None:
-        # A venv layout around the symlink lets a .pth file lend the test interpreter's Pillow to the plugin.
+        # Lends the plugin only Pillow (the PIL package, its bundled libs and dist-info) from the test venv, by symlink.
         (venv / "pyvenv.cfg").write_text(f"home = {Path(sys.executable).resolve().parent}\n", encoding="utf-8")
         site = venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
         site.mkdir(parents=True)
-        (site / "pillow.pth").write_text(str(Path(Image.__file__).resolve().parent.parent), encoding="utf-8")
+        source = Path(Image.__file__).resolve().parent.parent
+        for entry in (source / "PIL", source / "pillow.libs", *source.glob("pillow-*.dist-info")):
+            if entry.exists():
+                (site / entry.name).symlink_to(entry)
 
     def close(self) -> None:
         pids = [pid for pid in (self.pid(_PLUGIN), self.pid(_CORE)) if pid is not None]
@@ -117,17 +121,25 @@ class _Env:
             time.sleep(hold)
         self.manager.dispatch_key_up(target)
 
-    def key_pixel(self, key: int, x: int, y: int) -> tuple[int, ...] | None:
-        """The pixel of the latest composed key image, or None before any image was written."""
+    def image_count(self, key: int) -> int:
+        return len([1 for index, _ in self.devices.hardware_images if index == key])
+
+    def key_image(self, key: int) -> Image.Image | None:
         images = [data for index, data in self.devices.hardware_images if index == key]
-        if not images:
-            return None
-        pixel = Image.open(io.BytesIO(images[-1])).convert("RGB").getpixel((x, y))
+        return Image.open(io.BytesIO(images[-1])).convert("RGB") if images else None
+
+    def key_pixel(self, key: int, x: int, y: int) -> tuple[int, ...] | None:
+        image = self.key_image(key)
+        pixel = image.getpixel((x, y)) if image is not None else None
         return pixel if isinstance(pixel, tuple) else None
 
-    def key_size(self, key: int) -> tuple[int, int]:
-        data = [image for index, image in self.devices.hardware_images if index == key][-1]
-        return Image.open(io.BytesIO(data)).size
+    def centre(self, key: int) -> int:
+        assert_that(_wait(lambda: self.key_image(key) is not None)).described_as(
+            f"no image was written for key {key}"
+        ).is_true()
+        image = self.key_image(key)
+        assert image is not None
+        return image.size[0] // 2
 
     def last_paint(self, target: CardTarget) -> object:
         return self.manager._live[target.context_id].last_paint  # pylint: disable=protected-access
@@ -346,7 +358,7 @@ def test_queue_paint_lands_on_the_key(env: _Env) -> None:
 def test_global_action_paints_a_foreign_blank_card_before_its_result(env: _Env) -> None:
     env.manager.activate_card(_BLANK, {"background": {"type": "color", "color": "#00ff00"}})
     env.manager.set_bindings(_BLANK, {"press": {"action": _PAINT, "args": {}}})
-    centre = env.key_size(1)[0] // 2
+    centre = env.centre(1)
 
     env.press(_BLANK)
 
@@ -362,10 +374,22 @@ def test_global_action_paints_a_foreign_blank_card_before_its_result(env: _Env) 
 def test_user_icon_override_still_wins_over_canvas_frames(env: _Env, tmp_path: Path) -> None:
     _install_dot_pack(env, tmp_path)
     env.manager.activate_card(_TILE, {"icon": {"ref": _DOT_REF, "color": "#00ff00"}})
+    drawn = env.image_count(0)
     assert_that(_wait(env.ready)).is_true()
 
     assert_that(_wait(lambda: env.last_paint(_TILE) is not None)).described_as("no frame was accepted").is_true()
-    time.sleep(0.3)
+    assert_that(_wait(lambda: env.image_count(0) > drawn)).described_as("the frame never recomposed the key").is_true()
 
-    centre = env.key_size(0)[0] // 2
+    centre = env.centre(0)
     assert_that(_is_green(env.key_pixel(0, centre, centre))).described_as("override lost to the canvas").is_true()
+
+
+def test_plugin_process_sees_pillow_but_not_the_test_venv(env: _Env) -> None:
+    env.activate_tile()
+    env.manager.set_bindings(_TILE, {"press": {"action": _PROBE, "args": {}}})
+
+    env.press(_TILE)
+
+    assert_that(_wait(lambda: env.read("probe.log") != "")).described_as("probe.log was never written").is_true()
+    found = json.loads(env.read("probe.log"))
+    assert_that(found).is_equal_to({"PIL": True, "psutil": False, "yaml": False, "rpyc": False, "decker": False})
