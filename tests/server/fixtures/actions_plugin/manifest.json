@@ -80,6 +80,13 @@
         "settings": []
       },
       {
+        "id": "com.decker.acttest.probe",
+        "name": "Probe",
+        "tooltip": "Reports which modules the plugin process can import",
+        "scope": "plugin",
+        "settings": []
+      },
+      {
         "id": "com.decker.acttest.relay",
         "name": "Relay",
         "tooltip": "Calls public for page p1 without naming a device",
