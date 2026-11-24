@@ -15,11 +15,11 @@ def _make_window(visible: bool = True) -> MagicMock:
 
 
 class TestMenu:
-    def test_menu_has_show_hide_settings_and_quit(self, qapp):  # pylint: disable=unused-argument
+    def test_menu_has_show_hide_settings_about_and_quit(self, qapp):  # pylint: disable=unused-argument
         tray = TrayIcon(_make_window())
         actions = tray._menu.actions()  # pylint: disable=protected-access
         labels = [action.text() for action in actions if not action.isSeparator()]
-        assert_that(labels).is_equal_to(["Hide", "Settings", "Quit"])
+        assert_that(labels).is_equal_to(["Hide", "Settings", "About Decker…", "Quit"])
 
     def test_settings_opens_settings_dialog(self, qapp):  # pylint: disable=unused-argument
         window = _make_window()
@@ -28,6 +28,14 @@ class TestMenu:
         _action(tray, "Settings").trigger()
 
         window.open_settings.assert_called_once()
+
+    def test_about_opens_about_dialog(self, qapp):  # pylint: disable=unused-argument
+        window = _make_window()
+        tray = TrayIcon(window)
+
+        _action(tray, "About Decker…").trigger()
+
+        window.open_about.assert_called_once()
 
     def test_toggle_label_reflects_visible_window(self, qapp):  # pylint: disable=unused-argument
         tray = TrayIcon(_make_window(visible=True))

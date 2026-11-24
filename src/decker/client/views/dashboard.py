@@ -530,6 +530,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         if edit is not None:
             edit.setEnabled(self._profiles is not None)
         menu.addAction("Settings", self._open_settings)
+        menu.addAction("About Decker…", self._open_about)
 
     def _build_device_menu(self, parent: QMenu) -> QMenu:
         device_menu = QMenu("Device", parent)
@@ -811,6 +812,11 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         window = AppContext.get().window
         if window is not None:
             window.open_settings()
+
+    def _open_about(self) -> None:
+        window = AppContext.get().window
+        if window is not None:
+            window.open_about()
 
 
 def _profile_icon(ref: str, color: str = "") -> QIcon | None:

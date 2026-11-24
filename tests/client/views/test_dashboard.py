@@ -229,7 +229,7 @@ class TestViewMenu:  # pylint: disable=protected-access
 
         texts = [a.text() for a in self._menu(view).actions() if not a.isSeparator()]
 
-        assert_that(texts).is_equal_to(["Hide Sidebar", "Device", "Edit Profiles…", "Settings"])
+        assert_that(texts).is_equal_to(["Hide Sidebar", "Device", "Edit Profiles…", "Settings", "About Decker…"])
 
     def test_menu_button_is_right_of_tabs(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
@@ -254,7 +254,7 @@ class TestViewMenu:  # pylint: disable=protected-access
         view = _make_view(tmp_path)
         self._menu(view)
 
-        assert_that(self._menu(view).actions()).is_length(5)
+        assert_that(self._menu(view).actions()).is_length(6)
 
     def test_device_submenu_without_devices(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
@@ -1262,6 +1262,13 @@ class TestProfiles:  # pylint: disable=protected-access
         assert_that(dialog).is_not_none()
         assert_that(dialog._name_edit.text()).is_equal_to("Default")
         dialog.close()
+
+    def test_menu_ends_with_about(self, qapp, tmp_path):
+        view, _cm = self._view(tmp_path)
+        menu = QMenu()
+        view._populate_view_menu(menu)
+
+        assert_that(menu.actions()[-1].text()).is_equal_to("About Decker…")
 
     def test_edit_profile_reuses_the_open_dialog(self, qapp, tmp_path):
         view, _cm = self._view(tmp_path)
