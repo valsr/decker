@@ -1023,6 +1023,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._on_set_global_settings(plugin_id, message.payload)
         elif event == "action_result":
             self._action_runner.on_result(plugin_id, message.payload)
+        elif event == "call_action":
+            self._action_runner.on_plugin_call(plugin_id, message.payload)
         elif event == "options_result":
             self._options_runner.on_result(plugin_id, message.payload)
         elif event in _VARIABLE_EVENTS:

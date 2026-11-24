@@ -1,5 +1,6 @@
 """Runs plugin actions: the registry of what is available and the execution (built-in or in a plugin process)."""
 
+import json
 import logging
 import threading
 import uuid
@@ -10,17 +11,18 @@ from typing import Any
 from decker.plugin.bindings import NOTHING_ACTION_ID
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import ActionSpec
-from decker.plugin.protocol import Message
+from decker.plugin.protocol import MAX_VALUE_BYTES, Message
 from decker.plugin.runtime.supervisor import PluginSupervisor
 from decker.plugin.settings_schema import (
     SettingsValidationError,
     apply_schema,
     schema_to_json,
 )
-from decker.server.action_calls import ActionCall
+from decker.server.action_calls import MAX_DEPTH, ActionCall
 from decker.server.builtin_actions import BUILTIN_ACTIONS, ActionError
 
 DEFAULT_TIMEOUT_S = 30.0
+MAX_CALL_TIMEOUT_S = 300.0
 
 
 @dataclass(frozen=True)
@@ -133,7 +135,7 @@ class ActionRunner:
 
     def execute(self, call: ActionCall) -> ActionResult:
         """Run a call and wait for it to end (up to the timeout)."""
-        result = self._execute(call)
+        result = self._execute_safely(call)
         if not result.ok:
             logging.warning("Action %s failed: %s", call.action, result.error)
             self._on_failure(call.action, result.error)
@@ -148,8 +150,111 @@ class ActionRunner:
             logging.debug("[%s] dropped an action result for an unknown request", plugin_id)
             return
         ok = bool(payload.get("ok"))
-        pending.result = ActionResult(ok, "" if ok else str(payload.get("error") or "the action failed"))
+        if not ok:
+            pending.result = ActionResult(False, str(payload.get("error") or "the action failed"))
+        else:
+            pending.result = self._value_result(payload.get("value"))
         pending.done.set()
+
+    @staticmethod
+    def _value_result(value: Any) -> ActionResult:
+        try:
+            size = len(json.dumps(value).encode())
+        except (TypeError, ValueError):
+            return ActionResult(False, "return value is not JSON")
+        if size > MAX_VALUE_BYTES:
+            return ActionResult(False, "return value larger than 1 MiB")
+        return ActionResult(True, value=value)
+
+    def on_plugin_call(self, plugin_id: str, payload: Mapping[str, Any]) -> None:
+        """A plugin asked to run an action; answered with ``call_result`` from its own thread."""
+        request = payload.get("request")
+        if not isinstance(request, str):
+            logging.debug("[%s] dropped a call_action without a request id", plugin_id)
+            return
+        threading.Thread(
+            target=self._answer_plugin_call, args=(plugin_id, request, payload), name="plugin-call", daemon=True
+        ).start()
+
+    def _answer_plugin_call(self, plugin_id: str, request: str, payload: Mapping[str, Any]) -> None:
+        try:
+            result = self._plugin_call(plugin_id, payload)
+        except Exception as exc:  # pylint: disable=broad-except
+            logging.exception("[%s] call_action crashed", plugin_id)
+            result = ActionResult(False, str(exc) or exc.__class__.__name__)
+        reply: dict[str, Any] = {"request": request, "ok": result.ok}
+        if result.ok:
+            reply["value"] = result.value
+        else:
+            reply["error"] = result.error
+        try:
+            self._supervisor.send(plugin_id, Message("call_result", None, reply))
+        except Exception:  # pylint: disable=broad-except
+            logging.warning("[%s] could not deliver a call_result", plugin_id, exc_info=True)
+
+    @staticmethod
+    def _malformed(payload: Mapping[str, Any]) -> str:
+        timeout, depth = payload.get("timeout"), payload.get("depth")
+        if not isinstance(payload.get("action"), str) or not isinstance(payload.get("args", {}), dict):
+            return "action must be a string and args an object"
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, int | float) or timeout <= 0):
+            return "timeout must be a positive number"
+        if depth is not None and (isinstance(depth, bool) or not isinstance(depth, int)):
+            return "depth must be an integer"
+        if not all(payload.get(key) is None or isinstance(payload.get(key), str) for key in ("chain", "device")):
+            return "chain and device must be strings"
+        return ""
+
+    def _plugin_call(self, plugin_id: str, payload: Mapping[str, Any]) -> ActionResult:
+        problem = self._malformed(payload)
+        if problem:
+            return ActionResult(False, f"malformed call: {problem}")
+        action, chain, device, timeout = (payload.get(k) for k in ("action", "chain", "device", "timeout"))
+        refusal = self._refusal(plugin_id, str(action))
+        if refusal:
+            return ActionResult(False, refusal)
+        call_depth, inherited = self._derive(plugin_id, chain, payload.get("depth") or 0)
+        if call_depth > MAX_DEPTH:
+            return ActionResult(False, f"call depth limit ({MAX_DEPTH}) exceeded")
+        call = ActionCall(
+            str(action),
+            payload.get("args", {}),
+            "plugin",
+            caller=plugin_id,
+            chain=chain or uuid.uuid4().hex,
+            depth=call_depth,
+            device=device if device is not None else inherited,
+            timeout=min(float(timeout), MAX_CALL_TIMEOUT_S) if timeout is not None else None,
+        )
+        return self._execute_safely(call)
+
+    def _refusal(self, plugin_id: str, action: str) -> str:
+        if action == NOTHING_ACTION_ID:
+            return ""
+        found = self.scope_of(action)
+        if found is None:
+            return f"unknown action {action}"
+        owner, scope = found
+        if scope == "plugin" and owner != plugin_id:
+            return f"action {action} is not callable from {plugin_id}"
+        return ""
+
+    def _derive(self, plugin_id: str, chain: str | None, depth: int) -> tuple[int, str | None]:
+        """The depth of a plugin's call and the device its chain runs for (None when unknown)."""
+        if chain is None:
+            return max(0, depth), None
+        with self._lock:
+            pendings = [p for p in self._pending.values() if p.call.chain == chain]
+        device = next((p.call.device for p in pendings if p.call.device is not None), None)
+        mine = [p.call.depth for p in pendings if p.plugin_id == plugin_id]
+        return (max(mine) + 1 if mine else max(0, depth)), device
+
+    def _execute_safely(self, call: ActionCall) -> ActionResult:
+        try:
+            return self._execute(call)
+        except Exception as exc:  # pylint: disable=broad-except
+            logging.exception("Action %s crashed", call.action)
+            return ActionResult(False, str(exc) or exc.__class__.__name__)
 
     def _execute(self, call: ActionCall) -> ActionResult:
         if call.action == NOTHING_ACTION_ID:

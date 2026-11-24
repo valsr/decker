@@ -1,5 +1,6 @@
 import http.server
 import json
+import queue
 import threading
 from pathlib import Path
 from typing import Any
@@ -17,10 +18,10 @@ from decker.server.actions import ActionRunner
 from decker.server.builtin_actions import ActionError, http_request
 
 
-def _manifest(runtime: bool, actions: list[dict[str, Any]]) -> PluginManifest:
+def _manifest(runtime: bool, actions: list[dict[str, Any]], plugin_id: str = "com.t.act") -> PluginManifest:
     data: dict[str, Any] = {
         "format": 3,
-        "id": "com.t.act",
+        "id": plugin_id,
         "name": "Act",
         "version": "1.0.0",
         "author": "T",
@@ -31,8 +32,8 @@ def _manifest(runtime: bool, actions: list[dict[str, Any]]) -> PluginManifest:
     return PluginManifest.from_dict(data)
 
 
-def _plugin(runtime: bool, actions: list[dict[str, Any]]) -> InstalledPlugin:
-    return InstalledPlugin(manifest=_manifest(runtime, actions), plugin_dir=Path("."))
+def _plugin(runtime: bool, actions: list[dict[str, Any]], plugin_id: str = "com.t.act") -> InstalledPlugin:
+    return InstalledPlugin(manifest=_manifest(runtime, actions, plugin_id), plugin_dir=Path("."))
 
 
 _ECHO = {"id": "com.t.act.echo", "name": "Echo", "settings": [{"key": "n", "type": "int", "label": "N", "default": 1}]}
@@ -235,6 +236,215 @@ class TestProtocol4:
         assert_that((listed[0]["scope"], listed[0]["returns"])).is_equal_to(("global", "number"))
         assert_that(runner.scope_of("com.t.act.echo")).is_equal_to(("com.t.act", "global"))
         assert_that(runner.scope_of("nope")).is_none()
+
+
+_GLOBAL = {"id": "com.t.act.shared", "name": "Shared", "scope": "global"}
+_OTHER_PRIVATE = {"id": "com.t.other.secret", "name": "Secret"}
+_OTHER_GLOBAL = {"id": "com.t.other.open", "name": "Open", "scope": "global"}
+
+
+class _Rig:
+    """A runner whose plugin processes are fake: it answers run_action through ``answer`` and records the rest."""
+
+    def __init__(self, answer: Any = None, resolve: Any = None) -> None:
+        self.sent: list[dict[str, Any]] = []
+        self.replies: queue.Queue = queue.Queue()
+        self.devices: list[Any] = []
+        self.answer = answer
+        supervisor = MagicMock()
+        supervisor.is_failed.return_value = False
+        supervisor.send.side_effect = self._send
+        self.runner, self.failures = _runner(supervisor, resolve=resolve or self._resolve)
+        self.runner.register(_plugin(True, [_ECHO, _GLOBAL]))
+        self.runner.register(_plugin(True, [_OTHER_PRIVATE, _OTHER_GLOBAL], "com.t.other"))
+
+    def _resolve(self, _spec: Any, args: Any, device: Any) -> dict[str, Any]:
+        self.devices.append(device)
+        return dict(args)
+
+    def _send(self, plugin_id: str, message: Any) -> None:
+        if message.event == "call_result":
+            self.replies.put(message.payload)
+            return
+        payload = message.payload
+        self.sent.append(payload)
+        outcome = self.answer(payload) if self.answer is not None else None
+        if outcome is not None:
+            threading.Timer(
+                0.01, lambda: self.runner.on_result(plugin_id, {"request": payload["request"], **outcome})
+            ).start()
+
+    def call(self, plugin_id: str, **fields: Any) -> dict[str, Any]:
+        payload = {"request": "r1", "action": "com.t.act.echo", "args": {}, **fields}
+        self.runner.on_plugin_call(plugin_id, payload)
+        return self.replies.get(timeout=3)
+
+
+class TestCallAction:
+    def test_call_result_returns_the_callee_value(self):
+        rig = _Rig(lambda _p: {"ok": True, "value": {"n": 5}})
+
+        reply = rig.call("com.t.act")
+
+        assert_that(reply).is_equal_to({"request": "r1", "ok": True, "value": {"n": 5}})
+        assert_that(rig.sent[0]["input"]).is_equal_to("plugin")
+        assert_that(rig.sent[0]["caller"]).is_equal_to("com.t.act")
+        assert_that(rig.sent[0]["card"]).is_none()
+
+    def test_a_failing_callee_replies_with_its_error(self):
+        rig = _Rig(lambda _p: {"ok": False, "error": "boom"})
+
+        assert_that(rig.call("com.t.act")).is_equal_to({"request": "r1", "ok": False, "error": "boom"})
+
+    def test_own_plugin_scoped_action_is_callable(self):
+        rig = _Rig(lambda _p: {"ok": True})
+
+        assert_that(rig.call("com.t.other", action="com.t.other.secret")["ok"]).is_true()
+
+    def test_foreign_plugin_scoped_action_is_refused(self):
+        rig = _Rig(lambda _p: {"ok": True})
+
+        reply = rig.call("com.t.act", action="com.t.other.secret")
+
+        assert_that(reply["ok"]).is_false()
+        assert_that(reply["error"]).is_equal_to("action com.t.other.secret is not callable from com.t.act")
+        assert_that(rig.sent).is_empty()
+
+    def test_global_action_of_another_plugin_is_callable(self):
+        rig = _Rig(lambda _p: {"ok": True, "value": 1})
+
+        assert_that(rig.call("com.t.act", action="com.t.other.open")["ok"]).is_true()
+
+    def test_unknown_action_and_invalid_args_are_refused(self):
+        rig = _Rig(lambda _p: {"ok": True})
+
+        assert_that(rig.call("com.t.act", action="nope")["error"]).is_equal_to("unknown action nope")
+        assert_that(rig.call("com.t.act", args={"n": "abc"})["error"]).starts_with("invalid arguments: n: ")
+        assert_that(rig.sent).is_empty()
+
+    def test_depth_9_is_refused_and_8_is_allowed(self):
+        rig = _Rig(lambda _p: {"ok": True})
+
+        refused = rig.call("com.t.act", depth=9)
+        allowed = rig.call("com.t.act", depth=8)
+
+        assert_that(refused).is_equal_to({"request": "r1", "ok": False, "error": "call depth limit (8) exceeded"})
+        assert_that(allowed["ok"]).is_true()
+
+    def test_chain_device_is_inherited_by_nested_calls(self):
+        rig = _Rig(lambda p: {"ok": True} if p["depth"] == 4 else None)
+        outer = _call("com.t.act.echo", chain="c1", depth=3, device="dev-1", input="press")
+        thread = threading.Thread(target=rig.runner.execute, args=(outer,))
+        thread.start()
+        while not rig.sent:
+            threading.Event().wait(0.005)
+
+        reply = rig.call("com.t.act", chain="c1", depth=0)
+
+        assert_that(reply["ok"]).is_true()
+        assert_that((rig.sent[1]["chain"], rig.sent[1]["depth"])).is_equal_to(("c1", 4))
+        assert_that(rig.devices).is_equal_to(["dev-1", "dev-1"])
+        rig.runner.on_result("com.t.act", {"request": rig.sent[0]["request"], "ok": True})
+        thread.join(3)
+
+    def test_explicit_device_wins(self):
+        rig = _Rig(lambda p: {"ok": True} if p["depth"] == 1 else None)
+        outer = _call("com.t.act.echo", chain="c2", depth=0, device="dev-1")
+        thread = threading.Thread(target=rig.runner.execute, args=(outer,))
+        thread.start()
+        while not rig.sent:
+            threading.Event().wait(0.005)
+
+        rig.call("com.t.act", chain="c2", device="dev-2")
+
+        assert_that(rig.devices[-1]).is_equal_to("dev-2")
+        rig.runner.on_result("com.t.act", {"request": rig.sent[0]["request"], "ok": True})
+        thread.join(3)
+
+    def test_unmatched_chain_uses_the_payload_depth(self):
+        rig = _Rig(lambda _p: {"ok": True})
+
+        rig.call("com.t.act", chain="zzz", depth=-4)
+        rig.call("com.t.act", depth=2)
+
+        assert_that([p["depth"] for p in rig.sent]).is_equal_to([0, 2])
+
+    def test_oversized_value_is_an_error(self):
+        rig = _Rig(lambda _p: {"ok": True, "value": "x" * (1024 * 1024)})
+
+        reply = rig.call("com.t.act")
+
+        assert_that(reply).is_equal_to({"request": "r1", "ok": False, "error": "return value larger than 1 MiB"})
+
+    def test_gesture_run_discards_the_value_and_failure_still_announces(self):
+        answers = iter([{"ok": True, "value": 3}, {"ok": False, "error": "bad"}])
+        rig = _Rig(lambda _p: next(answers))
+
+        assert_that(rig.runner.execute(_call("com.t.act.echo")).value).is_equal_to(3)
+        rig.runner.run(_call("com.t.act.echo"))
+        for _ in range(300):
+            if rig.failures:
+                break
+            threading.Event().wait(0.01)
+
+        assert_that(rig.failures).is_equal_to([("com.t.act.echo", "bad")])
+
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"args": []},
+            {"timeout": "soon"},
+            {"timeout": 0},
+            {"depth": "3"},
+            {"depth": True},
+            {"chain": 5},
+            {"device": 5},
+            {"action": 7},
+        ],
+    )
+    def test_malformed_fields_get_an_error_reply(self, fields: dict[str, Any]) -> None:
+        rig = _Rig(lambda _p: {"ok": True})
+
+        reply = rig.call("com.t.act", **fields)
+
+        assert_that(reply["ok"]).is_false()
+        assert_that(reply["request"]).is_equal_to("r1")
+        assert_that(rig.sent).is_empty()
+
+    def test_a_call_without_a_string_request_is_dropped(self):
+        rig = _Rig()
+
+        rig.runner.on_plugin_call("com.t.act", {"request": 5, "action": "com.t.act.echo"})
+        rig.runner.on_plugin_call("com.t.act", {"action": "com.t.act.echo"})
+
+        with pytest.raises(queue.Empty):
+            rig.replies.get(timeout=0.2)
+
+    def test_an_exception_while_running_becomes_an_error_reply(self):
+        def explode(*_a: Any) -> dict[str, Any]:
+            raise RuntimeError("resolver broke")
+
+        rig = _Rig(lambda _p: {"ok": True}, resolve=explode)
+
+        reply = rig.call("com.t.act")
+
+        assert_that(reply["ok"]).is_false()
+        assert_that(reply["error"]).contains("resolver broke")
+
+    def test_an_exception_in_a_gesture_run_still_announces_failure(self):
+        def explode(*_a: Any) -> dict[str, Any]:
+            raise RuntimeError("resolver broke")
+
+        rig = _Rig(resolve=explode)
+
+        rig.runner.run(_call("com.t.act.echo"))
+        for _ in range(300):
+            if rig.failures:
+                break
+            threading.Event().wait(0.01)
+
+        assert_that(rig.failures).is_length(1)
+        assert_that(rig.failures[0][1]).contains("resolver broke")
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
