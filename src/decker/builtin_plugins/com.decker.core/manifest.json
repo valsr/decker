@@ -6,6 +6,8 @@
   "author": "Decker",
   "description": "The actions Decker ships.",
   "icon": "icons/blank",
+  "decker": ">=0.7",
+  "runtime": { "type": "python", "entry": "plugin.py" },
   "category": "Utilities",
   "contributes": {
     "cards": [],
@@ -23,6 +25,7 @@
         "tooltip": "Sends an HTTP request",
         "scope": "global",
         "icon": "icons/blank",
+        "returns": "{\"status\": int, \"body\": str}: the HTTP status and up to 512 KiB of the response body",
         "settings": [
           {
             "key": "method",

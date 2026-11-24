@@ -1,6 +1,8 @@
+import http.server
 import json
 import shutil
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -29,6 +31,8 @@ _NAV = "com.decker.acttest.nav"
 _CHAIN = "com.decker.acttest.chain"
 _RECURSE = "com.decker.acttest.recurse"
 _RELAY = "com.decker.acttest.relay"
+_CORE = "com.decker.core"
+_HTTP = "com.decker.core.httprequest"
 _POLICY = SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0)
 _DEADLINE = 15.0
 _TILE = CardTarget(_PLUGIN, "com.decker.acttest.tile", "ctx-tile", "dev-1", 0)
@@ -70,16 +74,20 @@ class _Env:
             raise
 
     def close(self) -> None:
-        pid = self.pid()
+        pids = [pid for pid in (self.pid(_PLUGIN), self.pid(_CORE)) if pid is not None]
         try:
             self.manager.destroy()
         finally:
-            if pid is not None and psutil.pid_exists(pid):
-                psutil.Process(pid).kill()
+            for pid in pids:
+                if psutil.pid_exists(pid):
+                    psutil.Process(pid).kill()
 
-    def pid(self) -> int | None:
-        entry = self.manager._supervisor._entries.get(_PLUGIN)  # pylint: disable=protected-access
+    def pid(self, plugin_id: str = _PLUGIN) -> int | None:
+        entry = self.manager._supervisor._entries.get(plugin_id)  # pylint: disable=protected-access
         return entry.process.pid if entry is not None and entry.process is not None else None
+
+    def has_process(self, plugin_id: str) -> bool:
+        return self.manager._supervisor.has_process(plugin_id)  # pylint: disable=protected-access
 
     def ready(self) -> bool:
         return self.manager._supervisor.is_ready(_PLUGIN)  # pylint: disable=protected-access
@@ -199,3 +207,61 @@ def test_call_inside_a_gesture_chain_resolves_page_args_for_the_card_device(env:
     assert_that(_wait(lambda: env.read("public.log") != "")).described_as("public.log was never written").is_true()
     received = json.loads(env.read("public.log"))
     assert_that(received["page"]).contains_entry({"page_id": "p1"}, {"name": "Home"})
+
+
+class _Hook(http.server.BaseHTTPRequestHandler):
+    seen: list[tuple[str, str]] = []
+
+    def do_GET(self) -> None:  # pylint: disable=invalid-name
+        _Hook.seen.append((self.command, self.path))
+        self.send_response(404 if self.path == "/missing" else 200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+    def log_message(self, format: str, *args: object) -> None:  # pylint: disable=redefined-builtin
+        pass
+
+
+@pytest.fixture(name="hook")
+def hook_fixture() -> Iterator[str]:
+    _Hook.seen = []
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), _Hook)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(_DEADLINE)
+
+
+def test_blank_bound_to_http_request_hits_the_server_through_the_core_process(env: _Env, hook: str) -> None:
+    env.manager.activate_card(_BLANK)
+    env.manager.set_bindings(_BLANK, {"press": {"action": _HTTP, "args": {"method": "GET", "url": f"{hook}/ping"}}})
+
+    env.press(_BLANK)
+
+    assert_that(_wait(lambda: _Hook.seen == [("GET", "/ping")])).described_as("the server was never hit").is_true()
+    assert_that(env.has_process(_CORE)).is_true()
+    assert_that(env.bus.of("action_failed")).is_empty()
+
+
+def test_a_failing_http_request_announces_its_status(env: _Env, hook: str) -> None:
+    env.manager.activate_card(_BLANK)
+    env.manager.set_bindings(_BLANK, {"press": {"action": _HTTP, "args": {"method": "GET", "url": f"{hook}/missing"}}})
+
+    env.press(_BLANK)
+
+    assert_that(_wait(lambda: bool(env.bus.of("action_failed")))).is_true()
+    assert_that(env.bus.of("action_failed")[0]["error"]).is_equal_to("HTTP 404")
+
+
+def test_core_is_started_lazily(env: _Env, hook: str) -> None:
+    env.manager.activate_card(_BLANK)
+    env.manager.set_bindings(_BLANK, {"press": {"action": _HTTP, "args": {"method": "GET", "url": f"{hook}/ping"}}})
+    assert_that(env.has_process(_CORE)).is_false()
+
+    env.press(_BLANK)
+
+    assert_that(_wait(lambda: env.has_process(_CORE))).is_true()

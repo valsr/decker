@@ -339,10 +339,17 @@ def _minimal(fmt: int, contributes: dict) -> dict:
     }
 
 
+def test_actions_without_runtime_are_a_manifest_error() -> None:
+    data = _minimal(3, {"actions": [{"id": "com.acme.demo.one", "name": "One"}]})
+
+    with pytest.raises(ManifestValidationError, match="manifest contributes actions but declares no runtime"):
+        PluginManifest.from_dict(data)
+
+
 def test_format_3_actions_are_not_cards() -> None:
-    manifest = PluginManifest.from_dict(
-        _minimal(3, {"actions": [{"id": "com.acme.demo.one", "name": "One"}], "icon_packs": []})
-    )
+    data = _minimal(3, {"actions": [{"id": "com.acme.demo.one", "name": "One"}], "icon_packs": []})
+    data["runtime"] = {"type": "python", "entry": "plugin.py"}
+    manifest = PluginManifest.from_dict(data)
 
     assert_that(manifest.cards).is_empty()
     assert_that([a.id for a in manifest.actions]).is_equal_to(["com.acme.demo.one"])
@@ -570,5 +577,4 @@ def test_bad_binding_is_a_manifest_error() -> None:
 
 def test_static_card_may_declare_bindings() -> None:
     data = _with_actions(_ACT, static=True, bindings={"press": {"action": "com.acme.demo.act"}})
-    del data["runtime"]
     assert_that(PluginManifest.from_dict(data).cards[0].bindings["press"].action).is_equal_to("com.acme.demo.act")

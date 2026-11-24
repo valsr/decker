@@ -181,6 +181,8 @@ class PluginManifest:  # pylint: disable=too-many-instance-attributes
             raise ManifestValidationError(
                 f"manifest contributes cards but declares no runtime (card {needs_runtime.id} is not static)"
             )
+        if actions and runtime is None:
+            raise ManifestValidationError("manifest contributes actions but declares no runtime")
         _check_own_bindings(cards, actions, plugin_id)
         variables = _parse_variables(contributes.get("variables", []))
         if variables:

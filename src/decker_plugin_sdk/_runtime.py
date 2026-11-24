@@ -12,6 +12,7 @@ from . import _options, _variables
 from ._actions import (
     _FRAME,
     ActionCallContext,
+    ActionError,
     ActionFn,
     CallFrame,
     CallHost,
@@ -203,7 +204,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
                 return
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.log_error(f"action {payload.get('action')} failed: {type(exc).__name__}: {exc}")
-            self.send("action_result", None, {"request": request, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+            error = str(exc) if isinstance(exc, ActionError) else f"{type(exc).__name__}: {exc}"
+            self.send("action_result", None, {"request": request, "ok": False, "error": error})
             return
         finally:
             if token is not None:

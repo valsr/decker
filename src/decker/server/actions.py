@@ -20,7 +20,6 @@ from decker.plugin.settings_schema import (
     schema_to_json,
 )
 from decker.server.action_calls import MAX_DEPTH, ActionCall
-from decker.server.builtin_actions import BUILTIN_ACTIONS, ActionError
 
 DEFAULT_TIMEOUT_S = 30.0
 MAX_CALL_TIMEOUT_S = 300.0
@@ -279,22 +278,7 @@ class ActionRunner:
             detail = "; ".join(f"{key}: {message}" for key, message in exc.errors.items())
             return ActionResult(False, f"invalid arguments: {detail}")
         args = self._resolve(spec, validated, call.device)
-        if plugin.manifest.runtime is None:
-            return self._run_builtin(BUILTIN_ACTIONS.get(call.action), args)
         return self._run_in_plugin(plugin.manifest.id, call, args)
-
-    @staticmethod
-    def _run_builtin(executor: Callable[[Mapping[str, Any]], None] | None, values: Mapping[str, Any]) -> ActionResult:
-        if executor is None:
-            return ActionResult(False, "the plugin has no code to run")
-        try:
-            executor(values)
-        except ActionError as exc:
-            return ActionResult(False, str(exc))
-        except Exception as exc:  # pylint: disable=broad-except
-            logging.exception("Built-in action crashed")
-            return ActionResult(False, str(exc) or exc.__class__.__name__)
-        return ActionResult(True)
 
     def _run_in_plugin(self, plugin_id: str, call: ActionCall, args: Mapping[str, Any]) -> ActionResult:
         if self._supervisor.is_failed(plugin_id):

@@ -61,7 +61,17 @@ def _nest(ctx: ActionCallContext) -> Any:
     return call_action("t.nest", {"level": level + 1})
 
 
+def _refuses(_ctx: ActionCallContext) -> Any:
+    raise ActionError("HTTP 404")
+
+
+def _crashes(_ctx: ActionCallContext) -> Any:
+    raise ValueError("boom")
+
+
 ACTIONS = {
+    "t.refuses": _refuses,
+    "t.crashes": _crashes,
     "t.value": _value,
     "t.unencodable": _unencodable,
     "t.big": _too_big,
@@ -147,6 +157,19 @@ def test_action_return_value_is_sent_in_action_result() -> None:
         assert_that(host.recv_until("action_result")["payload"]).is_equal_to(
             {"request": "r1", "ok": True, "value": {"a": [1, 2]}}
         )
+    finally:
+        host.close()
+
+
+def test_an_action_error_is_reported_as_its_bare_message() -> None:
+    host = _host()
+    try:
+        host.run_action("t.refuses", "r1")
+        assert_that(host.recv_until("action_result")["payload"]).is_equal_to(
+            {"request": "r1", "ok": False, "error": "HTTP 404"}
+        )
+        host.run_action("t.crashes", "r2")
+        assert_that(host.recv_until("action_result")["payload"]["error"]).is_equal_to("ValueError: boom")
     finally:
         host.close()
 
