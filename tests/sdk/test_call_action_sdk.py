@@ -3,8 +3,10 @@ import json
 import os
 import queue
 import threading
+from datetime import datetime
 from typing import Any
 
+import pytest
 from assertpy import assert_that
 
 from decker_plugin_sdk import (
@@ -14,6 +16,8 @@ from decker_plugin_sdk import (
     call_action_async,
     run,
 )
+from decker_plugin_sdk._actions import CallHost
+from decker_plugin_sdk._pool import ElasticPool
 
 WAIT = 5.0
 RESULTS: dict[str, Any] = {}
@@ -271,3 +275,92 @@ def test_nested_calls_deeper_than_pool_do_not_deadlock() -> None:
         assert_that(top).contains_entry({"ok": True}, {"value": 6})
     finally:
         host.close()
+
+
+def _async_nest(ctx: ActionCallContext) -> Any:
+    level = int(ctx.args["level"])
+    if level >= 6:
+        return level
+
+    async def main() -> Any:
+        return await call_action_async("t.anest", {"level": level + 1})
+
+    return asyncio.run(main())
+
+
+ACTIONS["t.anest"] = _async_nest
+
+
+def test_nested_async_calls_deeper_than_pool_do_not_deadlock() -> None:
+    host = _host()
+    try:
+        host.run_action("t.anest", "top", args={"level": 0}, chain="ch", depth=0)
+        pending: dict[str, str] = {}
+        top: dict[str, Any] | None = None
+        for _ in range(40):
+            message = host.recv()
+            payload = message["payload"]
+            if message["event"] == "call_action":
+                run_request = f"run-{payload['request']}"
+                pending[run_request] = payload["request"]
+                host.run_action(
+                    payload["action"], run_request, args=payload["args"], chain="ch", depth=payload["depth"]
+                )
+            elif message["event"] == "action_result":
+                if payload["request"] == "top":
+                    top = payload
+                    break
+                host.send(
+                    "call_result",
+                    {"request": pending.pop(payload["request"]), "ok": payload["ok"], "value": payload.get("value")},
+                )
+        assert top is not None
+        assert_that(top).contains_entry({"ok": True}, {"value": 6})
+    finally:
+        host.close()
+
+
+def _calls() -> tuple[CallHost, list[tuple[str, dict[str, Any] | None]]]:
+    sent: list[tuple[str, dict[str, Any] | None]] = []
+    return CallHost(lambda event, _ctx, payload: sent.append((event, payload)), ElasticPool()), sent
+
+
+def test_unencodable_args_raise_and_leave_no_pending_call() -> None:
+    host, sent = _calls()
+    with pytest.raises(ActionError, match="JSON"):
+        host.call("t.target", {"when": datetime.now()}, 1.0, None)
+    assert_that(sent).is_empty()
+    assert_that(host._pending).is_empty()  # pylint: disable=protected-access
+
+
+def test_failed_send_leaves_no_pending_call() -> None:
+    def broken(_event: str, _ctx: str | None, _payload: dict[str, Any] | None) -> None:
+        raise OSError("pipe")
+
+    host = CallHost(broken, ElasticPool())
+    with pytest.raises(OSError):
+        host.call("t.target", None, 1.0, None)
+    assert_that(host._pending).is_empty()  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf"), 0, -1.0])
+def test_invalid_timeout_is_refused_before_sending(timeout: float) -> None:
+    host, sent = _calls()
+    with pytest.raises(ActionError, match="timeout"):
+        host.call("t.target", None, timeout, None)
+    assert_that(sent).is_empty()
+
+
+def test_reply_racing_the_local_timeout_is_returned(monkeypatch: pytest.MonkeyPatch) -> None:
+    host, _sent = _calls()
+    real_wait = threading.Event.wait
+
+    def racing_wait(event: threading.Event, timeout: float | None = None) -> bool:
+        if not event.is_set() and host._pending:  # pylint: disable=protected-access
+            request = next(iter(host._pending))  # pylint: disable=protected-access
+            host.deliver({"request": request, "ok": True, "value": "late"})  # reply wins, then wait "times out"
+            return False
+        return real_wait(event, timeout)
+
+    monkeypatch.setattr(threading.Event, "wait", racing_wait)
+    assert_that(host.call("t.target", None, 1.0, None)).is_equal_to("late")

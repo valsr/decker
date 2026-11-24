@@ -3,9 +3,11 @@
 import asyncio
 import contextvars
 import json
+import math
 import threading
 import uuid
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -15,6 +17,8 @@ from ._pool import ElasticPool
 from ._proxy import CardProxy
 
 MAX_VALUE_BYTES = 1024 * 1024  # keep in sync with decker.plugin.protocol.MAX_VALUE_BYTES
+MAX_TIMEOUT = 300.0  # the server caps call timeouts here
+WAIT_AFTER_RACE = 1.0
 
 
 class Input(StrEnum):
@@ -112,7 +116,18 @@ class CallHost:
             waiter.payload = payload
             waiter.done.set()
 
+    def blocking(self) -> AbstractContextManager[None]:
+        """Mark the calling pool worker as waiting (see ElasticPool.blocking)."""
+        return self._pool.blocking()
+
     def call(self, action_id: str, args: dict[str, Any] | None, timeout: float, device: str | None) -> Any:
+        """Send call_action and wait for its call_result."""
+        if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+            raise ActionError(f"timeout must be a positive finite number, not {timeout!r}")
+        try:
+            json.dumps(args or {})
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ActionError(f"args are not JSON-encodable: {exc}") from exc
         request = uuid.uuid4().hex
         message: dict[str, Any] = {"request": request, "action": action_id, "args": args or {}, "timeout": timeout}
         frame = _FRAME.get()
@@ -124,16 +139,25 @@ class CallHost:
         waiter = _Waiter()
         with self._lock:
             self._pending[request] = waiter
-        self._send("call_action", None, message)
+        try:
+            self._send("call_action", None, message)
+        except BaseException:
+            self._forget(request)
+            raise
         with self._pool.blocking():
-            arrived = waiter.done.wait(timeout + 1)
-        if not arrived:
-            with self._lock:
-                self._pending.pop(request, None)
+            arrived = waiter.done.wait(min(timeout, MAX_TIMEOUT) + 1)
+        if not arrived and self._forget(request) is not None:
+            raise ActionError(f"call to {action_id} timed out")
+        waiter.done.wait(WAIT_AFTER_RACE)  # a reply took the entry just before the timeout did
+        if not waiter.payload:
             raise ActionError(f"call to {action_id} timed out")
         if not waiter.payload.get("ok"):
             raise ActionError(str(waiter.payload.get("error") or "call failed"))
         return waiter.payload.get("value")
+
+    def _forget(self, request: str) -> "_Waiter | None":
+        with self._lock:
+            return self._pending.pop(request, None)
 
 
 _CALLS: CallHost | None = None
@@ -159,4 +183,8 @@ async def call_action_async(
     action_id: str, args: dict[str, Any] | None = None, timeout: float = 30.0, device: str | None = None
 ) -> Any:
     """call_action for coroutines; it waits on a thread so the event loop stays free."""
-    return await asyncio.to_thread(call_action, action_id, args, timeout, device)
+    host = _CALLS
+    if host is None:
+        raise RuntimeError("no Decker plugin runtime is running")
+    with host.blocking():  # the pool worker running this loop is waiting too
+        return await asyncio.to_thread(call_action, action_id, args, timeout, device)
