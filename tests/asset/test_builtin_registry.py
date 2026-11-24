@@ -60,3 +60,11 @@ def test_read_ref_serves_short_references(tmp_path: Path) -> None:
         assert_that(registry.read_ref(ref)).described_as(ref).is_not_none()
     for ref in ("fas:", "fas:../x", "fas:Play", "fas:play.svg", "fas:a/b", "fax:play"):
         assert_that(registry.read_ref(ref)).described_as(ref).is_none()
+
+
+def test_read_ref_serves_user_references(tmp_path: Path) -> None:
+    (tmp_path / "logo.png").write_bytes(b"png")
+    registry = IconPackRegistry(system_icons=SystemIcons(enabled=False), user_icons=UserIcons(tmp_path))
+
+    assert_that(registry.read_ref("user:logo")).is_equal_to(b"png")
+    assert_that(registry.read_ref("pack:decker.user/logo.png")).is_equal_to(b"png")

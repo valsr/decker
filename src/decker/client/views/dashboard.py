@@ -204,6 +204,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         self._grid.key_moved.connect(self._on_key_moved)
         self._grid.key_pressed.connect(self._on_key_pressed)
         self._grid.key_edit_requested.connect(self._on_key_edit_requested)
+        self._grid.key_delete_requested.connect(self._on_key_delete_requested)
         self._grid.key_long_pressed.connect(self._on_key_long_pressed)
         self._grid.card_dropped.connect(self._on_card_dropped)
 
@@ -587,6 +588,25 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         self._select_after_refresh = to_index
         cm.request_device_refresh()
 
+    def _on_key_delete_requested(self, index: int) -> None:
+        """Clear a key (card, settings and actions) after asking; the grid and editor follow the server's refresh."""
+        device_id = AppContext.get().active_device_id
+        page_id = self._active_page_id
+        cm = AppContext.get().connection_manager
+        if not device_id or not page_id or cm is None or index not in self._key_slots:
+            return
+        if not _confirm_clear_key(self, index):
+            return
+        if not cm.call("key_unassign", device_id, page_id, index):
+            return
+        self._key_slots.pop(index, None)
+        self._sync_draggable()
+        if index == self._selected_key:
+            self._selected_key = None
+            self._grid.set_selected(None)
+            self._config_panel.show_placeholder()
+        cm.request_device_refresh()
+
     def _on_key_pressed(self, index: int) -> None:
         device_id = AppContext.get().active_device_id
         if device_id and index in self._key_slots:
@@ -799,6 +819,18 @@ def _profile_icon(ref: str, color: str = "") -> QIcon | None:
     edit.set_value({"ref": ref, "color": color or "#ffffff"})
     pixmap = edit.thumbnail()
     return None if pixmap.isNull() else QIcon(pixmap)
+
+
+def _confirm_clear_key(parent: QWidget, index: int) -> bool:
+    """Ask before clearing a key, since its card, settings and actions cannot be restored."""
+    answer = QMessageBox.question(
+        parent,
+        "Clear key",
+        f"Clear key {index + 1}? Its card, settings and actions will be removed.",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        QMessageBox.StandardButton.Cancel,
+    )
+    return answer == QMessageBox.StandardButton.Yes
 
 
 def _confirm_delete_page(parent: QWidget, name: str) -> bool:

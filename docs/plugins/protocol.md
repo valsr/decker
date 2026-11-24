@@ -28,7 +28,7 @@ discarded.
 
 | Event | Context | Payload |
 |-------|---------|---------|
-| `hello` | | `{"protocol": 4, "decker_version": "0.7.0", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
+| `hello` | | `{"protocol": 4, "decker_version": "0.7.1", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
 | `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...}, "bindings": {...}, "state": 0}`. `size` is the key's pixel size; `bindings` the card's effective [bindings](package-and-manifest.md#bindings) as `{gesture: {"action", "args"}}`, read-only; `args` arrive resolved like `settings` (a `page` argument as the page object, a `profile` argument as the profile object, opted-in text expanded), and stay as stored for Do Nothing and for an action that is not installed |
 | `will_disappear` | yes | none |
 | `key_down`, `key_up` | yes | none (raw key events, for visual feedback; gestures are not sent to cards) |
@@ -53,7 +53,7 @@ discarded.
 |-------|---------|---------|
 | `ready` | | none |
 | `pong` | | none |
-| `set_image` | yes | `{"image": "<base64>", "format": "png"}` (`png`, `jpeg`, `svg` or `gif`; an animated GIF animates on the key, see [Images](#images)), or `{"image": null}` to clear, or `{"icon": "pack:<pack id>/<path>", "color": "#rrggbb"}` to show an icon: a `pack:` reference names an icon of an installed pack, and a `fab:`/`far:`/`fas:` reference (such as `"fas:play"`) names one of Decker's built-in Font Awesome icons (see [Images](#images)) |
+| `set_image` | yes | `{"image": "<base64>", "format": "png"}` (`png`, `jpeg`, `svg` or `gif`; an animated GIF animates on the key, see [Images](#images)), or `{"image": null}` to clear, or `{"icon": "pack:<pack id>/<path>", "color": "#rrggbb"}` to show an icon: a `pack:` reference names an icon of an installed pack, a `fab:`/`far:`/`fas:` reference (such as `"fas:play"`) names one of Decker's built-in Font Awesome icons, and a `user:<id>` reference names an icon the user imported (see [Images](#images)) |
 | `set_title` | yes | `{"title": "text"}`, shown only when the user set no title; titles are one line, so line breaks are drawn as a single space |
 | `set_state` | yes | `{"state": 1}`, an index into the card's `states` |
 | `show_alert`, `show_ok` | yes | none (accepted, no visible effect in v1). For a card of another plugin, add `"request"`, see [Foreign cards](#foreign-cards) |
@@ -211,7 +211,7 @@ Decker's own **System Icons** (the server's freedesktop icon theme) are packs to
 
 **Built-In icons.** Decker bundles Font Awesome Free 7.3.1 as three packs under the picker's `Built-In` node: `decker.builtin.fontawesome.brands`, `.regular` and `.solid`. Reference them with the short forms `fab:<name>`, `far:<name>` and `fas:<name>` (for example `fas:play`; `<name>` is the icon file name without `.svg`, lower case with single hyphens), or with `pack:decker.builtin.fontawesome.solid/play.svg`. The short forms work wherever an icon reference does (`set_image` `icon`, icon settings, backgrounds) and also in manifest `icon` and state `image` fields. The `decker.builtin.` pack id prefix is reserved and a plugin pack using it is refused.
 
-**User library.** Icons the user imported (GIF, PNG, JPG, SVG) form the `decker.user` pack, always listed (even when empty) after the plugin packs: `pack:decker.user/<id>.<ext>`, for example `pack:decker.user/my-cat.gif`. Imports go through the `icon_import` RPC, which is loopback-gated like `plugin_install` (`icon_import_suggest` and `icon_import_preview` are open to every client). The `decker.user` pack id is reserved and a plugin pack using it is refused.
+**User library.** Icons the user imported (GIF, PNG, JPG, SVG) form the `decker.user` pack, always listed (even when empty) and shown first in the picker, right under All Images (then Built-In, System Icons and the plugins alphabetically). Reference one as `user:<id>`, for example `user:my-cat`: `<id>` is the icon's import id (lower case `[a-z0-9_-]`, unique across extensions) and Decker finds its file. The longer `pack:decker.user/<id>.<ext>` (for example `pack:decker.user/my-cat.gif`) still works; the picker writes `user:` references since Decker 0.7.1. Imports go through the `icon_import` RPC, which is loopback-gated like `plugin_install` (`icon_import_suggest` and `icon_import_preview` are open to every client). The `decker.user` pack id is reserved and a plugin pack using it is refused.
 
 A pack icon is drawn at 70% of the key and centred, so the key's title stays readable around it (images sent with
 `image` still fill the key). `color` recolours SVG icons: it sets the SVG's `color` (so `fill="currentColor"` follows it) and a default `fill`, and

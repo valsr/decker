@@ -80,8 +80,6 @@ class SettingsDialog(QDialog):  # pylint: disable=too-many-instance-attributes
         self._browse_btn: QPushButton = QPushButton("Browse…")
         self._plugins_tab: PluginsTab = PluginsTab()
         self._screensaver_panel: ScreensaverPanel = ScreensaverPanel()
-        self._failed_list = self._plugins_tab._failed_list  # pylint: disable=protected-access
-        self._no_failures_label = self._plugins_tab._no_failures_label  # pylint: disable=protected-access
         self._message_label: QLabel = QLabel()
         self._buttons: QDialogButtonBox = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Close

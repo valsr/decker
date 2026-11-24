@@ -8,7 +8,7 @@ from unittest.mock import patch
 from assertpy import assert_that
 from PyQt6.QtCore import QObject, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPixmap
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMessageBox, QStyle, QStyleOptionViewItem
 
 from decker.client.card_icons import decode_icon
 from decker.client.icon_cache import IconThumbnailCache
@@ -330,7 +330,7 @@ class TestIconBrowserTree:
 
         top = _top(dialog)
 
-        assert_that([i.text(0) for i in top]).is_equal_to(["All images", "X Plugin", "Y Plugin"])
+        assert_that([i.text(0) for i in top]).is_equal_to(["All Images", "X Plugin", "Y Plugin"])
         assert_that([top[1].child(i).text(0) for i in range(top[1].childCount())]).is_equal_to(["Pack A", "Pack B"])
         assert_that(top[2].childCount()).is_equal_to(1)
 
@@ -360,7 +360,7 @@ class TestIconBrowserTree:
 
         current = dialog._tree.currentItem()  # pylint: disable=protected-access
         assert current is not None
-        assert_that(current.text(0)).is_equal_to("All images")
+        assert_that(current.text(0)).is_equal_to("All Images")
         assert_that(_names(dialog)).is_length(5)
 
     def test_empty_pack_shows_message(self, qapp):  # pylint: disable=unused-argument
@@ -786,8 +786,8 @@ class TestSystemIconsInTheLibrary:
 
         top = _top(dialog)
 
-        assert_that([i.text(0) for i in top]).is_equal_to(["All images", "X Plugin", "Y Plugin", "System Icons"])
-        system = top[3]
+        assert_that([i.text(0) for i in top]).is_equal_to(["All Images", "System Icons", "X Plugin", "Y Plugin"])
+        system = top[1]
         assert_that([system.child(i).text(0) for i in range(system.childCount())]).is_equal_to(
             ["Actions", "Mimetypes", "Other"]
         )
@@ -795,14 +795,14 @@ class TestSystemIconsInTheLibrary:
     def test_selecting_a_category_lists_only_its_icons(self, qapp):  # pylint: disable=unused-argument
         dialog = self._dialog()
 
-        _select(dialog, 3, 1)
+        _select(dialog, 1, 1)
 
         assert_that(_names(dialog)).is_equal_to(["org.gnome.Foo", "text-plain"])
 
     def test_selecting_the_section_lists_every_system_icon(self, qapp):  # pylint: disable=unused-argument
         dialog = self._dialog()
 
-        _select(dialog, 3)
+        _select(dialog, 1)
 
         assert_that(_names(dialog)).is_equal_to(["edit-copy", "zoom-in", "org.gnome.Foo", "text-plain", "weird"])
 
@@ -815,7 +815,7 @@ class TestSystemIconsInTheLibrary:
 
     def test_search_matches_a_dotted_name_by_its_full_text(self, qapp):  # pylint: disable=unused-argument
         dialog = self._dialog()
-        _select(dialog, 3)
+        _select(dialog, 1)
 
         dialog._search.setText("gnome.foo")  # pylint: disable=protected-access
         dialog._refresh()  # pylint: disable=protected-access
@@ -824,7 +824,7 @@ class TestSystemIconsInTheLibrary:
 
     def test_a_dotted_name_is_shown_whole(self, qapp):  # pylint: disable=unused-argument
         dialog = self._dialog()
-        _select(dialog, 3, 1)
+        _select(dialog, 1, 1)
 
         assert_that(_names(dialog)[0]).is_equal_to("org.gnome.Foo")
 
@@ -841,12 +841,13 @@ class TestKindBadge:
         for name in ("a.png", "a.JPG", "noext"):
             assert_that(_kind_badge(base, name).toImage() == base.toImage()).is_true()
 
-    def test_gif_and_svg_badges_fill_the_bottom_right_third_only(self, qapp):  # pylint: disable=unused-argument
+    def test_gif_and_svg_badges_fill_the_top_right_third_only(self, qapp):  # pylint: disable=unused-argument
         for name in ("a.gif", "B.SVG"):
             image = _kind_badge(self._base(), name).toImage()
             assert_that(image.pixelColor(2, 2)).is_equal_to(QColor(255, 255, 255))
             assert_that(image.pixelColor(30, 30)).is_equal_to(QColor(255, 255, 255))
-            assert_that(image.pixelColor(43, 50)).is_not_equal_to(QColor(255, 255, 255))
+            assert_that(image.pixelColor(50, 50)).is_equal_to(QColor(255, 255, 255))  # the delete badge's corner
+            assert_that(image.pixelColor(43, 10)).is_not_equal_to(QColor(255, 255, 255))
 
 
 _USER_PACK = {
@@ -872,13 +873,48 @@ class _UserManager(FakeConnectionManager):
         return super().call(method, *args)
 
 
+_BUILTIN_PACK = {
+    "id": "decker.builtin.fontawesome.solid",
+    "plugin_version": "7",
+    "name": "FontAwesome Solids",
+    "description": "",
+    "plugin_id": "decker.builtin",
+    "plugin_name": "Built-In",
+}
+_SYSTEM_PACK = {
+    "id": "decker.system.actions",
+    "plugin_version": "T",
+    "name": "Actions",
+    "description": "",
+    "plugin_id": "decker.system",
+    "plugin_name": "System Icons",
+}
+_LOWER_PLUGIN_PACK = {
+    "id": "com.a.p",
+    "plugin_version": "1",
+    "name": "Zed pack",
+    "description": "",
+    "plugin_id": "com.a",
+    "plugin_name": "alpha plugin",
+}
+
+
+def test_the_tree_lists_user_built_in_system_then_plugins_alphabetically(qapp):  # pylint: disable=unused-argument
+    packs = [*_PACKS, _SYSTEM_PACK, _LOWER_PLUGIN_PACK, _BUILTIN_PACK, _USER_PACK]
+    dialog = IconBrowserDialog(None, FakeConnectionManager(packs, {p["id"]: [] for p in packs}))
+
+    assert_that([i.text(0) for i in _top(dialog)]).is_equal_to(
+        ["All Images", "User", "Built-In", "System Icons", "alpha plugin", "X Plugin", "Y Plugin"]
+    )
+
+
 class TestUserImages:
     def test_user_pack_is_flat_right_after_all_images(self, qapp):  # pylint: disable=unused-argument
         dialog = IconBrowserDialog(None, _UserManager())
 
         top = _top(dialog)
 
-        assert_that([i.text(0) for i in top]).is_equal_to(["All images", "User", "X Plugin", "Y Plugin"])
+        assert_that([i.text(0) for i in top]).is_equal_to(["All Images", "User", "X Plugin", "Y Plugin"])
         assert_that(top[1].childCount()).is_zero()
 
     def test_import_button_shows_only_for_the_user_pack(self, qapp):  # pylint: disable=unused-argument
@@ -911,6 +947,26 @@ class TestUserImages:
 
         assert_that([c for c in manager.calls if c[0] == "icon_delete"]).is_empty()
         assert_that(_names(dialog)).is_equal_to(["mine"])
+
+    def test_the_delete_badge_sits_in_the_bottom_right_third(self, qapp):  # pylint: disable=unused-argument
+        dialog = IconBrowserDialog(None, _UserManager())
+        _select(dialog, 1)
+        view = dialog._icon_list
+        index = dialog._model.index(0, 0)
+        option = QStyleOptionViewItem()
+        option.initFrom(view)
+        option.rect = view.visualRect(index)
+        option.widget = view
+        dialog._delegate.initStyleOption(option, index)
+        style = view.style()
+        assert style is not None
+        icon = style.subElementRect(QStyle.SubElement.SE_ItemViewItemDecoration, option, view)
+
+        badge = dialog._delegate._badge_rect(option, index)
+
+        assert_that(badge.width()).is_close_to(icon.width() / 3, 0.01)
+        assert_that(badge.left() + badge.width()).is_close_to(icon.left() + icon.width(), 0.01)
+        assert_that(badge.top() + badge.height()).is_close_to(icon.top() + icon.height(), 0.01)
 
     def test_only_user_images_get_a_delete_badge(self, qapp):  # pylint: disable=unused-argument
         dialog = IconBrowserDialog(None, _UserManager())

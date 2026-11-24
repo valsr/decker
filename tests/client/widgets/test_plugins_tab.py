@@ -384,3 +384,66 @@ def test_plugins_tab_global_settings_use_the_plugin_id(tab, monkeypatch):
     assert_that(field._plugin_id).is_equal_to("com.acme.extra")
     if field._thread is not None:
         field._thread.join(5)
+
+
+def _item(tab, plugin_id):
+    items = [tab._plugin_list.item(row) for row in range(tab._plugin_list.count())]
+    return next(it for it in items if it.data(plugins_tab._PLUGIN_ID_ROLE) == plugin_id)
+
+
+_FAILURES = json.dumps(
+    [{"plugin_uuid": "com.acme.extra", "error": "crashed"}, {"plugin_uuid": "broken-folder", "error": "bad manifest"}]
+)
+
+
+def test_failed_plugins_show_grayed_in_the_installed_list_with_the_error_on_hover(manager):
+    manager.answers["plugins_load_failures"] = _FAILURES
+    tab = PluginsTab()
+    tab.refresh()
+
+    extra, broken, core = _item(tab, "com.acme.extra"), _item(tab, "broken-folder"), _item(tab, "com.decker.core")
+
+    assert_that(tab._plugin_list.count()).is_equal_to(3)
+    assert_that(extra.text()).contains("Extra", "· Failed")
+    assert_that(extra.toolTip()).starts_with("Failed: crashed")
+    assert_that(broken.text()).is_equal_to("broken-folder\nCould not be loaded · Failed")
+    assert_that(broken.toolTip()).is_equal_to("Failed: bad manifest")
+    assert_that(extra.foreground().color()).is_not_equal_to(core.foreground().color())
+
+
+def test_a_failed_plugin_can_be_uninstalled(manager):
+    manager.answers["plugins_load_failures"] = _FAILURES
+    tab = PluginsTab()
+    tab.refresh()
+    _select(tab, "broken-folder")
+    assert_that(tab._uninstall_btn.isEnabled()).is_true()
+
+    with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+        tab._uninstall_btn.click()
+
+    manager.call.assert_any_call("plugin_uninstall", "broken-folder")
+
+
+def test_a_failed_plugin_with_an_update_can_be_updated(manager):
+    manager.answers["plugins_load_failures"] = _FAILURES
+    tab = PluginsTab()
+    tab.refresh()
+    update = {"id": "com.acme.extra", "name": "Extra", "installed": "2.1.0", "available": "2.2.0"}
+    EventManager.get().emit(PluginUpdatesAvailableEvent(updates=[update], missing=[]))
+    _select(tab, "com.acme.extra")
+
+    assert_that(tab._update_btn.isEnabled()).is_true()
+    assert_that(tab._uninstall_btn.isEnabled()).is_true()
+    assert_that(_item(tab, "com.acme.extra").text()).contains("Failed", "Update available: 2.2.0")
+
+
+def test_refresh_drops_failures_the_server_no_longer_reports(manager):
+    manager.answers["plugins_load_failures"] = _FAILURES
+    tab = PluginsTab()
+    tab.refresh()
+    manager.answers["plugins_load_failures"] = "[]"
+
+    tab.refresh()
+
+    assert_that(tab._plugin_list.count()).is_equal_to(2)
+    assert_that(_item(tab, "com.acme.extra").text()).does_not_contain("Failed")

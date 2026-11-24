@@ -1510,6 +1510,54 @@ class TestKeyMoveSelection:  # pylint: disable=protected-access
         assert_that(view._selected_key).is_none()
 
 
+class TestKeyClear:  # pylint: disable=protected-access
+    def setup_method(self):
+        AppContext._instance = None
+
+    def _view(self, tmp_path) -> tuple[DashboardView, MagicMock]:
+        view = _make_view(tmp_path)
+        _active_dev1(view)
+        view._pages = _PAGES
+        cm = MagicMock()
+        cm.call.return_value = True
+        AppContext.get().connection_manager = cm
+        view._grid.build(_KEYS_15)
+        view._key_slots[4] = {"plugin_uuid": "p", "card_uuid": "a", "context_id": "c4", "settings": {}}
+        return view, cm
+
+    def test_a_confirmed_clear_unassigns_the_key_and_closes_its_editor(
+        self, qapp, tmp_path
+    ):  # pylint: disable=unused-argument
+        view, cm = self._view(tmp_path)
+        view._selected_key = 4
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            view._grid.key_delete_requested.emit(4)
+
+        cm.call.assert_called_once_with("key_unassign", "dev1", "p1", 4)
+        cm.request_device_refresh.assert_called_once_with()
+        assert_that(view._key_slots).does_not_contain_key(4)
+        assert_that(view._selected_key).is_none()
+
+    def test_a_declined_clear_sends_nothing(self, qapp, tmp_path):  # pylint: disable=unused-argument
+        view, cm = self._view(tmp_path)
+
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Cancel):
+            view._grid.key_delete_requested.emit(4)
+
+        cm.call.assert_not_called()
+        assert_that(view._key_slots).contains_key(4)
+
+    def test_an_empty_key_is_not_cleared(self, qapp, tmp_path):  # pylint: disable=unused-argument
+        view, cm = self._view(tmp_path)
+
+        with patch.object(QMessageBox, "question") as question:
+            view._grid.key_delete_requested.emit(2)
+
+        question.assert_not_called()
+        cm.call.assert_not_called()
+
+
 class TestDragScopeFollowsThePage:  # pylint: disable=protected-access
     def setup_method(self):
         AppContext._instance = None

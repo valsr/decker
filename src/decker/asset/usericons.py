@@ -17,9 +17,9 @@ from decker.asset.iconresize import (
 )
 from decker.asset.svgcheck import validate_svg
 from decker.common.icon_limits import max_icon_bytes
+from decker.common.icon_ref import USER_PACK_ID
 from decker.common.paths import user_icons
 
-USER_PACK_ID = "decker.user"
 USER_PLUGIN_ID = "decker.user"
 USER_PLUGIN_NAME = "User"
 
@@ -75,11 +75,19 @@ class UserIcons:
             return []
         return sorted(p.name for p in entries if p.suffix.lower() in _EXTENSIONS and p.is_file())
 
+    def resolve(self, name: str) -> str | None:
+        """The listed file a file name or bare id (``logo`` for ``logo.svg``) names, or None."""
+        listed = self.list_icons()
+        if name in listed:
+            return name
+        return next((file for file in listed if Path(file).stem.lower() == name), None)
+
     def read_icon(self, name: str) -> bytes | None:
-        """Return the icon's bytes, or None when it is not listed or too large."""
-        if name not in self.list_icons():
+        """Return the icon's bytes (by file name or bare id), or None when it is not listed or too large."""
+        file = self.resolve(name)
+        if file is None:
             return None
-        path = self.directory / name
+        path = self.directory / file
         try:
             if path.stat().st_size > max_icon_bytes():
                 return None

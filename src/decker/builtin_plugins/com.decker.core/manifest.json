@@ -2,7 +2,7 @@
   "format": 3,
   "id": "com.decker.core",
   "name": "Core",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "author": "Decker",
   "description": "The actions Decker ships.",
   "icon": "icons/blank",

@@ -23,6 +23,7 @@ from decker.client.icon_cache import IconThumbnailCache, icon_cache
 from decker.client.icon_picker import NO_TINT, IconBrowserDialog, RpcCaller
 from decker.client.widgets.color_button import ColorButton
 from decker.common.icon_ref import (
+    USER_PACK_ID,
     icon_display_name,
     make_icon_ref,
     normalize_icon_value,
@@ -70,6 +71,7 @@ class IconEdit(QWidget):
         self._ref = ""
         self._color = "#ffffff"
         self._raw: dict[str, str] = {}
+        self._user_files: list[str] | None = None
         self._preview = _ClickLabel()
         self._preview.setFixedSize(_PREVIEW_SIZE, _PREVIEW_SIZE)
         self._preview.clicked.connect(self._on_preview_clicked)
@@ -188,6 +190,7 @@ class IconEdit(QWidget):
         dialog.exec()
 
     def _on_icon_chosen(self, pack_id: str, path: str) -> None:
+        self._user_files = None  # the browser may have imported or deleted User images
         self._ref = make_icon_ref(pack_id, path)
         self._refresh()
         self.value_changed.emit()
@@ -204,13 +207,29 @@ class IconEdit(QWidget):
         self.value_changed.emit()
 
     def _refresh(self) -> None:
-        parsed = parse_icon_ref(self._ref)
+        parsed = self._resolve_user(parse_icon_ref(self._ref))
         self._name.setText(icon_display_name(parsed[1]) if parsed is not None else self._placeholder)
         self._clear.setEnabled(parsed is not None)
         self._colour.setVisible(self._show_colour and self._wants_colour(parsed))
         if self._toolbar:
             self._separator.setVisible(self._colour.isVisibleTo(self))
         self._preview.setPixmap(self._preview_pixmap(parsed))
+
+    def _resolve_user(self, parsed: tuple[str, str] | None) -> tuple[str, str] | None:
+        """A ``user:<id>`` reference names its file (``logo`` → ``logo.svg``), so the kind of image is known."""
+        if parsed is None or parsed[0] != USER_PACK_ID or "." in parsed[1]:
+            return parsed
+        if self._user_files is None:
+            rpc = self._rpc()
+            try:
+                listed = json.loads(rpc.call("iconpack_icons", USER_PACK_ID) or "null") if rpc is not None else None
+            except Exception:  # pylint: disable=broad-exception-caught
+                listed = None
+            if not isinstance(listed, list):
+                return parsed  # not cached: ask again once the server answers
+            self._user_files = [str(name) for name in listed]
+        icon_id = parsed[1]
+        return USER_PACK_ID, next((f for f in self._user_files if f.rsplit(".", 1)[0].lower() == icon_id), icon_id)
 
     def _wants_colour(self, parsed: tuple[str, str] | None) -> bool:
         if self._toolbar:

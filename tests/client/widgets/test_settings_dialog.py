@@ -236,20 +236,21 @@ class TestLiveUpdates:
 
     def test_plugin_failures_appear_live(self, dialog):
         dialog.open_dialog()
-        assert_that(dialog._failed_list.count()).is_equal_to(0)
-        assert_that(dialog._no_failures_label.isHidden()).is_false()
+        plugin_list = dialog._plugins_tab._plugin_list
 
         consumed = EventManager.get().emit(PluginLoadFailedEvent(plugin_uuid="com.x.broken", error="boom"))
 
         assert_that(consumed).is_false()
-        assert_that(dialog._failed_list.count()).is_equal_to(1)
-        assert_that(dialog._failed_list.item(0).text()).is_equal_to("com.x.broken: boom")
-        assert_that(dialog._no_failures_label.isHidden()).is_true()
+        texts = [plugin_list.item(i).text() for i in range(plugin_list.count())]
+        assert_that(texts).contains("com.x.broken\nCould not be loaded · Failed")
 
-    def test_set_failed_plugins_replaces_list(self, dialog):
+    def test_set_failed_plugins_replaces_the_failed_rows(self, dialog):
         dialog.set_failed_plugins({"b": "e2", "a": "e1"})
+        dialog.set_failed_plugins({"a": "e1"})
 
-        assert_that([dialog._failed_list.item(i).text() for i in range(2)]).is_equal_to(["a: e1", "b: e2"])
+        plugin_list = dialog._plugins_tab._plugin_list
+        ids = [plugin_list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(plugin_list.count())]
+        assert_that(ids).contains("a").does_not_contain("b")
 
 
 class TestGeneralTab:

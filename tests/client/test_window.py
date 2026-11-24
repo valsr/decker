@@ -400,7 +400,11 @@ class TestSettingsDialog:
         window.dispatch(PluginLoadFailedEvent(plugin_uuid="com.decker.broken", error="boom"))
 
         dialog = window._settings_dialog  # pylint: disable=protected-access
-        assert_that(dialog._failed_list.count()).is_equal_to(1)  # pylint: disable=protected-access
+        tooltips = [
+            dialog._plugins_tab._plugin_list.item(i).toolTip()  # pylint: disable=protected-access
+            for i in range(dialog._plugins_tab._plugin_list.count())  # pylint: disable=protected-access
+        ]
+        assert_that(tooltips).contains("Failed: boom")
         assert_that(window._toast.isHidden()).is_false()  # pylint: disable=protected-access
 
     def test_open_settings_shows_non_modal_dialog(

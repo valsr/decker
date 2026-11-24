@@ -108,3 +108,22 @@ def test_icon_display_name_drops_one_image_suffix_only(path: str, expected: str)
     from decker.common.icon_ref import icon_display_name
 
     assert_that(icon_display_name(path)).is_equal_to(expected)
+
+
+def test_user_icons_get_the_short_user_reference() -> None:
+    assert_that(make_icon_ref("decker.user", "logo.svg")).is_equal_to("user:logo")
+    assert_that(make_icon_ref("decker.user", "my_icon-2.png")).is_equal_to("user:my_icon-2")
+
+
+def test_user_reference_parses_to_the_bare_id() -> None:
+    assert_that(parse_icon_ref("user:logo")).is_equal_to(("decker.user", "logo"))
+    assert_that(parse_icon_ref("pack:decker.user/logo.svg")).is_equal_to(("decker.user", "logo.svg"))
+
+
+@pytest.mark.parametrize("bad", ["user:", "user:Logo", "user:../x", "user:a/b", "user:-a", "user:" + "a" * 65])
+def test_user_reference_rejects_names_no_import_can_produce(bad: str) -> None:
+    assert_that(parse_icon_ref(bad)).is_none()
+
+
+def test_normalize_keeps_a_user_reference() -> None:
+    assert_that(normalize_icon_value({"ref": "user:logo"})["ref"]).is_equal_to("user:logo")

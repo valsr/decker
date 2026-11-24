@@ -6,7 +6,15 @@ from collections.abc import Callable
 from typing import Any
 
 from PyQt6.QtCore import QPointF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QStandardItemModel
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QPainter,
+    QPen,
+    QPixmap,
+    QStandardItemModel,
+)
 from PyQt6.QtWidgets import QComboBox, QWidget
 
 from decker.client.card_icons import decode_icon
@@ -55,8 +63,15 @@ def _action_icon(action: dict[str, Any]) -> QIcon:
     return QIcon(pixmap) if pixmap is not None else QIcon()
 
 
+def _plugin_label(action: dict[str, Any]) -> str:
+    return str(action.get("plugin_name") or action.get("plugin_uuid") or "")
+
+
 class ActionEdit(QComboBox):
-    """Pick an action; ``value()`` is its id (with an ``owner``, Do Nothing, its own and global actions)."""
+    """Pick an action; ``value()`` is its id (with an ``owner``, Do Nothing, its own and global actions).
+
+    Actions are grouped by plugin (alphabetically), each group under a separator and the plugin's name.
+    """
 
     value_changed = pyqtSignal()
 
@@ -103,7 +118,15 @@ class ActionEdit(QComboBox):
             if a.get("action_uuid") != NOTHING_ACTION_ID
             and (a.get("scope") == "global" or (self._owner is not None and a.get("plugin_uuid") == self._owner))
         ]
-        return sorted(shown, key=lambda a: (str(a.get("action_name")), str(a.get("action_uuid"))))
+        return sorted(
+            shown,
+            key=lambda a: (
+                _plugin_label(a).lower(),
+                str(a.get("plugin_uuid")),
+                str(a.get("action_name")),
+                str(a.get("action_uuid")),
+            ),
+        )
 
     def _rebuild(self) -> None:
         self.blockSignals(True)
@@ -113,20 +136,38 @@ class ActionEdit(QComboBox):
         else:
             self.addItem(_nothing_icon(), _NOTHING, NOTHING_ACTION_ID)
         shown = self._shown_actions()
+        group: str | None = None
         for action in shown:
+            if action.get("plugin_uuid") != group:
+                group = str(action.get("plugin_uuid"))
+                self._add_group_header(_plugin_label(action))
             self.addItem(_action_icon(action), str(action.get("action_name")), str(action["action_uuid"]))
         listed = {str(a["action_uuid"]) for a in shown}
         if self._owner is not None:
             listed.add(NOTHING_ACTION_ID)
         if self._value and self._online and self._value not in listed:
+            self.insertSeparator(self.count())
             self.addItem(_MISSING, self._value)
-            model = self.model()
-            item = model.item(self.count() - 1) if isinstance(model, QStandardItemModel) else None
-            if item is not None:
-                item.setEnabled(False)
+            self._disable_last()
         self.setCurrentIndex(max(self.findData(self._value), 0))
         self.setToolTip("" if self._online else _OFFLINE_HINT)
         self.blockSignals(False)
+
+    def _add_group_header(self, title: str) -> None:
+        self.insertSeparator(self.count())
+        self.addItem(title)
+        self._disable_last(bold=True)
+
+    def _disable_last(self, bold: bool = False) -> None:
+        model = self.model()
+        item = model.item(self.count() - 1) if isinstance(model, QStandardItemModel) else None
+        if item is None:
+            return
+        item.setEnabled(False)
+        if bold:
+            font = QFont(self.font())
+            font.setBold(True)
+            item.setFont(font)
 
     def _on_activated(self, index: int) -> None:
         data = self.itemData(index)

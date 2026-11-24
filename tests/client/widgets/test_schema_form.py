@@ -476,7 +476,7 @@ class TestActionFields:  # pylint: disable=protected-access
         combo = _action_edit(form)
 
         assert_that([combo.itemText(i) for i in range(combo.count())]).is_equal_to(
-            ["(choose an action)", "HTTP", "Mute"]
+            ["(choose an action)", "", "Tools", "HTTP", "Mute"]
         )
         assert_that(form.values()["action"]).is_equal_to("com.t.mute")
 
