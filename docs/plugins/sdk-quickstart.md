@@ -231,6 +231,23 @@ def seen(device_id: str) -> None:
     print("deck up:", device_id, sdk.connected_devices())
 ```
 
+## Deck brightness
+
+`get_deck_brightness(device_id=None, timeout=5.0)` returns a deck's normal brightness (1-100) and
+`set_deck_brightness(percent, device_id=None)` sets it (clamped to 1-100; it is stored as the screensaver's normal
+`brightness`, so it survives a wake). Without `device_id` they use the device of the current action call; a card passes
+`ctx.device` explicitly. Both raise `ActionError` when there is no device; `get_deck_brightness` also on an error or
+timeout. `@on_deck_brightness_changed` registers `fn(device_id, percent)`, run on the worker pool whenever any deck's
+normal brightness changes.
+
+```python
+@sdk.on_deck_brightness_changed
+def dimmed(device_id: str, percent: int) -> None:
+    print(device_id, "is now at", percent)
+
+sdk.set_deck_brightness(sdk.get_deck_brightness(device_id) - 10, device_id)
+```
+
 ## Dynamic choice options
 
 A `choice` field with an [`options_source`](settings-schema.md#dynamic-choices) lists options the plugin supplies when

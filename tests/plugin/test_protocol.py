@@ -69,7 +69,7 @@ def test_decode_rejects_oversized_line() -> None:
 
 
 def test_protocol_version() -> None:
-    assert_that(PROTOCOL_VERSION).is_equal_to(4)
+    assert_that(PROTOCOL_VERSION).is_equal_to(5)
     assert_that(MAX_VALUE_BYTES).is_equal_to(1024 * 1024)
 
 
@@ -86,6 +86,8 @@ def test_event_sets_match_spec() -> None:
                 "global_settings_changed",
                 "device_connected",
                 "device_disconnected",
+                "deck_brightness",
+                "deck_brightness_changed",
                 "ping",
                 "shutdown",
                 "get_variable",
@@ -121,6 +123,8 @@ def test_event_sets_match_spec() -> None:
                 "get_image",
                 "switch_page",
                 "switch_profile",
+                "get_deck_brightness",
+                "set_deck_brightness",
             }
         )
     )

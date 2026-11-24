@@ -84,3 +84,68 @@ def test_a_failing_hook_is_logged_not_fatal(hooks):
         _poll_devices(rig, ["dev1"])
     finally:
         _stop(rig)
+
+
+def _serve_brightness(rig: Rig, percent: int | None) -> dict:
+    request = rig.recv_until("get_deck_brightness")["payload"]
+    reply = {"request": request["request"], "device": request["device"]}
+    reply.update({"percent": percent} if percent is not None else {"error": "unknown device"})
+    rig.send("deck_brightness", reply)
+    return request
+
+
+def test_sdk_get_set_and_hook(hooks):
+    seen: list[tuple[str, int]] = []
+    done = threading.Event()
+
+    @sdk.on_deck_brightness_changed
+    def _changed(device: str, percent: int) -> None:
+        seen.append((device, percent))
+        done.set()
+
+    rig = Rig()
+    try:
+        rig.send("hello", {"protocol": 5, "decker_version": "x", "plugin_id": "t", "global_settings": {}})
+        rig.recv_until("ready")
+        result: list[int] = []
+        getter = threading.Thread(target=lambda: result.append(sdk.get_deck_brightness("dev1")))
+        getter.start()
+        assert_that(_serve_brightness(rig, 70)["device"]).is_equal_to("dev1")
+        getter.join(WAIT)
+        assert_that(result).is_equal_to([70])
+
+        sdk.set_deck_brightness(30, "dev1")
+        assert_that(rig.recv_until("set_deck_brightness")["payload"]).is_equal_to({"device": "dev1", "percent": 30})
+
+        rig.send("deck_brightness_changed", {"device": "dev1", "percent": 30})
+        assert_that(done.wait(WAIT)).is_true()
+        assert_that(seen).is_equal_to([("dev1", 30)])
+    finally:
+        _stop(rig)
+
+
+def test_sdk_brightness_errors(hooks):
+    rig = Rig()
+    try:
+        rig.send("hello", {"protocol": 5, "decker_version": "x", "plugin_id": "t", "global_settings": {}})
+        rig.recv_until("ready")
+        with pytest.raises(sdk.ActionError, match="no device"):
+            sdk.get_deck_brightness()
+        with pytest.raises(sdk.ActionError, match="timed out"):
+            sdk.get_deck_brightness("dev1", timeout=0.2)
+        rig.recv_until("get_deck_brightness")  # the timed-out request
+        errors: list[str] = []
+        getter = threading.Thread(target=lambda: _capture(errors))
+        getter.start()
+        _serve_brightness(rig, None)
+        getter.join(WAIT)
+        assert_that(errors).is_equal_to(["unknown device"])
+    finally:
+        _stop(rig)
+
+
+def _capture(errors: list[str]) -> None:
+    try:
+        sdk.get_deck_brightness("nodev")
+    except sdk.ActionError as exc:
+        errors.append(str(exc))

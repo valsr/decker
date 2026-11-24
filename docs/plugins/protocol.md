@@ -28,7 +28,7 @@ discarded.
 
 | Event | Context | Payload |
 |-------|---------|---------|
-| `hello` | | `{"protocol": 4, "decker_version": "0.7.1", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
+| `hello` | | `{"protocol": 5, "decker_version": "0.7.1", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
 | `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...}, "bindings": {...}, "state": 0}`. `size` is the key's pixel size; `bindings` the card's effective [bindings](package-and-manifest.md#bindings) as `{gesture: {"action", "args"}}`, read-only; `args` arrive resolved like `settings` (a `page` argument as the page object, a `profile` argument as the profile object, opted-in text expanded), and stay as stored for Do Nothing and for an action that is not installed |
 | `will_disappear` | yes | none |
 | `key_down`, `key_up` | yes | none (raw key events, for visual feedback; gestures are not sent to cards) |
@@ -39,6 +39,8 @@ discarded.
 | `global_settings_changed` | | `{"global_settings": {...}}` |
 | `device_connected` | | `{"device": "<device id>"}`: sent for every known device when you become ready, and whenever a deck connects or reconnects while you run (repeats are possible, treat it as a set) |
 | `device_disconnected` | | `{"device": "<device id>"}`: a deck went away; a deck that reopens (for example after a brightness write) sends this and then `device_connected` |
+| `deck_brightness` | | `{"request": "<id>", "device": "<device id>", "percent": 80}` or `{"request": "<id>", "error": "text"}`, answering `get_deck_brightness` |
+| `deck_brightness_changed` | | `{"device": "<device id>", "percent": 80}`: a deck's normal brightness changed (from you, another plugin or the user); sent to every running plugin (protocol 5) |
 | `get_variable` | | `{"request": "<id>", "name": "<variable>"}`: answer with `variable_value` carrying the same `request` (see [Variables](#variables)) |
 | `variables_changed` | | `{"set": {"name": "value", ...}, "removed": ["name", ...]}`: the global variables that changed; the full set of values is sent once after `ready` |
 | `get_options` | | `{"request": "<id>", "source": "<options source>"}`: answer with `options_result` carrying the same `request` (see [Dynamic choice options](#dynamic-choice-options)) |
@@ -64,6 +66,8 @@ runs the bound actions.)
 | `set_global_settings` | | `{"settings": {...}}`, validated against `global_settings` and saved |
 | `action_result` | | `{"request": "<id>", "ok": true, "value": ...}` (`value` optional) or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. `value` is any JSON, at most 1 MiB encoded, larger is an error. The server gives up after the call's timeout (the caller's `timeout`, else the action's manifest `timeout`, else 30 s) and shows the user the error |
 | `call_action` | | `{"request": "<id>", "action": "<action id>", "args": {...}, "timeout": 30, "chain": "<id>", "parent": "<request id>", "depth": 0, "device": "<device id>"}` (all but `request` and `action` optional): run an action and get its value, see [Action calls](#action-calls) |
+| `get_deck_brightness` | | `{"request": "<id>", "device": "<device id>"}`: ask for a deck's normal brightness; answered with `deck_brightness` (protocol 5) |
+| `set_deck_brightness` | | `{"device": "<device id>", "percent": 80}`: set a deck's normal brightness, clamped to 1-100 and stored as the screensaver's `brightness`. No reply; a non-integer percent or unknown device is logged by the server (protocol 5) |
 | `get_image` | | `{"request": "<id>", "context": "<ctx>", "call": "<run_action request>"}`: ask for a key's current plugin image, see [Painting](#painting) |
 | `register_variable` | | `{"name": "<concrete name>"}`: announce a name inside one of your declared patterns (see [Variables](#variables)) |
 | `unregister_variable` | | `{"name": "<concrete name>"}`: withdraw it and its value |

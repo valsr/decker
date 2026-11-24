@@ -3,7 +3,8 @@
 import io
 import json
 import logging
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, replace
 from typing import TYPE_CHECKING, Any
 
 from PIL import Image
@@ -42,6 +43,7 @@ class ScreensaverController(Manager):
 
     def __init__(self) -> None:
         self._context: "ServerContext | None" = None
+        self._brightness_listeners: list[Callable[[str, int], None]] = []
 
     def create(self, context: "ServerContext") -> None:
         """Bind the server context."""
@@ -79,9 +81,37 @@ class ScreensaverController(Manager):
         self._require_known(device_id)
         settings = _parse(settings_json)
         self._check_paths(device_id, settings, loopback)
+        self._commit(device_id, settings)
+
+    def brightness(self, device_id: str) -> int:
+        """The device's normal brightness in percent."""
+        self._require_known(device_id)
+        return self._stored(device_id).brightness
+
+    def set_brightness(self, device_id: str, percent: int) -> int:
+        """Store a normal brightness clamped to 1-100, apply it and return the stored value."""
+        self._require_known(device_id)
+        if isinstance(percent, bool) or not isinstance(percent, int):
+            raise ValueError("percent must be an integer")
+        value = max(1, min(100, percent))
+        self._commit(device_id, replace(self._stored(device_id), brightness=value))
+        return value
+
+    def add_brightness_listener(self, listener: Callable[[str, int], None]) -> None:
+        """Call ``listener(device_id, percent)`` after an edit changed a device's normal brightness."""
+        self._brightness_listeners.append(listener)
+
+    def _commit(self, device_id: str, settings: ScreensaverSettings) -> None:
+        previous = self._stored(device_id).brightness
         self._store.set(device_id, settings)
         self._engine.apply_settings(device_id)
         self._ctx.event_bus.push(SCREENSAVER_SETTINGS_CHANGED_EVENT, json.dumps({"device_id": device_id}))
+        if settings.brightness != previous:
+            for listener in list(self._brightness_listeners):
+                try:
+                    listener(device_id, settings.brightness)
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.exception("brightness listener failed for %s", device_id)
 
     def activate(self, device_id: str) -> bool:
         """Show the screensaver now; False when the device is not open or the activation was cancelled."""

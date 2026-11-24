@@ -90,6 +90,7 @@ from decker.server.variable_runner import VariableRunner
 from decker.server.variables import VariableConflict, VariableStore
 
 if TYPE_CHECKING:
+    from decker.server.screensaver.screensaver_controller import ScreensaverController
     from decker.server.server_context import ServerContext
 
 _DEFAULT_MEMORY_LIMIT = 256 * 1024 * 1024
@@ -206,6 +207,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._lock = threading.RLock()
         self._sdk_path: Path | None = None
         self._device_manager: Any = None
+        self._saver: "ScreensaverController | None" = None
         self._event_bus: Any = None
         self._page_controller: Any = None
         self._page_store: Any = None
@@ -236,6 +238,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def create(self, context: "ServerContext") -> None:
         """Wire up the device manager, then scan plugins and start the supervisor."""
         self._device_manager = context.device_manager
+        self._saver = getattr(context, "screensaver_controller", None)
         if self._device_manager is not None:
             self._device_manager.add_open_listener(self._on_device_opened)
             self._device_manager.add_close_listener(self._on_device_closed)
@@ -1070,6 +1073,10 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._action_runner.on_plugin_call(plugin_id, message.payload)
         elif event == "get_image":
             self._on_get_image(plugin_id, message.payload)
+        elif event == "get_deck_brightness":
+            self._on_get_deck_brightness(plugin_id, message.payload)
+        elif event == "set_deck_brightness":
+            self._on_set_deck_brightness(plugin_id, message.payload)
         elif event == "options_result":
             self._options_runner.on_result(plugin_id, message.payload)
         elif event in _VARIABLE_EVENTS:
@@ -1186,8 +1193,38 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def _broadcast_device(self, event: str, device_id: str) -> None:
         # A plugin that is not ready yet learns the live devices from the burst in _on_ready.
+        self._broadcast(event, {"device": device_id})
+
+    def _broadcast(self, event: str, payload: dict[str, Any]) -> None:
         for plugin_id in self._supervisor.running_ids():
-            self._supervisor.send_if_ready(plugin_id, Message(event, payload={"device": device_id}))
+            self._supervisor.send_if_ready(plugin_id, Message(event, payload=dict(payload)))
+
+    def on_deck_brightness_changed(self, device_id: str, percent: int) -> None:
+        """Tell every running plugin that a deck's normal brightness changed."""
+        self._broadcast("deck_brightness_changed", {"device": device_id, "percent": percent})
+
+    def _on_get_deck_brightness(self, plugin_id: str, payload: dict[str, Any]) -> None:
+        request, device = payload.get("request"), payload.get("device")
+        if not isinstance(request, str):
+            logging.debug("[%s] dropped get_deck_brightness without a string request", plugin_id)
+            return
+        try:
+            percent = self._saver_controller().brightness(device)  # type: ignore[arg-type]
+            reply: dict[str, Any] = {"request": request, "device": device, "percent": percent}
+        except ValueError as exc:
+            reply = {"request": request, "error": str(exc)}
+        self._supervisor.send(plugin_id, Message("deck_brightness", payload=reply))
+
+    def _on_set_deck_brightness(self, plugin_id: str, payload: dict[str, Any]) -> None:
+        try:
+            self._saver_controller().set_brightness(payload.get("device"), payload.get("percent"))  # type: ignore[arg-type]
+        except ValueError as exc:
+            logging.warning("[%s] set_deck_brightness refused: %s", plugin_id, exc)
+
+    def _saver_controller(self) -> "ScreensaverController":
+        if self._saver is None:
+            raise ValueError("deck brightness is not available")
+        return self._saver
 
     def _on_ready(self, plugin_id: str) -> None:
         self._variable_runner.send_snapshot(plugin_id)

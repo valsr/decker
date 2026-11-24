@@ -111,7 +111,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._stopping = False
         self._vars = _variables.VariableHost(self.send, self.log_error)
         self._opts = _options.OptionsHost(self.send, self.log_error)
-        self._deck = _deck.DeckHost(self._pool.submit, self.log_error)
+        self._deck = _deck.DeckHost(self._pool.submit, self.log_error, self.send, self._pool.blocking)
 
     @property
     def deck(self) -> _deck.DeckHost:
@@ -190,6 +190,10 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self._calls.deliver(payload)
         elif event == "image_result":
             self._frames.deliver(payload)
+        elif event == "deck_brightness":
+            self._deck.deliver_brightness(payload)
+        elif event == _deck.BRIGHTNESS_CHANGED:
+            self._deck.brightness_changed(payload)
         elif event in (_deck.DEVICE_CONNECTED, _deck.DEVICE_DISCONNECTED):
             self._deck.device_event(event, payload)
         elif event == "run_action":

@@ -47,6 +47,7 @@ from tests.server.animation_fixture import (
     truncated_gif,
     wait_until,
 )
+from tests.server.screensaver.screensaver_fixture import saver_context
 
 _RECORDER = f"""#!{sys.executable}
 import json, os, sys
@@ -293,7 +294,9 @@ class FakePages:
 class Env:
     """A running PluginManager over a fake device, with the recorder plugin installed."""
 
-    def __init__(self, tmp_path, policy: SupervisorPolicy = _FAST, device_manager: Any = None) -> None:
+    def __init__(
+        self, tmp_path, policy: SupervisorPolicy = _FAST, device_manager: Any = None, saver: Any = None
+    ) -> None:
         self.plugins_dir = tmp_path / "plugins"
         self.rec_dir = self.plugins_dir / "com.decker.rec"
         self.rec_dir.mkdir(parents=True)
@@ -319,6 +322,7 @@ class Env:
             page_controller=self.pages,
             page_store=self.pages,
             key_assignment_store=MagicMock(),
+            screensaver_controller=saver,
         )
         self.manager.create(context)  # type: ignore[arg-type]
         self.manager.settings_persister = lambda target, settings: self.persisted.append((target, settings))
@@ -2236,3 +2240,65 @@ class TestDeviceScopedNavigation:
         self._running(env, device="dev-2")
 
         assert_that(self._drive(env)).is_empty()
+
+
+@pytest.fixture(name="saver_env")
+def saver_env_fixture(tmp_path):
+    with saver_context(tmp_path / "saver") as (ctx, _devices):
+        controller = ctx.screensaver_controller
+        assert controller is not None
+        environment = Env(tmp_path / "env", saver=controller)
+        controller.add_brightness_listener(environment.manager.on_deck_brightness_changed)
+        sent: list[Message] = []
+        real_send = environment.manager._supervisor.send  # pylint: disable=protected-access
+
+        def spy(plugin_id: str, message: Message) -> Any:
+            sent.append(message)
+            return real_send(plugin_id, message)
+
+        environment.manager._supervisor.send = spy  # type: ignore[method-assign]  # pylint: disable=protected-access
+        environment.sent = sent  # type: ignore[attr-defined]
+        try:
+            yield environment, controller
+        finally:
+            environment.manager.destroy()
+
+
+def _plugin_says(env: Env, event: str, payload: dict) -> None:
+    env.manager._on_plugin_message(
+        "com.decker.rec", Message(event, payload=payload)
+    )  # pylint: disable=protected-access
+
+
+def test_plugin_get_and_set_deck_brightness(saver_env):
+    env, controller = saver_env
+
+    _plugin_says(env, "set_deck_brightness", {"device": "dev1", "percent": 40})
+    _plugin_says(env, "get_deck_brightness", {"request": "r1", "device": "dev1"})
+
+    assert_that(controller.brightness("dev1")).is_equal_to(40)
+    assert_that(env.sent[-1].event).is_equal_to("deck_brightness")
+    assert_that(env.sent[-1].payload).is_equal_to({"request": "r1", "device": "dev1", "percent": 40})
+
+
+@pytest.mark.parametrize("percent", ["x", True, None, 1.5])
+def test_bad_percent_or_unknown_device_is_answered_not_raised(saver_env, percent):
+    env, controller = saver_env
+
+    _plugin_says(env, "set_deck_brightness", {"device": "dev1", "percent": percent})
+    _plugin_says(env, "set_deck_brightness", {"device": "nodev", "percent": 50})
+    _plugin_says(env, "get_deck_brightness", {"request": "r2", "device": "nodev"})
+
+    assert_that(controller.brightness("dev1")).is_equal_to(100)
+    assert_that(env.sent[-1].payload).is_equal_to({"request": "r2", "error": "unknown device"})
+
+
+def test_brightness_change_is_broadcast_to_every_plugin(saver_env):
+    env, controller = saver_env
+    env.manager.activate_card(REC_TARGET)
+    assert _wait_for(lambda: env.received("device_connected"))
+
+    controller.set_brightness("dev1", 55)
+
+    assert _wait_for(lambda: env.received("deck_brightness_changed"))
+    assert_that(env.received("deck_brightness_changed")[0]["payload"]).is_equal_to({"device": "dev1", "percent": 55})
