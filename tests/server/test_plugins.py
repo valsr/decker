@@ -29,6 +29,7 @@ from decker.plugin.settings_schema import parse_settings_schema
 from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
 from decker.server.action_calls import ActionCall
+from decker.server.actions import _Pending
 from decker.server.appearance import (
     PACK_ICON_SCALE,
     compose_key_image,
@@ -2152,3 +2153,42 @@ class TestCoreActions:
         ids = [c["card_uuid"] for c in env.manager.list_cards()]
 
         assert_that(ids).does_not_contain("com.decker.core.runaction", "com.decker.core.httprequest")
+
+
+class TestDeviceScopedNavigation:
+    def _drive(self, env, plugin_id="com.decker.rec", device="dev-1", **fields):
+        env.pages.active["dev-1"] = "p2"
+        payload = {"request": "r1", "device": device, "to": "next", **fields}
+        env.manager._route_message(plugin_id, Message("switch_page", None, payload))  # pylint: disable=protected-access
+        return [page for _device, page in env.pages.activations]
+
+    def _running(self, env, device="dev-1", done=False):
+        pending = _Pending("com.decker.rec", ActionCall("a", {}, "plugin", device=device))
+        if done:
+            pending.done.set()
+        env.manager._action_runner._pending["r1"] = pending  # pylint: disable=protected-access
+
+    def test_switch_page_switches_while_call_runs(self, env):
+        self._running(env)
+
+        assert_that(self._drive(env)).is_equal_to(["p3"])
+
+    def test_switch_profile_switches_while_call_runs(self, env):
+        env.pages.profiles["dev-1"] = [ProfileInfo(0, "Default", ""), ProfileInfo(2, "Work", "")]
+        self._running(env)
+        env.manager._route_message(  # pylint: disable=protected-access
+            "com.decker.rec", Message("switch_profile", None, {"request": "r1", "device": "dev-1", "profile_id": 2})
+        )
+
+        assert_that(env.pages.profile_activations).is_equal_to([("dev-1", 2)])
+
+    def test_switch_after_call_ended_is_refused(self, env, caplog):
+        self._running(env, done=True)
+
+        assert_that(self._drive(env)).is_empty()
+        assert_that(caplog.text).contains("without a running call")
+
+    def test_switch_for_another_device_is_refused(self, env):
+        self._running(env, device="dev-2")
+
+        assert_that(self._drive(env)).is_empty()

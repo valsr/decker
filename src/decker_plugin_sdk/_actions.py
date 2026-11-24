@@ -41,8 +41,31 @@ class ActionCallContext:  # pylint: disable=too-many-instance-attributes
     card: CardProxy | None
     args: dict[str, Any]
     caller: str | None
+    device_id: str | None = None
     _chain: str = ""
     _depth: int = 0
+    _emit: Callable[[str, dict[str, Any]], None] | None = None
+
+    def _navigate(self, event: str, payload: dict[str, Any]) -> None:
+        if self.device_id is None or self._emit is None:
+            raise ActionError("no device for this call")
+        self._emit(event, {"request": self.request, "device": self.device_id, **payload})
+
+    def switch_page(self, to: str = "next", wrap: bool = False) -> None:
+        """Switch the call's device to the ``next``/``previous``/``first``/``last`` page; ``wrap`` loops at the ends."""
+        self._navigate("switch_page", {"to": to, "wrap": wrap})
+
+    def go_to_page(self, page_id: str) -> None:
+        """Switch the call's device to the page with this id."""
+        self._navigate("switch_page", {"page_id": page_id})
+
+    def switch_profile(self, to: str = "next", wrap: bool = False) -> None:
+        """Switch the call's device to the ``next``/``previous``/``first``/``last`` profile; ``wrap`` loops."""
+        self._navigate("switch_profile", {"to": to, "wrap": wrap})
+
+    def go_to_profile(self, profile_id: int) -> None:
+        """Switch the call's device to the profile with this id."""
+        self._navigate("switch_profile", {"profile_id": profile_id})
 
 
 ActionFn = Callable[[ActionCallContext], Any]
@@ -76,6 +99,7 @@ class CallFrame:
     chain: str
     depth: int
     request: str
+    device: str | None = None
 
 
 _FRAME: contextvars.ContextVar[CallFrame | None] = contextvars.ContextVar("decker_call_frame", default=None)
@@ -136,6 +160,7 @@ class CallHost:
         frame = _FRAME.get()
         if frame is not None:
             message.update(chain=frame.chain, depth=frame.depth + 1, parent=frame.request)
+        device = device or (frame.device if frame is not None else None)
         if device:
             message["device"] = device
         waiter = _Waiter()

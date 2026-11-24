@@ -91,6 +91,19 @@ class ActionRunner:
             return False
         return pending.call.card.get("context") == context
 
+    def may_drive(self, plugin_id: str, request: Any, device_id: str) -> bool:
+        """Whether ``plugin_id`` may navigate ``device_id`` now: only while a call it was sent for that device runs."""
+        if not isinstance(request, str):
+            return False
+        with self._lock:
+            pending = self._pending.get(request)
+        return (
+            pending is not None
+            and pending.plugin_id == plugin_id
+            and not pending.done.is_set()
+            and pending.call.device == device_id
+        )
+
     def _end_pending(self, plugin_id: str, reason: str) -> None:
         with self._lock:
             waiting = {r: p for r, p in self._pending.items() if p.plugin_id == plugin_id}

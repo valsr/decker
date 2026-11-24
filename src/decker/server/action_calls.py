@@ -46,4 +46,5 @@ class ActionCall:
             "caller": self.caller,
             "chain": self.chain,
             "depth": self.depth,
+            "device": self.device,
         }

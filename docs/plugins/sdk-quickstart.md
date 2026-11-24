@@ -75,6 +75,8 @@ larger than 1 MiB is an error.
 | `card` | A `CardProxy` for the key that fired, or `None` for a `plugin` call |
 | `args` | The validated arguments (a `dict`) |
 | `caller` | The calling plugin's id for `plugin` calls, else `None` |
+| `device_id` | The device the call runs for (from the card or the chain), else `None` |
+| `switch_page(to, wrap)`, `go_to_page(page_id)`, `switch_profile(to, wrap)`, `go_to_profile(profile_id)` | Navigate `device_id` while the call runs; raise `ActionError("no device for this call")` when it is `None` |
 
 ### CardProxy
 

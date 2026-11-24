@@ -168,6 +168,7 @@ class _Live:  # pylint: disable=too-many-instance-attributes
     last_paint: datetime | None = None
 
 
+_DEVICE_NAVIGATION: frozenset[str] = frozenset({"switch_page", "switch_profile"})
 _FOREIGN_EVENTS: frozenset[str] = frozenset({"switch_page", "switch_profile", "show_ok", "show_alert", "set_image"})
 _VARIABLE_EVENTS: frozenset[str] = frozenset(
     {"register_variable", "unregister_variable", "variable_updated", "variable_value"}
@@ -220,6 +221,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._supervisor.on_exit = self._on_plugin_exit
         self._action_runner = ActionRunner(self._supervisor, self._on_action_failed, self._resolve_args)
         self._foreign_warned: set[str] = set()
+        self._drive_warned: set[str] = set()
         self._render_warned: set[str] = set()
         self.icon_packs = IconPackRegistry(on_failure=self._record_failure)
         self.variables = VariableStore(on_change=self._on_variables_changed)
@@ -308,6 +310,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         """Forget a plugin's actions and stop its process (the "actions" contribution handler)."""
         with self._lock:
             self._foreign_warned.discard(plugin_id)
+            self._drive_warned.discard(plugin_id)
             self._render_warned.discard(plugin_id)
         self._action_runner.unregister(plugin_id)
         self._supervisor.unregister(plugin_id)
@@ -1065,8 +1068,28 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._options_runner.on_result(plugin_id, message.payload)
         elif event in _VARIABLE_EVENTS:
             self._route_variable_message(plugin_id, message)
+        elif event in _DEVICE_NAVIGATION and message.context is None:
+            self._on_device_navigation(plugin_id, message)
         else:
             self._route_context_message(plugin_id, message)
+
+    def _on_device_navigation(self, plugin_id: str, message: Message) -> None:
+        device_id = message.payload.get("device")
+        request = message.payload.get("request")
+        if not isinstance(device_id, str) or not self._action_runner.may_drive(plugin_id, request, device_id):
+            self._warn_refused(plugin_id, f"dropped {message.event[:80]} without a running call for its device")
+            return
+        if message.event == "switch_page":
+            self._switch_page(device_id, message.payload, plugin_id)
+        else:
+            self._switch_profile(device_id, message.payload, plugin_id)
+
+    def _warn_refused(self, plugin_id: str, text: str) -> None:
+        if plugin_id in self._drive_warned:
+            logging.debug("[%s] %s", plugin_id, text)
+        else:
+            self._drive_warned.add(plugin_id)
+            logging.warning("[%s] %s", plugin_id, text)
 
     def _route_variable_message(self, plugin_id: str, message: Message) -> None:
         if message.event == "variable_value":
@@ -1267,23 +1290,27 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def _on_switch_page(self, live: _Live, payload: dict[str, Any]) -> None:
         """Switch the key's device; runs without the manager lock because a switch deactivates cards."""
-        if self._page_controller is None:
-            return
-        device_id = live.target.device_id
-        target = resolve_switch_target(self._device_layout(device_id), payload)
-        if target is None:
-            logging.info("[%s] switch_page %r has no target", live.target.plugin_uuid, payload)
-            return
-        self._page_controller.activate(device_id, target)
+        self._switch_page(live.target.device_id, payload, live.target.plugin_uuid)
 
     def _on_switch_profile(self, live: _Live, payload: dict[str, Any]) -> None:
         """Switch the key's device to another profile; runs without the manager lock like a page switch."""
+        self._switch_profile(live.target.device_id, payload, live.target.plugin_uuid)
+
+    def _switch_page(self, device_id: str, payload: dict[str, Any], who: str) -> None:
         if self._page_controller is None:
             return
-        device_id = live.target.device_id
+        target = resolve_switch_target(self._device_layout(device_id), payload)
+        if target is None:
+            logging.info("[%s] switch_page %r has no target", who, payload)
+            return
+        self._page_controller.activate(device_id, target)
+
+    def _switch_profile(self, device_id: str, payload: dict[str, Any], who: str) -> None:
+        if self._page_controller is None:
+            return
         target = resolve_profile_switch_target(self._device_layout(device_id), payload)
         if target is None:
-            logging.info("[%s] switch_profile %r has no target", live.target.plugin_uuid, payload)
+            logging.info("[%s] switch_profile %r has no target", who, payload)
             return
         self._page_controller.activate_profile(device_id, target)
 
