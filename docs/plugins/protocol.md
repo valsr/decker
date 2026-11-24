@@ -53,7 +53,7 @@ discarded.
 |-------|---------|---------|
 | `ready` | | none |
 | `pong` | | none |
-| `set_image` | yes | `{"image": "<base64>", "format": "png"}` (`png`, `jpeg`, `svg` or `gif`; an animated GIF animates on the key, see [Images](#images)), or `{"image": null}` to clear, or `{"icon": "pack:<pack id>/<path>", "color": "#rrggbb"}` (or a built-in short form such as `"fas:play"`) to show an icon from an installed icon pack (see [Images](#images)) |
+| `set_image` | yes | `{"image": "<base64>", "format": "png"}` (`png`, `jpeg`, `svg` or `gif`; an animated GIF animates on the key, see [Images](#images)), or `{"image": null}` to clear, or `{"icon": "pack:<pack id>/<path>", "color": "#rrggbb"}` to show an icon: a `pack:` reference names an icon of an installed pack, and a `fab:`/`far:`/`fas:` reference (such as `"fas:play"`) names one of Decker's built-in Font Awesome icons (see [Images](#images)) |
 | `set_title` | yes | `{"title": "text"}`, shown only when the user set no title; titles are one line, so line breaks are drawn as a single space |
 | `set_state` | yes | `{"state": 1}`, an index into the card's `states` |
 | `show_alert`, `show_ok` | yes | none (accepted, no visible effect in v1). For a card of another plugin, add `"request"`, see [Foreign cards](#foreign-cards) |

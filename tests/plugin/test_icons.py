@@ -1,5 +1,7 @@
+import sys
 from pathlib import Path
 
+import pytest
 from assertpy import assert_that
 
 from decker.common.icon_limits import max_icon_bytes
@@ -87,8 +89,11 @@ class TestBuiltinReference:
 
         assert_that(read_icon(tmp_path, "icon.png")).is_equal_to(b"png")
 
-    def test_a_ref_that_is_not_a_valid_short_ref_resolves_plugin_relative(self, tmp_path: Path) -> None:
+    def test_an_invalid_short_ref_is_not_a_built_in_icon(self, tmp_path: Path) -> None:
         assert_that(read_icon(tmp_path, "fas:Play")).is_none()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="a colon in a file name is an NTFS alternate data stream")
+    def test_an_invalid_short_ref_resolves_plugin_relative(self, tmp_path: Path) -> None:
         (tmp_path / "fas:Play").write_bytes(b"mine")
 
         assert_that(read_icon(tmp_path, "fas:Play")).is_equal_to(b"mine")
