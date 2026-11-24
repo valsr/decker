@@ -112,7 +112,7 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
 - A plugin may call its own actions of either scope and any other plugin's `global` actions; anything else, and unknown
   action ids, are refused with an error. Do Nothing is accepted.
 - The server validates `args` against the action's schema before the callee sees them.
-- `timeout` (seconds, a positive number) is optional: when omitted, the action's manifest `timeout` applies, else 30. It is capped at 300 and at the time left to the calling action; with none left the call is refused ("the calling action ran out of time").
+- `timeout` (seconds, a positive number) is optional: when omitted, the action's manifest `timeout` applies, else 30. It is capped at 300 and at the time left to the calling action; with none left, or once that action has ended, the call is refused ("the calling action ran out of time").
 - `value` in `call_result` and `action_result` is at most 1 MiB encoded (`1048576` bytes of JSON).
 - **Chains.** `chain` is an id shared by every call that stems from one gesture. An action that calls out passes the
   `chain` and `depth` from its own `run_action`; the server counts the depth itself from the calls of that chain that the

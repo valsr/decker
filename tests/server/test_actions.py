@@ -526,6 +526,45 @@ class TestTimeLimit:
         }
         return runner._plugin_call("com.t.act", payload)  # pylint: disable=protected-access
 
+    def _ended_parent(self, runner: ActionRunner, supervisor: MagicMock, how: str) -> str:
+        if how == "timeout":
+            runner.execute(_call("com.t.act.echo", timeout=1))
+        else:
+            thread = threading.Thread(target=runner.execute, args=(_call("com.t.act.echo"),))
+            thread.start()
+            while not supervisor.send.called:
+                time.sleep(0.01)
+            request = supervisor.send.call_args[0][1].payload["request"]
+            runner.on_result("com.t.act", {"request": request, "ok": True})
+            thread.join()
+        return supervisor.send.call_args[0][1].payload["request"]
+
+    @pytest.mark.parametrize("how", ["timeout", "result"])
+    def test_a_nested_call_after_the_parent_ended_is_refused(self, how: str) -> None:
+        runner, supervisor = self._silent([_ECHO, _LONG])
+        parent = self._ended_parent(runner, supervisor, how)
+        supervisor.send.reset_mock()
+
+        result = self._nested(runner, "chain", parent=parent)
+
+        assert_that(result.error).is_equal_to("the calling action ran out of time")
+        supervisor.send.assert_not_called()
+
+    def test_a_foreign_ended_parent_gives_no_cap(self) -> None:
+        runner, supervisor = self._silent([_ECHO, _LONG])
+        parent = self._ended_parent(runner, supervisor, "timeout")
+        foreign = ActionCall("com.t.act.long", {}, "press", caller="com.other", parent=parent)
+
+        assert_that(runner.timeout_for(foreign)).is_equal_to(120.0)
+
+    def test_the_ended_runs_are_remembered_only_up_to_a_bound(self) -> None:
+        runner, _ = self._silent([_ECHO])
+        for index in range(1100):
+            with runner._lock:  # pylint: disable=protected-access
+                runner._remember_ended(f"r{index}", "com.t.act")  # pylint: disable=protected-access
+
+        assert_that(runner._ended).is_length(1024)  # pylint: disable=protected-access
+
     def test_nested_call_is_capped_by_parent_remaining_time(self) -> None:
         runner, _ = self._silent([_ECHO, _LONG])
         chain = self._parent(runner, 1.0)
