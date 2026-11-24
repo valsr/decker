@@ -101,7 +101,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._write_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._pool = ElasticPool()
-        self._frames = FrameTicker(self.send)
+        self._frames = FrameTicker(self.send, blocking=self._pool.blocking)
         self._paints: set[str] = set()
         self._calls = CallHost(self.send, self._pool)
         self._queues: dict[str, deque[dict[str, Any]]] = {}

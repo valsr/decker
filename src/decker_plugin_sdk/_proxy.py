@@ -1,5 +1,6 @@
 """Proxies for the card an action was called from."""
 
+import threading
 from collections.abc import Mapping
 from datetime import datetime
 from types import MappingProxyType
@@ -35,6 +36,7 @@ class CardProxy:
         self._send: Sender = send
         self._frames: FrameTicker | None = frames
         self._canvas: Canvas | None = None
+        self._canvas_lock: threading.Lock = threading.Lock()
         self._closed: bool = False
 
     @property
@@ -91,15 +93,16 @@ class CardProxy:
     def canvas(self) -> Canvas:
         """The card's drawing surface (needs Pillow); the first access fetches the key's current image."""
         self._check_open()
-        if self._canvas is None:
-            frames = self._frames
-            if frames is None:
-                raise RuntimeError("the canvas works only inside a running plugin")
-            context, request = self._context, self._request
-            self._canvas = Canvas(
-                frames, FrameTarget(context, request), self._size, lambda: frames.fetch(context, request)
-            )
-        return self._canvas
+        with self._canvas_lock:
+            if self._canvas is None:
+                frames = self._frames
+                if frames is None:
+                    raise RuntimeError("the canvas works only inside a running plugin")
+                context, request = self._context, self._request
+                self._canvas = Canvas(
+                    frames, FrameTarget(context, request), self._size, lambda: frames.fetch(context, request)
+                )
+            return self._canvas
 
     def queue_paint(self) -> None:
         """Send the canvas buffer again; the card belongs to another plugin, so it has no ``on_paint``."""

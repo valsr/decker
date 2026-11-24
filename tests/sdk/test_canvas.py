@@ -18,7 +18,13 @@ from decker_plugin_sdk import (
     DeckerPlugin,
     run,
 )
-from decker_plugin_sdk._canvas import Canvas, FrameTarget, FrameTicker
+from decker_plugin_sdk._canvas import (
+    MAX_FRAMES_PER_TICK,
+    Canvas,
+    FrameTarget,
+    FrameTicker,
+)
+from decker_plugin_sdk._pool import ElasticPool
 from decker_plugin_sdk._runtime import _Runtime
 
 RED = (255, 0, 0, 255)
@@ -446,3 +452,100 @@ def test_bad_call_field_does_not_leave_a_proxy_unclosed(monkeypatch: pytest.Monk
     with pytest.raises(ValueError):
         runtime._action_context(payload)
     assert_that(made).is_empty()
+
+
+def test_ticks_send_at_most_the_budget_and_spread_the_rest(ticker: FrameTicker, sink: Sink) -> None:
+    canvases = {name: _canvas(ticker, name) for name in "abcde"}
+    for index, canvas in enumerate(canvases.values()):
+        _draw(canvas, (index, 0, 0, 255))
+    _draw(canvases["e"], BLUE)  # the latest snapshot replaces the older one
+    per_tick: list[list[str | None]] = []
+    for _ in range(4):
+        before = len(sink.images())
+        ticker.tick()
+        per_tick.append([context for context, _ in sink.images()[before:]])
+    assert_that(MAX_FRAMES_PER_TICK).is_equal_to(2)
+    assert_that(per_tick).is_equal_to([["a", "b"], ["c", "d"], ["e"], []])
+    assert_that(_pixel(sink.images()[4][1])).is_equal_to(BLUE)
+
+
+def test_repeatedly_dirtied_key_is_not_starved(ticker: FrameTicker, sink: Sink) -> None:
+    first, second, third = _canvas(ticker, "a"), _canvas(ticker, "b"), _canvas(ticker, "c")
+    for canvas in (first, second, third):
+        _draw(canvas)
+    ticker.tick()  # a and b
+    for _ in range(3):
+        _draw(first)  # a is dirtied again and again, yet c (older) goes first
+        _draw(second)
+    ticker.tick()
+    assert_that([context for context, _ in sink.images()][2]).is_equal_to("c")
+    assert_that([context for context, _ in sink.images()][3]).is_equal_to("a")
+
+
+def test_foreign_keys_go_before_own_keys_and_flush_ignores_the_budget(ticker: FrameTicker, sink: Sink) -> None:
+    for name in "abc":
+        _draw(_canvas(ticker, name))
+    for name in "xyz":
+        _draw(_canvas(ticker, name, "req1"))
+    ticker.tick()
+    assert_that([context for context, _ in sink.images()]).is_equal_to(["x", "y"])
+    ticker.flush("req1")
+    assert_that([context for context, _ in sink.images()][2:]).is_equal_to(["z"])
+    ticker.flush("req1")
+    assert_that(sink.images()).is_length(3)
+
+
+def test_set_image_is_recorded_as_the_last_sent_frame(ticker: FrameTicker, sink: Sink) -> None:
+    ctx = CardContext("c1", "card", "dev", 0, 0, 0, size=(8, 8), _send=sink, _frames=ticker)
+    ctx.set_image(base64.b64decode(_png(RED)))
+    assert_that(ctx.last_paint).is_not_none()
+    with ctx.canvas.paint() as img:
+        assert_that(img.getpixel((3, 3))).is_equal_to(RED)
+    other = CardContext("c2", "card", "dev", 0, 0, 0, size=(8, 8), _send=sink, _frames=ticker)
+    other.set_image(b"<svg/>", "svg")
+    assert_that(other.last_paint).is_not_none()
+    with other.canvas.paint() as img:
+        assert_that(img.getpixel((3, 3))).is_equal_to((0, 0, 0, 0))
+
+
+def test_pending_foreign_fetches_do_not_block_the_pool(sink: Sink, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("decker_plugin_sdk._canvas.IMAGE_TIMEOUT", 60.0)
+    pool = ElasticPool()
+    ticker = FrameTicker(sink, interval=3600, blocking=pool.blocking)
+    finished, other_ran = threading.Barrier(5, timeout=WAIT), threading.Event()
+    try:
+        for index in range(4):  # as many fetches as the pool has workers
+            pool.submit(lambda i=index: (ticker.fetch(f"c{i}", "req"), finished.wait()))
+        deadline = threading.Event()
+        for _ in range(int(WAIT * 100)):
+            with sink.lock:
+                if len(sink.messages) == 4:
+                    break
+            deadline.wait(0.01)
+        pool.submit(other_ran.set)
+        assert_that(other_ran.wait(WAIT)).described_as("other work ran while fetches wait").is_true()
+        for _, _, payload in list(sink.messages):
+            ticker.deliver({"request": payload["request"], "image": None, "format": "png"})
+        finished.wait()
+    finally:
+        pool.shutdown()
+
+
+def test_concurrent_first_canvas_access_yields_one_canvas(ticker: FrameTicker, sink: Sink) -> None:
+    ctx = CardContext("c1", "card", "dev", 0, 0, 0, size=(8, 8), _send=sink, _frames=ticker)
+    proxy = CardProxy(_foreign_payload(), "req1", sink, ticker)
+    for owner in (ctx, proxy):
+        seen: list[Canvas] = []
+        barrier = threading.Barrier(8, timeout=WAIT)
+
+        def grab(owner: Any = owner, seen: list[Canvas] = seen, barrier: threading.Barrier = barrier) -> None:
+            barrier.wait()
+            seen.append(owner.canvas)
+
+        threads = [threading.Thread(target=grab) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(WAIT)
+        assert_that({id(c) for c in seen}).is_length(1)
+        assert_that(seen).is_length(8)
