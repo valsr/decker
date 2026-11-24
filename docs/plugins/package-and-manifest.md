@@ -172,7 +172,10 @@ one is refused).
 - A gesture bound to Do Nothing is not registered with the key's gesture recognizer, so a press fires at once when
   `double_press` is unbound.
 - The card sees its effective (stored or default) bindings, read-only: `will_appear` and `settings_changed` carry
-  `bindings` (see the [protocol](protocol.md)), and an edit of the bindings sends `settings_changed`.
+  `bindings` (see the [protocol](protocol.md)), and an edit of the bindings sends `settings_changed`. The `args` of
+  each binding arrive resolved against the action's `settings`, the same as card `settings`: a `page` argument is the page
+  object (`page_id`, `name`, `index`, `profile_id`), a `profile` argument the profile object, and the server re-sends
+  `settings_changed` when a rename changes them. Do Nothing and an action that is not installed keep their args as stored.
 - The Actions tab of the key picker lists the `global` actions other than Do Nothing. Dragging one onto a key drops a **Blank** card whose
   press is bound to it; while the user has set no title or icon the key shows the action's name and icon.
 

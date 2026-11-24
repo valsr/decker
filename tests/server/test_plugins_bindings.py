@@ -480,3 +480,80 @@ class TestCallActionRouting:
         )
 
         assert_that(seen).is_equal_to([(_COUNTER, {"request": "r", "action": _INCREMENT})])
+
+
+_GOTO = "com.decker.testfixture.goto"
+
+
+class TestDeliveredBindingArgs:
+    """Cards read bindings the way they read settings: page and profile arguments arrive resolved."""
+
+    @staticmethod
+    def _bind(env: Env, **extra: Any) -> None:
+        env.manager.set_bindings(
+            COUNTER_TARGET,
+            {"press": {"action": _GOTO, "args": {"page": "p3", "profile": "0"}}, "long_press": _NOTHING, **extra},
+        )
+
+    def test_will_appear_carries_resolved_args(self, env) -> None:
+        self._bind(env)
+        env.manager.activate_card(COUNTER_TARGET)
+
+        assert _wait_for(lambda: _counter_log(env, "will_appear"))
+        press = _counter_log(env, "will_appear")[-1]["payload"]["bindings"]["press"]
+        assert_that(press["action"]).is_equal_to(_GOTO)
+        assert_that(press["args"]["page"]).contains_entry({"page_id": "p3"}, {"name": "Media"})
+        assert_that(press["args"]["profile"]).contains_entry({"profile_id": 0}, {"name": "Default"})
+
+    def test_settings_changed_carries_resolved_args(self, env) -> None:
+        _counter_ready(env)
+
+        self._bind(env)
+
+        assert _wait_for(lambda: _counter_log(env, "settings_changed"))
+        press = _counter_log(env, "settings_changed")[-1]["payload"]["bindings"]["press"]
+        assert_that(press["args"]["page"]).contains_entry({"page_id": "p3"}, {"name": "Media"})
+
+    def test_do_nothing_and_uninstalled_actions_keep_raw_args(self, env) -> None:
+        env.manager.set_bindings(
+            COUNTER_TARGET,
+            {
+                "press": {"action": "com.example.gone", "args": {"page": "p3"}},
+                "long_press": {"action": NOTHING_ACTION_ID, "args": {"page": "p3"}},
+            },
+        )
+        env.manager.activate_card(COUNTER_TARGET)
+
+        assert _wait_for(lambda: _counter_log(env, "will_appear"))
+        sent = _counter_log(env, "will_appear")[-1]["payload"]["bindings"]
+        assert_that(sent["press"]["args"]).is_equal_to({"page": "p3"})
+        assert_that(sent["long_press"]["args"]).is_equal_to({"page": "p3"})
+
+    def test_stored_bindings_stay_raw(self, env) -> None:
+        self._bind(env)
+        env.manager.activate_card(COUNTER_TARGET)
+        assert _wait_for(lambda: _counter_log(env, "will_appear"))
+
+        assert_that(_live(env).bindings["press"].args["page"]).is_equal_to("p3")
+
+    def test_a_page_rename_resends_the_resolved_bindings(self, env) -> None:
+        self._bind(env)
+        env.manager.activate_card(COUNTER_TARGET)
+        assert _wait_for(lambda: _counter_log(env, "will_appear"))
+
+        env.pages.rename("p3", "Renamed")
+        env.manager.refresh_page_dependent("dev-1")
+
+        assert _wait_for(lambda: _counter_log(env, "settings_changed"))
+        press = _counter_log(env, "settings_changed")[-1]["payload"]["bindings"]["press"]
+        assert_that(press["args"]["page"]["name"]).is_equal_to("Renamed")
+
+    def test_an_unchanged_page_does_not_resend(self, env) -> None:
+        self._bind(env)
+        env.manager.activate_card(COUNTER_TARGET)
+        assert _wait_for(lambda: _counter_log(env, "will_appear"))
+
+        env.manager.refresh_page_dependent("dev-1")
+        time.sleep(0.3)
+
+        assert_that(_counter_log(env, "settings_changed")).is_empty()

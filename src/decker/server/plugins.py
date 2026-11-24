@@ -164,6 +164,7 @@ class _Live:  # pylint: disable=too-many-instance-attributes
     plugin_title: str = ""
     state: int = 0
     delivered: dict[str, Any] = field(default_factory=dict)
+    delivered_bindings: dict[str, Any] = field(default_factory=dict)
     last_paint: datetime | None = None
 
 
@@ -758,7 +759,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         }
 
     def _settings_payload(self, live: _Live, delivered: dict[str, Any]) -> dict[str, Any]:
-        return {"settings": delivered, "bindings": {g: b.to_json() for g, b in live.bindings.items()}}
+        return {"settings": delivered, "bindings": self._delivered_bindings(live)}
 
     # ------------------------------------------------------------------
     # Server -> plugin helpers
@@ -883,6 +884,29 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             return None
         return VariableChain(page, self.variables.view())
 
+    def delivered_bindings(self, live: _Live) -> dict[str, Any]:
+        """The bindings a plugin receives: each action's arguments resolved like settings; Do Nothing and
+        uninstalled actions keep theirs raw."""
+        layout = self._device_layout(live.target.device_id)
+        variables = self._expansion(page_variables(layout))
+        result: dict[str, Any] = {}
+        for gesture, binding in live.bindings.items():
+            sent = binding.to_json()
+            spec = None if binding.is_nothing else self._action_runner.spec(binding.action)
+            if spec is not None:
+                sent["args"] = deliver_settings(spec.settings, binding.args, layout, variables)
+            result[gesture] = sent
+        return result
+
+    def _delivered_bindings(self, live: _Live) -> dict[str, Any]:
+        delivered = self.delivered_bindings(live)
+        live.delivered_bindings = delivered
+        return delivered
+
+    def _has_dynamic_bindings(self, live: _Live) -> bool:
+        specs = (self._action_runner.spec(b.action) for b in live.bindings.values() if not b.is_nothing)
+        return any(spec is not None and has_dynamic_fields(spec.settings) for spec in specs)
+
     def _delivery(self, live: _Live) -> dict[str, Any]:
         delivered = self.delivered_settings(live)
         live.delivered = delivered
@@ -910,7 +934,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             title = resolve_appearance(live.card.appearance, live.appearance).get("title", {})
         if "{" in str(title.get("text", "")):
             self._recompose(live)
-        if has_dynamic_fields(live.card.settings):
+        if has_dynamic_fields(live.card.settings) or self._has_dynamic_bindings(live):
             self._redeliver(live)
 
     def refresh_variable_users(self, names: frozenset[str]) -> None:
@@ -944,7 +968,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         if live.card.headless or not self._supervisor.is_ready(live.target.plugin_uuid):
             return
         delivered = self.delivered_settings(live)
-        if delivered != live.delivered:
+        if delivered != live.delivered or self.delivered_bindings(live) != live.delivered_bindings:
             live.delivered = delivered
             self._send_context(live, "settings_changed", self._settings_payload(live, delivered))
 
@@ -971,7 +995,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             "key": {"index": target.key_index, "column": column, "row": row},
             "size": list(self._key_size(target)),
             "settings": self._delivery(live),
-            "bindings": {g: b.to_json() for g, b in live.bindings.items()},
+            "bindings": self._delivered_bindings(live),
             "state": live.state,
         }
         self._supervisor.send(target.plugin_uuid, Message("will_appear", target.context_id, payload))
