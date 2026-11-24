@@ -242,4 +242,4 @@ need no `runtime`. Packs are served to clients over RPC and appear in the client
 ## Where plugins come from
 
 Decker ships two built-in plugins. **Blank** (`com.decker.blank`) is static: a key with only a background and a title, which is also what an action dropped from the Actions tab becomes. **Core** (`com.decker.core`) holds the Do Nothing and HTTP Request actions and runs as a normal plugin process on Decker's own interpreter (see [`runtime`](#runtime)). Built-in plugins cannot be uninstalled or replaced (a package or repository plugin with a built-in id is refused). Other plugins are installed from a `.deckerplugin` package or from a plugin repository
-(see [repositories](repositories.md)); the default repository publishes the Counter plugin.
+(see [repositories](repositories.md)); the default repository publishes the Counter, Pages and Profiles plugins.

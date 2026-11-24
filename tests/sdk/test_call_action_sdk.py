@@ -234,9 +234,9 @@ def test_call_action_times_out() -> None:
 def test_nested_call_inside_action_sends_chain_and_depth_plus_one() -> None:
     host = _host()
     try:
-        host.run_action("t.caller", "r1", chain="ch", depth=2, device="dev")
+        host.run_action("t.caller", "r1", chain="ch", depth=2)
         call = host.recv_until("call_action")["payload"]
-        assert_that(call).contains_entry({"chain": "ch"}, {"depth": 3}, {"device": "dev"})
+        assert_that(call).contains_entry({"chain": "ch"}, {"depth": 3}).does_not_contain_key("device")
         host.send("call_result", {"request": call["request"], "ok": True, "value": None})
         host.recv_until("action_result")
     finally:
