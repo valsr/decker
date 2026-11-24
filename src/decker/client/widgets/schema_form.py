@@ -73,7 +73,18 @@ def _int_field(entry: dict[str, Any]) -> _Field:
         def set_optional(value: Any) -> None:
             edit.setText("" if value in (None, "") else str(_as_int(value, 0)))
 
-        return _Field(edit, lambda: int(edit.text()) if edit.text().strip() else None, set_optional)
+        fallback = None if entry.get("default") is None else default
+
+        def get_optional() -> int | None:
+            text = edit.text().strip()
+            if not text:
+                return None
+            try:
+                return int(text)
+            except ValueError:  # a half-typed "-" passes the validator as Intermediate
+                return fallback
+
+        return _Field(edit, get_optional, set_optional)
     spin = QSpinBox()
     spin.setRange(_as_int(entry.get("min"), -_INT_LIMIT), _as_int(entry.get("max"), _INT_LIMIT))
     if entry.get("special_value"):

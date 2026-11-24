@@ -43,6 +43,20 @@ class TestSchemaForm:  # pylint: disable=protected-access
         form = _form([{"key": "n", "type": "int", "optional": True}], {"n": 4})
         assert_that(form.values()).is_equal_to({"n": 4})
 
+    def test_optional_int_unparseable_text_falls_back_to_the_default(self, qapp):  # pylint: disable=unused-argument
+        form = _form([{"key": "n", "type": "int", "optional": True, "default": 7}], {"n": 4})
+        widget = form._fields["n"].widget
+        assert isinstance(widget, QLineEdit)
+        widget.setText("-")
+        assert_that(form.values()["n"]).is_equal_to(7)
+
+    def test_optional_int_unparseable_text_without_default_is_none(self, qapp):  # pylint: disable=unused-argument
+        form = _form([{"key": "n", "type": "int", "optional": True}], {"n": 4})
+        widget = form._fields["n"].widget
+        assert isinstance(widget, QLineEdit)
+        widget.setText("-")
+        assert_that(form.values()["n"]).is_none()
+
     def test_optional_int_empty_is_none(self, qapp):  # pylint: disable=unused-argument
         form = _form([{"key": "n", "type": "int", "optional": True}], {"n": 4})
         widget = form._fields["n"].widget
