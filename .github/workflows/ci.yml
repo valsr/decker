@@ -62,7 +62,7 @@ jobs:
       - if: runner.os == 'Windows'
         run: echo "${{ steps.msys.outputs.msys2-location }}/ucrt64/bin" >> "$GITHUB_PATH"
         shell: bash
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
       - uses: ./.github/actions/setup-poetry
       - run: poetry run pytest -rs --junitxml=report.xml --cov-report xml:coverage.xml --cov=decker tests
       - uses: actions/upload-artifact@v7
