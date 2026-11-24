@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 import threading
 import uuid
 from collections.abc import Callable, Mapping
@@ -145,8 +146,12 @@ class ActionRunner:
         """A plugin answered a ``run_action`` request."""
         request = payload.get("request")
         with self._lock:
-            pending = self._pending.pop(request, None) if isinstance(request, str) else None
-        if pending is None or pending.plugin_id != plugin_id:
+            pending = self._pending.get(request) if isinstance(request, str) else None
+            if pending is not None and pending.plugin_id == plugin_id:
+                self._pending.pop(str(request))
+            else:
+                pending = None
+        if pending is None:
             logging.debug("[%s] dropped an action result for an unknown request", plugin_id)
             return
         ok = bool(payload.get("ok"))
@@ -197,7 +202,12 @@ class ActionRunner:
         timeout, depth = payload.get("timeout"), payload.get("depth")
         if not isinstance(payload.get("action"), str) or not isinstance(payload.get("args", {}), dict):
             return "action must be a string and args an object"
-        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, int | float) or timeout <= 0):
+        if timeout is not None and (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, int | float)
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
             return "timeout must be a positive number"
         if depth is not None and (isinstance(depth, bool) or not isinstance(depth, int)):
             return "depth must be an integer"
@@ -240,7 +250,6 @@ class ActionRunner:
         return ""
 
     def _derive(self, plugin_id: str, chain: str | None, depth: int) -> tuple[int, str | None]:
-        """The depth of a plugin's call and the device its chain runs for (None when unknown)."""
         if chain is None:
             return max(0, depth), None
         with self._lock:
