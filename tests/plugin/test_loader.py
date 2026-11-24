@@ -68,7 +68,7 @@ class TestPluginLoader:
         assert_that(result.failures[0].error).contains("malformed JSON")
 
     def test_null_variable_entry_is_a_failure_and_siblings_still_load(self, tmp_path):
-        bad = dict(_MANIFEST, id="com.decker.nullvar", format=3, decker=">=0.1")
+        bad = dict(_MANIFEST, id="com.decker.nullvar", format=3, decker=">=0.7")
         bad["contributes"] = {"variables": [{"name": None}]}
         _make_plugin(tmp_path, bad, name="com.decker.nullvar")
         _make_plugin(tmp_path)

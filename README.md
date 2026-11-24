@@ -27,7 +27,9 @@ Decker supports the following Elgato Stream Deck models:
 | Image library (icon packs from plugins, User pack, System Icons on Linux) | Supported |
 | Animated GIF key faces | Supported |
 | Key background images (none, solid colour or image from the image library; see [docs/key-backgrounds.md](docs/key-backgrounds.md)) | Supported |
-| Switch card (one key with Display, Press, Double press and Long press slots that hold cards or actions) | Supported |
+| Gesture bindings (every card binds Press, Double press and Long press to an action with arguments, or to Do Nothing; edit them in the card editor) | Supported |
+| Action calls (plugin code calls global actions and its own, with return values, such as an HTTP Request from a plugin) | Supported |
+| Canvas painting (plugins draw a key with Pillow, double buffered) | Supported |
 | Plugins (out of process, `.deckerplugin` packages, repositories, updates) | Supported |
 | Plugin variables (plugins export values that key text uses as `{name}`; plugins that declare them run in the background) | Supported |
 | Dynamic choice fields (a plugin fills a settings dropdown with runtime options such as audio devices; saved values survive the list changing) | Supported |
@@ -225,7 +227,7 @@ this). Install [uv](https://docs.astral.sh/uv/) as well. Device permissions on m
 
 ## Plugins
 
-Cards (what a key shows), actions (things a key can run) and icon packs come from plugins, shipped as `.deckerplugin` packages. Each plugin runs in its own
+Cards (what a key shows), actions (what a key does, bound to its gestures) and icon packs come from plugins, shipped as `.deckerplugin` packages. Each plugin runs in its own
 process, so a misbehaving plugin cannot take the server down. Plugins run with your user's permissions and are not
 sandboxed: only install plugins you trust.
 

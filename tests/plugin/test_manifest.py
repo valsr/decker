@@ -357,7 +357,7 @@ def test_format_3_actions_are_not_cards() -> None:
 
 def _variables(entries: list[Any], **extra: Any) -> dict[str, Any]:
     data = _minimal(3, {"variables": entries})
-    data.update({"runtime": {"type": "python", "entry": "plugin.py"}, "decker": ">=0.6", **extra})
+    data.update({"runtime": {"type": "python", "entry": "plugin.py"}, "decker": ">=0.7", **extra})
     return data
 
 
@@ -456,7 +456,7 @@ def _sourced(where: str, **extra: Any) -> dict[str, Any]:
     }
     data = _minimal(3, contributes)
     data["runtime"] = {"type": "python", "entry": "plugin.py"}
-    data["decker"] = ">=0.6"
+    data["decker"] = ">=0.7"
     if where == "global":
         data["global_settings"] = [_SOURCED_FIELD]
     data.update(extra)
@@ -477,7 +477,7 @@ def test_options_source_requires_a_decker_constraint(where: str) -> None:
 def test_options_source_requires_a_runtime() -> None:
     data = _minimal(3, {"icon_packs": [{"id": "com.acme.demo.icons", "name": "I", "path": "icons"}]})
     data["global_settings"] = [_SOURCED_FIELD]
-    data["decker"] = ">=0.6"
+    data["decker"] = ">=0.7"
     with pytest.raises(ManifestValidationError, match="options_source.*no runtime"):
         PluginManifest.from_dict(data)
 

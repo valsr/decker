@@ -22,6 +22,10 @@ poe cli plugin remove com.example.hello
 
 ## A minimal card
 
+A card draws; it does not handle presses. It gets the raw `on_key_down`/`on_key_up` for visual feedback, and what a
+press does is the action bound to the gesture in the manifest's `bindings` (see
+[package and manifest](package-and-manifest.md#bindings)).
+
 ```python
 from decker_plugin_sdk import CardContext, DeckerPlugin, card
 
@@ -31,27 +35,118 @@ class Greet(DeckerPlugin):
     def on_will_appear(self, ctx: CardContext) -> None:
         ctx.set_title(ctx.settings.get("name", "world"))
 
-    def on_press(self, ctx: CardContext) -> None:
-        ctx.set_title("Hello!")
+    def on_key_down(self, ctx: CardContext) -> None:
+        ctx.set_title("...")
 ```
 
 ## A minimal action
 
-An action is a function with settings that draws nothing; users run it from the built-in **Run Action** card (or a
-preset card you ship). Declare it under `contributes.actions` in the manifest and register the function:
+An action is a function that draws nothing; users run it from the bindings of a card. Declare it under
+`contributes.actions` in the manifest (with its `scope`) and register the function. It receives an
+`ActionCallContext` and may return any JSON-encodable value (at most 1 MiB encoded):
 
 ```python
-from decker_plugin_sdk import action
+from decker_plugin_sdk import ActionCallContext, ActionError, Input, action
 
 
 @action("com.example.hello.sendwave")
-def send_wave(settings: dict) -> None:
-    for _ in range(int(settings.get("times", 1))):
-        ...  # do the work; raise to report a failure, which the user sees
+def send_wave(ctx: ActionCallContext) -> int:
+    times = int(ctx.args.get("times", 1))
+    if times > 10:
+        raise ActionError("too many waves")  # the user sees exactly this message
+    if ctx.input is Input.LONG_PRESS and ctx.card is not None:
+        ctx.card.show_ok()
+    return times  # the value reaches whoever called the action
 ```
 
-Actions run on a worker thread, independently of any key. Return normally for success; an exception is reported to
-the user as the action's error.
+Actions run on the SDK's worker pool, independently of any key, and may overlap. Return normally for success; an
+exception is reported as the action's error. An `ActionError(msg)` shows the bare message; any other exception shows
+`"<Type>: <message>"` (for example `ValueError: boom`), and is logged. A return value that is not JSON-encodable or is
+larger than 1 MiB is an error.
+
+`ActionCallContext` attributes:
+
+| Attribute | Meaning |
+|-----------|---------|
+| `action` | The action id that was called |
+| `request` | The call's request id |
+| `called_at` | When the call was made, a timezone-aware `datetime` |
+| `input` | `Input.PRESS`, `Input.DOUBLE_PRESS`, `Input.LONG_PRESS` or `Input.PLUGIN` (a call from plugin code) |
+| `card` | A `CardProxy` for the key that fired, or `None` for a `plugin` call |
+| `args` | The validated arguments (a `dict`) |
+| `caller` | The calling plugin's id for `plugin` calls, else `None` |
+
+### CardProxy
+
+`ctx.card` describes the key an action was bound on. It works only while the call is in flight.
+
+| Member | Meaning |
+|--------|---------|
+| `context`, `card_id`, `plugin_id`, `device` | Identity |
+| `key_index`, `column`, `row`, `size` | Physical properties; `size` is the key's pixel size `(width, height)` |
+| `settings` | A read-only copy of the card's configuration |
+| `last_paint` | When a plugin last painted the key (`datetime` or `None`) |
+| `canvas` | The key's drawing surface, see [Painting](#painting) |
+| `queue_paint()` | Ask for the canvas buffer to be sent again |
+| `show_ok()`, `show_alert()` | As on `CardContext` |
+| `switch_page(to, wrap)`, `go_to_page(page_id)`, `switch_profile(to, wrap)`, `go_to_profile(profile_id)` | Navigation for the card's device, so global actions such as Next Page work from any plugin |
+
+For a card of the **same plugin** the proxy is an `OwnCardProxy`: it also has `instance` (the live `@card` object, so an
+action can change its state) and `set_settings(dict)`; it stays usable after the call and its `queue_paint()` runs
+`on_paint`. For a card of **another plugin** there is no setter, config writes are refused, and the card is touchable
+only until the action returns (see [Foreign cards](protocol.md#foreign-cards)); drawing on it or sending it a command later raises `RuntimeError`.
+
+### Calling actions
+
+```python
+from decker_plugin_sdk import ActionError, call_action, call_action_async
+
+try:
+    result = call_action("com.decker.core.httprequest", {"method": "GET", "url": "https://example.com"}, timeout=30)
+except ActionError as exc:   # refused, failed or timed out; the message says why
+    ...
+
+result = await call_action_async("com.example.hello.sendwave", {"times": 2})  # in async code
+```
+
+`call_action(action_id, args=None, timeout=30.0, device=None)` blocks until the action returns its value and raises
+`ActionError` when the call is refused (see [Action calls](protocol.md#action-calls) for who may call what), fails or
+times out; `timeout` is capped at 300 s. Inside an action it forwards the call chain, so the depth limit of 8 and the
+device apply automatically. A nested call blocks only its own worker, and the pool grows for nested calls so a chain
+cannot starve itself. `call_action` outside a running plugin raises `RuntimeError`.
+
+### Painting
+
+A card can draw its key with Pillow. Add `pillow` to `runtime.requirements` (the SDK imports it only when you use the
+canvas; without it, `RuntimeError` says so). `set_image(bytes)` still works for plugins without Pillow.
+
+```python
+from decker_plugin_sdk import CardContext, DeckerPlugin, card
+
+
+@card("com.example.hello.dial")
+class Dial(DeckerPlugin):
+    def on_will_appear(self, ctx: CardContext) -> None:
+        ctx.queue_paint()
+
+    def on_paint(self, ctx: CardContext, img) -> None:   # img: Pillow RGBA image, the key's size
+        from PIL import ImageDraw
+        ImageDraw.Draw(img).ellipse((8, 8, img.width - 8, img.height - 8), outline="white", width=4)
+```
+
+- `ctx.canvas.paint()` (or `card.canvas.paint()` on a proxy) is a context manager yielding the RGBA back buffer. Several
+  painters may hold it at once; when the **last** one leaves, a snapshot is taken and the key is marked dirty (leaving
+  `paint()` counts as `queue_paint()`).
+- A per-process **frame tick** (about 30 per second) sends the latest finished snapshot of dirty keys as `set_image`
+  PNG. It sends at most 2 frames per tick (about 60 per second) to stay under the 100 messages per second flood limit,
+  the remaining dirty keys wait for the next tick, and a half-drawn buffer is never sent. For a foreign card the frame
+  is sent before `action_result`.
+- The canvas is only the plugin image layer: Decker still draws the user's background and title around it, and the
+  user's icon override wins. The latest frame wins when several plugins paint one key.
+- A plugin's own cards start from the last frame they sent (or transparent); a foreign card's first `canvas` access
+  fetches the key's current image with `get_image`.
+- `ctx.queue_paint()` asks for `on_paint(ctx, img)` to run inside `paint()` before the next tick; repeated requests
+  before it runs count once. `ctx.last_paint` is the time this plugin last sent a frame for the key.
 
 ## Variables, `init` and `main`
 
@@ -147,7 +242,7 @@ def output_devices() -> list:
 
 @card("com.example.hello.volume")
 class Volume(DeckerPlugin):
-    def on_press(self, ctx: CardContext) -> None:
+    def on_will_appear(self, ctx: CardContext) -> None:
         ctx.set_title(str(ctx.settings.get("device")))
 ```
 
@@ -160,9 +255,9 @@ is still listed. A manifest that uses `options_source` must set its `decker` con
 
 ## Handlers (override what you need)
 
-`on_will_appear`, `on_will_disappear`, `on_key_down`, `on_key_up`, `on_press`, `on_double_press`, `on_long_press`,
-`on_settings_changed`, `on_global_settings_changed`, plus `gestures(settings)` which may return a set of `Gesture`
-values for this key (return `None` to keep the manifest's list).
+`on_will_appear`, `on_will_disappear`, `on_key_down`, `on_key_up`, `on_settings_changed`,
+`on_global_settings_changed` and `on_paint(ctx, img)`. The handlers `on_press`, `on_double_press`, `on_long_press`
+and `gestures(settings)` no longer exist (protocol 4): bind actions in the manifest instead.
 
 ## Fonts
 
@@ -187,11 +282,11 @@ Sized `ImageFont.load_default(size)` needs Pillow >= 10.1.
 
 ## CardContext
 
-Attributes: `context`, `card`, `device`, `key_index`, `column`, `row`, `settings`, `global_settings`, `state`.
+Attributes: `context`, `card`, `device`, `key_index`, `column`, `row`, `settings`, `global_settings`, `bindings` (the effective bindings, read-only), `size`, `state`, `last_paint`, `canvas`.
 
 Methods: `set_image(data, format="png")`, `set_icon(ref, color=None)` (show an icon from an installed icon pack or one of Decker's System Icons, see
 [protocol](protocol.md#images)), `clear_image()`, `set_title(title)`, `set_state(n)`, `show_alert()`,
-`show_ok()`, `set_settings(dict)` (send only the keys you changed), `set_global_settings(dict)`, `switch_page(to="next", wrap=False)`
+`show_ok()`, `queue_paint()`, `set_settings(dict)` (send only the keys you changed), `set_global_settings(dict)`, `switch_page(to="next", wrap=False)`
 (`next`, `previous`, `first`, `last`), `go_to_page(page_id)` (see [Pages](protocol.md#pages)), `switch_profile(to="next", wrap=False)`, `go_to_profile(profile_id)` (see [Profiles](protocol.md#profiles)), `open_url(url)`, `log(message, level="info")`.
 
 The SDK accepts either `global_settings` or `settings` as the key in `global_settings_changed`; the server sends

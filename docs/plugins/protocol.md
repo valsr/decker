@@ -28,13 +28,14 @@ discarded.
 
 | Event | Context | Payload |
 |-------|---------|---------|
-| `hello` | | `{"protocol": 3, "decker_version": "0.6.0", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
-| `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "settings": {...}, "state": 0}` |
+| `hello` | | `{"protocol": 4, "decker_version": "0.7.0", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
+| `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...}, "bindings": {...}, "state": 0}`. `size` is the key's pixel size; `bindings` the card's effective [bindings](package-and-manifest.md#bindings) as `{gesture: {"action", "args"}}`, read-only |
 | `will_disappear` | yes | none |
-| `key_down`, `key_up` | yes | none (raw key events) |
-| `press`, `double_press`, `long_press` | yes | none (recognised by the server for the key's registered gestures) |
-| `settings_changed` | yes | `{"settings": {...}}` |
-| `run_action` | | `{"action": "<action id>", "request": "<id>", "settings": {...}}`: run one of your [actions](package-and-manifest.md#actions) with its validated settings and answer with `action_result` carrying the same `request`. Runs are independent of any key and may overlap |
+| `key_down`, `key_up` | yes | none (raw key events, for visual feedback; gestures are not sent to cards) |
+| `settings_changed` | yes | `{"settings": {...}, "bindings": {...}}`; also sent when the key's bindings are edited |
+| `run_action` | | the call details, see [Action calls](#action-calls): run one of your [actions](package-and-manifest.md#actions) with its validated arguments and answer with `action_result` carrying the same `request`. Runs are independent of any key and may overlap |
+| `call_result` | | `{"request": "<id>", "ok": true, "value": ...}` or `{"request": "<id>", "ok": false, "error": "text"}`, answering your `call_action` (see [Action calls](#action-calls)) |
+| `image_result` | | `{"request": "<id>", "image": "<base64 PNG>"\|null, "format": "png"}`, answering `get_image` (see [Painting](#painting)) |
 | `global_settings_changed` | | `{"global_settings": {...}}` |
 | `device_connected` | | `{"device": "<device id>"}` |
 | `get_variable` | | `{"request": "<id>", "name": "<variable>"}`: answer with `variable_value` carrying the same `request` (see [Variables](#variables)) |
@@ -43,7 +44,8 @@ discarded.
 | `ping` | | none; reply with `pong` |
 | `shutdown` | | none; exit promptly |
 
-(`device_disconnected` is part of the vocabulary but not sent in v1.)
+(`device_disconnected` is part of the vocabulary but not sent in v1. Protocol 4 removed the `press`, `double_press` and
+`long_press` events: the server recognises the gestures itself and runs the bound actions.)
 
 ## Plugin to server
 
@@ -54,13 +56,14 @@ discarded.
 | `set_image` | yes | `{"image": "<base64>", "format": "png"}` (`png`, `jpeg`, `svg` or `gif`; an animated GIF animates on the key, see [Images](#images)), or `{"image": null}` to clear, or `{"icon": "pack:<pack id>/<path>", "color": "#rrggbb"}` to show an icon from an installed icon pack (see [Images](#images)) |
 | `set_title` | yes | `{"title": "text"}`, shown only when the user set no title; titles are one line, so line breaks are drawn as a single space |
 | `set_state` | yes | `{"state": 1}`, an index into the card's `states` |
-| `show_alert`, `show_ok` | yes | none (accepted, no visible effect in v1) |
+| `show_alert`, `show_ok` | yes | none (accepted, no visible effect in v1). For a card of another plugin, add `"request"`, see [Foreign cards](#foreign-cards) |
 | `set_settings` | yes | `{"settings": {...}}`, validated against the card's schema and saved; keys you leave out keep their stored value, so send only what you changed (see [Pages](#pages)) |
 | `switch_page` | yes | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"page_id": "<id>"}`: switch the key's device to that page (see [Pages](#pages)) |
 | `switch_profile` | yes | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"profile_id": 2}`: switch the key's device to that profile's default page (see [Profiles](#profiles)) |
 | `set_global_settings` | | `{"settings": {...}}`, validated against `global_settings` and saved |
-| `set_gestures` | yes | `{"gestures": ["press", "long_press"]}`; replaces the key's gesture set |
-| `action_result` | | `{"request": "<id>", "ok": true}` or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. The server gives up after 30 s and shows the user the error |
+| `action_result` | | `{"request": "<id>", "ok": true, "value": ...}` (`value` optional) or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. `value` is any JSON, at most 1 MiB encoded, larger is an error. The server gives up after the call's timeout (30 s unless the caller set one) and shows the user the error |
+| `call_action` | | `{"request": "<id>", "action": "<action id>", "args": {...}, "timeout": 30, "chain": "<id>", "depth": 0, "device": "<device id>"}` (all but `request` and `action` optional): run an action and get its value, see [Action calls](#action-calls) |
+| `get_image` | | `{"request": "<id>", "context": "<ctx>", "call": "<run_action request>"}`: ask for a key's current plugin image, see [Painting](#painting) |
 | `register_variable` | | `{"name": "<concrete name>"}`: announce a name inside one of your declared patterns (see [Variables](#variables)) |
 | `unregister_variable` | | `{"name": "<concrete name>"}`: withdraw it and its value |
 | `variable_updated` | | `{"name": "<variable>"}`: the value changed; the server asks for it with `get_variable` |
@@ -69,7 +72,73 @@ discarded.
 | `log` | | `{"level": "info", "message": "text"}`; levels `debug`, `info`, `warning`, `error` |
 | `open_url` | | `{"url": "https://..."}`; only `http`/`https` with a host are accepted. Every connected client asks the user before opening it |
 
-Messages for a context that is not active (for example after `will_disappear`) are dropped.
+Messages for a context that is not active (for example after `will_disappear`) are dropped. `set_gestures` was removed in protocol 4; a plugin that still sends it is ignored (logged by the server).
+
+## Action calls
+
+Every gesture that is bound to something other than Do Nothing becomes a `run_action` for the plugin that owns the
+action; Do Nothing is handled by the server and never sent. A plugin may also start calls itself.
+
+`run_action` (server to plugin) payload:
+
+```json
+{ "action": "<action id>", "request": "<id>", "args": {...},
+  "input": "press",
+  "called_at": "2026-11-21T10:00:00.123+00:00",
+  "card": { "context": "<ctx>", "card": "<card id>", "plugin": "<plugin id>", "device": "<device id>",
+            "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...},
+            "last_paint": "<iso time>" },
+  "caller": null, "chain": "<id>", "depth": 0 }
+```
+
+- `args` are the action's arguments after strict validation against its settings schema (a call with invalid arguments
+  is refused before the plugin sees it); `page`/`profile` arguments are resolved and `template` text is expanded for
+  the key's device.
+- `input` is `press`, `double_press`, `long_press`, or `plugin` for a call from plugin code. `card` describes the key
+  that fired and is `null` for `plugin` calls; its `last_paint` is `null` when no plugin has painted the key.
+  `caller` is the calling plugin's id for `plugin` calls, else `null`. `called_at` is an ISO 8601 time with offset.
+- `chain` and `depth` identify the call chain (see below).
+- Answer with `action_result` (`ok`, an optional JSON `value`, or an `error`). A gesture-triggered run discards the
+  value; a failure raises the `action_failed` event for the clients. With the Python SDK, an `ActionError(msg)` raised
+  by the action arrives as the bare message and any other exception as `"<Type>: <message>"`.
+
+`call_action` (plugin to server), answered by `call_result` with the same `request`:
+
+- A plugin may call its own actions of either scope and any other plugin's `global` actions; anything else, and unknown
+  action ids, are refused with an error. Do Nothing is accepted.
+- The server validates `args` against the action's schema before the callee sees them.
+- `timeout` (seconds, a positive number) defaults to 30 and is capped at 300.
+- `value` in `call_result` and `action_result` is at most 1 MiB encoded (`1048576` bytes of JSON).
+- **Chains.** `chain` is an id shared by every call that stems from one gesture. An action that calls out passes the
+  `chain` and `depth` from its own `run_action`; the server counts the depth itself from the calls of that chain that the
+  plugin is running (own depth plus one) and refuses a call deeper than **8**. The limit therefore relies on the
+  caller forwarding `chain`: the Python SDK does it for you inside an action, but a raw-protocol plugin that omits
+  `chain` starts a new chain at depth 0 every time and is not limited by the chain. Forward `chain` yourself.
+- **Device.** A chain that started from a card carries its device, so actions called inside it resolve `page` and
+  `profile` arguments and templates for that device. `device` in `call_action` sets one explicitly. With neither,
+  `page`/`profile` arguments arrive as their unset values and device templates expand to empty text.
+
+## Foreign cards
+
+A plugin may touch a card of **another plugin** only while a `run_action` that carried that card is in flight: it sends
+`set_image`, `show_ok`, `show_alert`, `switch_page`, `switch_profile` or `get_image` for the card's `context` with the
+`request` of that `run_action` (in the payload; `get_image` uses `call`). The server drops them otherwise, with a
+warning for the first one, and the access ends when `action_result` is sent or the plugin stops. A foreign plugin can
+never write configuration: `set_settings` for another plugin's card is always dropped. Send any dirty frame for the
+card before `action_result` (the SDK flushes them for you).
+
+## Painting
+
+`set_image` is the key's plugin image layer. The server still draws the user's background below it and the title above
+it, and the user's icon override wins. The server remembers when it last accepted an image for a key; that time is the
+`last_paint` of the `card` payload.
+
+`get_image` asks for the key's current plugin image layer at the key's pixel size: the server answers with
+`image_result` carrying the same `request`, `image` as a base64 PNG (or `null` when the key has no image, the context
+is unknown, the image cannot be rendered, or the plugin may not touch it) and `format: "png"`. A plugin's own cards need
+no `call`; another plugin's card needs the `call` of the in-flight `run_action`. A painting process starts its back
+buffer from this image. The Python SDK's canvas does the buffering, the frame tick and the Pillow work, see the
+[quick start](sdk-quickstart.md#painting).
 
 ## Pages
 
@@ -159,8 +228,11 @@ image, or clearing the image, ends the animation.
 
 ## Flood protection and liveness
 
-- Each plugin may send 100 messages per second sustained with a burst of 200. Messages over budget are dropped; a
-  plugin that stays over budget for 5 s continuously is killed and counted as a crash.
+- Each plugin may send 100 messages per second sustained with a burst of 200 (unchanged in protocol 4). Messages over
+  budget are dropped; a plugin that stays over budget for 5 s continuously is killed and counted as a crash. The SDK's
+  canvas ticker therefore sends at most 2 frames per tick (about 60 per second) and keeps further dirty keys for the
+  next tick, which leaves room for every other message; foreign frames are flushed before `action_result`, whatever the
+  per-tick limit.
 - The server sends `ping` every 5 s. No `pong` within 10 s counts as a hang and the process is killed.
 
 ## Minimal executable plugin

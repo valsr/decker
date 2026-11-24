@@ -1,6 +1,7 @@
 # Settings schema
 
-`global_settings` and each card's and action's `settings` are an ordered list rendered top to bottom as a form.
+`global_settings` and each card's and action's `settings` are an ordered list rendered top to bottom as a form. An
+action's `settings` are its arguments: the form for a binding in the card editor is generated from them.
 
 ## Entries
 
@@ -8,7 +9,7 @@
 - Field: `{ "key": "...", "type": "...", "label": "...", "default": ..., ...}`
 
 Common field keys: `key` (unique within the list), `type`, `label`, `default`, `optional` (an empty value is allowed
-and stored as `null`), `placeholder`, `help`.
+and stored as `null`), `required` (see [Validation rules](#validation-rules)), `placeholder`, `help`.
 
 ## Types
 
@@ -16,7 +17,7 @@ and stored as `null`), `placeholder`, `help`.
 |------|------------|-------|
 | `int` | `min`, `max`, `step`, `special_value` (text shown at `min`, e.g. "no limit") | integer |
 | `float` | `min`, `max`, `step`, `decimals` | finite number |
-| `text` | `multiline`, `template` (boolean, default `false`: expand `{page_name}`, `{page_index}`, `{page_count}`, `{current_profile}`, `{profile_id}` before delivery; `{{`/`}}` are literal braces, unknown names stay as typed; plugin variables work too, see [Template variables](#template-variables)) | string |
+| `text` | `multiline`, `pattern`, `min_length`, `max_length` (see [Validation rules](#validation-rules)), `template` (boolean, default `false`: expand `{page_name}`, `{page_index}`, `{page_count}`, `{current_profile}`, `{profile_id}` before delivery; `{{`/`}}` are literal braces, unknown names stay as typed; plugin variables work too, see [Template variables](#template-variables)) | string |
 | `bool` | | boolean |
 | `choice` | `options`: `[{ "label": "...", "value": ... }]` (non-empty unless `options_source` is set); `options_source`: a name, see [Dynamic choices](#dynamic-choices) | one of the option values; with `options_source`, any string up to 256 characters |
 | `color` | `alpha` (boolean; when `true` the picker has an opacity slider and `#rrggbbaa` is also valid, alpha last) | `#rrggbb` (or `#rrggbbaa`) |
@@ -27,7 +28,7 @@ and stored as `null`), `placeholder`, `help`.
 | `page` | `profile_field` (key of a `profile` field of the same schema: the dropdown then lists that profile's pages; blank or absent: the key's own profile) | a page of the key's device: stored as its page id (string, default `""`), delivered as `{"page_id", "name", "index", "profile_id"}` (`index` is 1-based within its profile; `profile_id` is `-1` when the page is gone); action settings only, not allowed in `global_settings` |
 | `profile` | | a profile of the key's device: stored as the decimal profile id (`""`, the default, follows the current profile), delivered as `{"profile_id", "name", "index", "icon"}` (`index` is the 1-based dropdown position, `icon` an icon ref, `decker:logo` for the Decker icon; an unset or deleted profile arrives as `{"profile_id": -1, "name": "", "index": 0, "icon": ""}`). Profile ids are small per-device integers and are **reused** after a profile is deleted, so a stored id can later mean a new profile; action settings only, not allowed in `global_settings` |
 | `action` | | an action of any installed plugin: stored as its id (`""`: none). The dropdown lists every available action |
-| `action_params` | `action_field` (key of an `action` field of the same schema; the form then shows that action's settings) | an object: the chosen action's settings. Changing the action resets it. Used by the Run Action card |
+| `action_params` | `action_field` (key of an `action` field of the same schema; the form then shows that action's settings) | an object: the chosen action's settings. Changing the action resets it |
 
 ## Dynamic choices
 
@@ -53,9 +54,10 @@ devices of this machine, the players that are running):
   its saved value. A value that is not in the list is kept as it is, never replaced by the first option. The
   `default` of such a field must be a string (anything else refuses the manifest); without one it is the first static
   option's value, or `""` when there are none (`null` for an `optional` field).
-- Works wherever a settings schema is used: card settings, action settings (including the Run Action card's
-  parameters), `global_settings` and the Switch card's slot forms. It needs the plugin to be reachable; the plugin is
-  started for the request when it is not running.
+- Works wherever a settings schema is used: card settings, card settings, action arguments in the binding forms of the card editor, and `global_settings`. The plugin that
+  answers is the owner of the schema being edited (an action's `options_source` is answered by the action's plugin, even
+  when the card belongs to another plugin). It needs the plugin to be reachable; the plugin is started for the request
+  when it is not running.
 - The control is an **editable dropdown** with a refresh button: choose a listed option or type any value. The list
   loads in the background, so the form opens at once. A saved value that is not listed shows as "unavailable" (a
   tooltip) and stays selected. If the plugin cannot be reached or fails, the control falls back to the static options
@@ -126,15 +128,42 @@ The value is an object; missing or invalid fields fall back to the field's defau
 To show the icon on the key, pass both to the SDK: `ctx.set_icon(settings["icon"]["ref"], settings["icon"]["color"])`
 (see [protocol](protocol.md#images)). References with a `..` segment or an absolute path are treated as invalid.
 
+## Validation rules
+
+Fields can declare rules that the server checks and the client form shows inline next to the field:
+
+| Key | Applies to | Meaning |
+|-----|------------|---------|
+| `required` | any field | `true`: an empty value is an error. Empty means `""`, `null` or a missing key (an `icon` field with no `ref` counts as empty). A missing key is checked after its `default` is filled in, so a `required` field with a non-empty default is satisfied by omission |
+| `pattern` | `text` | A regular expression the **whole** value must match (Python `re.fullmatch`). It is compiled when the manifest loads; an invalid pattern is a manifest error |
+| `min_length`, `max_length` | `text` | Bounds on the value's length in characters (non-negative integers; `min_length` may not exceed `max_length`) |
+
+```json
+{ "key": "slug", "type": "text", "label": "Slug", "required": true,
+  "pattern": "[a-z][a-z0-9-]*", "min_length": 2, "max_length": 32 }
+```
+
+`pattern`, `min_length` and `max_length` are only valid on `text` fields. An empty value of a field that is not
+`required` is accepted when the field is `optional` or a `text` field, whatever its pattern.
+
 ## Validation
 
 The **server** validates stored and incoming values against the schema, so a plugin always receives a complete,
-typed settings object:
+typed settings object. Two modes exist:
 
-- unknown keys are dropped;
-- missing, invalid, out-of-range or non-finite values fall back to the field's default (or `null` when `optional`);
-- the client never duplicates defaults.
+- **Lenient** (loading stored values, `global_settings`, plugin `set_settings`): unknown keys are dropped; missing,
+  invalid, out-of-range or non-finite values fall back to the field's default (or `null` when `optional`). The
+  validation rules above are not applied.
+- **Strict** (saving card settings, saving bindings, running an action): the values are checked against every rule and a
+  broken field is an error instead of a silent fallback. `key_update_settings` and `key_update_bindings` return
+  `{"ok": false, "errors": {...}}` (field key or `<gesture>.<argument>` to message) and persist nothing, and the client
+  shows the errors inline and refuses Save. A gesture whose stored arguments fail the rules (for example after a plugin
+  update tightened them) does not run and the user sees an `action_failed` message with the field errors; the editor
+  still loads the stored value and flags it.
+
+The client never duplicates defaults.
 
 Settings reach the plugin in `will_appear.settings`, `settings_changed.settings` and, for plugin-wide settings,
 `hello.global_settings` and `global_settings_changed.global_settings`. A plugin can write them back with
-`set_settings` (per key) and `set_global_settings`; the server validates those too.
+`set_settings` (per key, for its own cards only) and `set_global_settings`; the server validates those too. Action
+arguments arrive in `run_action.args` (see the [protocol](protocol.md)).
