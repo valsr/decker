@@ -19,6 +19,7 @@ class InstalledPlugin:
 
     manifest: PluginManifest
     plugin_dir: Path
+    builtin: bool = False  # trust flag: set only by scan_builtin or trusted server code, never read from a manifest
 
 
 @dataclass
@@ -42,14 +43,14 @@ class PluginLoader:
 
     def scan(self) -> PluginScanResult:
         """Validate the manifest of every folder in the plugins directory."""
-        return _scan_folder(self._plugins_dir)
+        return _scan_folder(self._plugins_dir, builtin=False)
 
     def scan_builtin(self) -> PluginScanResult:
         """Validate the plugins shipped inside Decker itself."""
-        return _scan_folder(BUILTIN_PLUGINS_DIR)
+        return _scan_folder(BUILTIN_PLUGINS_DIR, builtin=True)
 
 
-def _scan_folder(folder: Path) -> PluginScanResult:
+def _scan_folder(folder: Path, builtin: bool) -> PluginScanResult:
     result = PluginScanResult()
     if not folder.exists():
         return result
@@ -62,7 +63,7 @@ def _scan_folder(folder: Path) -> PluginScanResult:
             logging.error("Failed to load plugin %s: %s", entry.name, exc)
             result.failures.append(PluginLoadFailedEvent(plugin_uuid=entry.name, error=str(exc)))
             continue
-        result.plugins.append(InstalledPlugin(manifest, entry))
+        result.plugins.append(InstalledPlugin(manifest, entry, builtin))
         logging.info("Found plugin %s", manifest.id)
     return result
 

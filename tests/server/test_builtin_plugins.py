@@ -1,18 +1,30 @@
 import json
+import shutil
+import sys
+import time
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
+import psutil
 import pytest
 from assertpy import assert_that
 from PIL import Image
 
-from decker.plugin.loader import BUILTIN_PLUGINS_DIR, PluginLoader
+from decker.plugin.environment import venv_python
+from decker.plugin.loader import BUILTIN_PLUGINS_DIR, InstalledPlugin, PluginLoader
 from decker.plugin.manifest import PluginManifest
 from decker.plugin.repository_index import IndexVersion
+from decker.plugin.runtime.supervisor import SupervisorPolicy
+from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
 from decker.server.appearance import compose_key_image, resolve_appearance
 from decker.server.plugin_installer import PluginInstallError
+from decker.server.plugins import PluginManager
 from decker.server.service import DeckerService
 from tests.server.test_plugin_installer import Env, _manifest, _package
+from tests.server.test_plugins import FakeBus, FakeDeviceManager, FakePages
 
 BLANK = "com.decker.blank"
 BLANK_ACTION = "com.decker.blank.blank"
@@ -139,3 +151,84 @@ def test_core_ships_no_cards() -> None:
 
     assert_that(manifest.cards).is_empty()
     assert_that([a.id for a in manifest.actions]).contains("com.decker.core.httprequest")
+
+
+_ACT_FIXTURE = Path(__file__).parent / "fixtures" / "actions_plugin"
+_ACT_ID = "com.decker.acttest"
+_ACT_TILE = CardTarget(_ACT_ID, "com.decker.acttest.tile", "ctx-tile", "dev-1", 0)
+
+
+def _act_manager(tmp_path: Path) -> PluginManager:
+    manager = PluginManager(
+        tmp_path / "plugins",
+        SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0),
+        PluginSettingsStore(tmp_path / "plugins.db"),
+    )
+    pages = FakePages()
+    context = SimpleNamespace(
+        device_manager=FakeDeviceManager(),
+        event_bus=FakeBus(),
+        page_controller=pages,
+        page_store=pages,
+        key_assignment_store=MagicMock(),
+    )
+    manager.create(context)  # type: ignore[arg-type]
+    return manager
+
+
+def _wait_for(predicate: Callable[[], bool], timeout: float = 15.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
+def _command(manager: PluginManager, plugin_id: str) -> list[str]:
+    return manager._supervisor._entries[plugin_id].command  # pylint: disable=protected-access
+
+
+def test_builtin_plugin_starts_without_a_venv(tmp_path: Path) -> None:
+    folder = tmp_path / "builtin" / _ACT_ID
+    shutil.copytree(_ACT_FIXTURE, folder, ignore=shutil.ignore_patterns("__pycache__"))
+    manager = _act_manager(tmp_path)
+    try:
+        manager.add_plugin(InstalledPlugin(PluginManifest.load(folder / "manifest.json"), folder, builtin=True))
+        assert_that(_command(manager, _ACT_ID)[0]).is_equal_to(sys.executable)
+
+        manager.activate_card(_ACT_TILE)
+        assert_that(
+            _wait_for(lambda: manager._supervisor.is_ready(_ACT_ID))
+        ).is_true()  # pylint: disable=protected-access
+        manager.dispatch_key_down(_ACT_TILE)
+        manager.dispatch_key_up(_ACT_TILE)
+
+        marks = folder / "marks.log"
+        assert_that(_wait_for(lambda: marks.exists() and marks.read_text(encoding="utf-8") == "p")).is_true()
+        assert_that(list(folder.rglob(".venv"))).is_empty()
+        assert_that(venv_python(folder).exists()).is_false()
+    finally:
+        pid = _pid(manager)
+        manager.destroy()
+        if pid is not None and psutil.pid_exists(pid):
+            psutil.Process(pid).kill()
+
+
+def _pid(manager: PluginManager) -> int | None:
+    entry = manager._supervisor._entries.get(_ACT_ID)  # pylint: disable=protected-access
+    return entry.process.pid if entry is not None and entry.process is not None else None
+
+
+def test_user_plugin_mimicking_a_builtin_still_launches_via_its_venv(tmp_path: Path) -> None:
+    folder = tmp_path / "plugins" / _ACT_ID
+    shutil.copytree(_ACT_FIXTURE, folder, ignore=shutil.ignore_patterns("__pycache__"))
+    manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    manifest["builtin"] = True
+    (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    manager = _act_manager(tmp_path)
+    try:
+        assert_that(_command(manager, _ACT_ID)[0]).is_equal_to(str(venv_python(folder)))
+        assert_that(manager._plugins[_ACT_ID].builtin).is_false()  # pylint: disable=protected-access
+    finally:
+        manager.destroy()

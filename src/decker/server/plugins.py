@@ -390,7 +390,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         if manifest.runtime is None or known:
             return
         try:
-            command = launch_command(plugin.plugin_dir, manifest.runtime)
+            command = launch_command(plugin.plugin_dir, manifest.runtime, plugin.builtin)
         except ValueError as exc:
             self._record_failure(manifest.id, str(exc))
             return

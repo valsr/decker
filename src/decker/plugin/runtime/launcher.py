@@ -8,15 +8,15 @@ from decker.plugin.environment import venv_python
 from decker.plugin.manifest import RuntimeSpec
 
 
-def launch_command(plugin_dir: Path, runtime: RuntimeSpec) -> list[str]:
-    """Return the argv for a plugin; the entry must resolve inside `plugin_dir`."""
+def launch_command(plugin_dir: Path, runtime: RuntimeSpec, builtin: bool = False) -> list[str]:
+    """Return the argv for a plugin (built-ins use the server's interpreter); the entry must stay inside it."""
     root = plugin_dir.resolve()
     entry = (root / runtime.entry).resolve()
     if not entry.is_relative_to(root):
         raise ValueError(f"entry '{runtime.entry}' resolves outside the plugin directory")
     if runtime.type == "executable":
         return [str(plugin_dir / runtime.entry)]
-    python = str(venv_python(plugin_dir))
+    python = sys.executable if builtin else str(venv_python(plugin_dir))
     return [python, "-m", "decker_plugin_sdk", str(plugin_dir / runtime.entry)]
 
 
