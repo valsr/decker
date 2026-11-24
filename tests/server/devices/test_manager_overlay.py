@@ -412,3 +412,20 @@ def test_a_stale_device_closing_does_not_fire_close_listeners():
     manager._on_device_closed(device)  # pylint: disable=protected-access
     assert_that(closed).is_equal_to([DEVICE_ID])
     manager.destroy()
+
+
+def test_close_listeners_fire_before_the_slow_close_so_a_reopen_cannot_overtake_them():
+    deck = make_deck()
+    manager, device = open_manager(deck)
+    order: list[str] = []
+    real_close = device.close
+
+    def slow_close() -> None:
+        order.append("close")
+        real_close()
+
+    device.close = slow_close  # type: ignore[method-assign]
+    manager.add_close_listener(lambda _device_id: order.append("listener"))
+    manager._on_device_closed(device)  # pylint: disable=protected-access
+    assert_that(order).is_equal_to(["listener", "close"])
+    manager.destroy()

@@ -449,9 +449,10 @@ class DeviceManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             if evicted:
                 del self._devices[device.device_id]
                 self._forget_swallowed(device.device_id)
-        device.close()  # outside the lock; idempotent, and never joins its own writer thread
+        # Announced before the slow close: a reopen during it must not be followed by a late "closed".
         if evicted:
             self._fire(self._close_listeners, device.device_id, "close")
+        device.close()  # outside the lock; idempotent, and never joins its own writer thread
 
     def opened_device_ids(self) -> list[str]:
         """Ids of the devices that are open right now; touches no hardware."""
