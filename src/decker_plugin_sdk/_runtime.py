@@ -208,7 +208,9 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         try:
             ctx = self._action_context(payload)
             proxy = ctx.card
-            token = _FRAME.set(CallFrame(ctx._chain, ctx._depth, str(request)))  # pylint: disable=protected-access
+            token = _FRAME.set(
+                CallFrame(ctx._chain, ctx._depth, str(request), ctx.device_id)
+            )  # pylint: disable=protected-access
             value = handler(ctx)
             problem = encode_value(value)
             result: dict[str, Any] = {"request": request, "ok": problem is None}
@@ -233,7 +235,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
 
     def _action_context(self, payload: dict[str, Any]) -> ActionCallContext:
         request = str(payload.get("request"))
-        caller = payload.get("caller")
+        caller, device = payload.get("caller"), payload.get("device")
         fields: dict[str, Any] = {
             "action": str(payload.get("action")),
             "request": request,
@@ -243,6 +245,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             "caller": caller if isinstance(caller, str) else None,
             "_chain": str(payload.get("chain") or ""),
             "_depth": int(payload.get("depth") or 0),
+            "device_id": device if isinstance(device, str) and device else None,
+            "_emit": lambda event, body: self.send(event, None, body),
         }
         # last: nothing after this can fail and leave the proxy unclosed
         return ActionCallContext(card=self._card_proxy(payload.get("card"), request), **fields)

@@ -569,3 +569,27 @@ class TestTimeLimit:
         self._nested(runner, chain)
 
         assert_that([runner.timeout_for(c) for c in seen]).is_equal_to([120.0, 120.0])
+
+
+class TestMayDrive:
+    def _runner_with(self, device: str | None) -> tuple[ActionRunner, _Pending]:
+        runner, _ = _runner()
+        pending = _Pending("com.t.act", _call("com.t.act.echo", device=device))
+        runner._pending["r1"] = pending  # pylint: disable=protected-access
+        return runner, pending
+
+    def test_only_while_own_call_for_that_device_runs(self):
+        runner, pending = self._runner_with("dev1")
+
+        assert_that(runner.may_drive("com.t.act", "r1", "dev1")).is_true()
+        assert_that(runner.may_drive("com.t.other", "r1", "dev1")).is_false()
+        assert_that(runner.may_drive("com.t.act", "r1", "dev2")).is_false()
+        assert_that(runner.may_drive("com.t.act", "nope", "dev1")).is_false()
+        assert_that(runner.may_drive("com.t.act", 5, "dev1")).is_false()
+        pending.done.set()
+        assert_that(runner.may_drive("com.t.act", "r1", "dev1")).is_false()
+
+    def test_a_call_without_a_device_drives_nothing(self):
+        runner, _ = self._runner_with(None)
+
+        assert_that(runner.may_drive("com.t.act", "r1", "dev1")).is_false()

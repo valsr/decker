@@ -58,7 +58,7 @@ discarded.
 | `set_state` | yes | `{"state": 1}`, an index into the card's `states` |
 | `show_alert`, `show_ok` | yes | none (accepted, no visible effect in v1). For a card of another plugin, add `"request"`, see [Foreign cards](#foreign-cards) |
 | `set_settings` | yes | `{"settings": {...}}`, validated against the card's schema and saved; keys you leave out keep their stored value, so send only what you changed (see [Pages](#pages)) |
-| `switch_page` | yes | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"page_id": "<id>"}`: switch the key's device to that page (see [Pages](#pages)) |
+| `switch_page` | yes (or none, see below) | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"page_id": "<id>"}`: switch the key's device to that page (see [Pages](#pages)) |
 | `switch_profile` | yes | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"profile_id": 2}`: switch the key's device to that profile's default page (see [Profiles](#profiles)) |
 | `set_global_settings` | | `{"settings": {...}}`, validated against `global_settings` and saved |
 | `action_result` | | `{"request": "<id>", "ok": true, "value": ...}` (`value` optional) or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. `value` is any JSON, at most 1 MiB encoded, larger is an error. The server gives up after the call's timeout (the caller's `timeout`, else the action's manifest `timeout`, else 30 s) and shows the user the error |
@@ -88,7 +88,7 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
   "card": { "context": "<ctx>", "card": "<card id>", "plugin": "<plugin id>", "device": "<device id>",
             "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...},
             "last_paint": "<iso time>" },
-  "caller": null, "chain": "<id>", "depth": 0 }
+  "caller": null, "chain": "<id>", "depth": 0, "device": "<device id>" | null }
 ```
 
 - `args` are the action's arguments after strict validation against its settings schema (a call with invalid arguments
@@ -97,7 +97,7 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
 - `input` is `press`, `double_press`, `long_press`, or `plugin` for a call from plugin code. `card` describes the key
   that fired and is `null` for `plugin` calls; its `last_paint` is `null` when no plugin has painted the key.
   `caller` is the calling plugin's id for `plugin` calls, else `null`. `called_at` is an ISO 8601 time with offset.
-- `chain` and `depth` identify the call chain (see below).
+- `chain` and `depth` identify the call chain (see below); `device` is the call's device (see below), or `null`.
 - Answer with `action_result` (`ok`, an optional JSON `value`, or an `error`). A gesture-triggered run discards the
   value; a failure raises the `action_failed` event for the clients. With the Python SDK, an `ActionError(msg)` raised
   by the action arrives as the bare message and any other exception as `"<Type>: <message>"`.
@@ -119,7 +119,12 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
   of the caller, only the call's own timeout applies.
 - **Device.** A chain that started from a card carries its device, so actions called inside it resolve `page` and
   `profile` arguments and templates for that device. `device` in `call_action` sets one explicitly. With neither,
-  `page`/`profile` arguments arrive as their unset values and device templates expand to empty text.
+  `page`/`profile` arguments arrive as their unset values and device templates expand to empty text. The `run_action`
+  payload carries the resolved `device`, and the Python SDK forwards it on nested calls when you pass none.
+- **Device navigation.** While a `run_action` with a `device` is in flight, its plugin may send `switch_page` or
+  `switch_profile` **without `context`**, with `{"request": "<run_action request>", "device": "<that device>"}` plus the
+  usual `to`/`wrap`/`page_id`/`profile_id`. The server drops it (logged once per plugin) when the call has ended, belongs
+  to another plugin or has another device.
 
 ## Foreign cards
 

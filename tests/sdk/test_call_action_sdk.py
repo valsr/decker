@@ -69,7 +69,21 @@ def _crashes(_ctx: ActionCallContext) -> Any:
     raise ValueError("boom")
 
 
+def _navigates(ctx: ActionCallContext) -> Any:
+    ctx.switch_page("next", wrap=True)
+    ctx.go_to_page("p3")
+    ctx.switch_profile("first")
+    ctx.go_to_profile(2)
+    return ctx.device_id
+
+
+def _nested_nav(_ctx: ActionCallContext) -> Any:
+    return call_action("t.target")
+
+
 ACTIONS = {
+    "t.navigates": _navigates,
+    "t.nested": _nested_nav,
     "t.refuses": _refuses,
     "t.crashes": _crashes,
     "t.value": _value,
@@ -405,3 +419,45 @@ def test_sdk_call_without_timeout_omits_it_and_waits_the_maximum(monkeypatch: py
 
     assert_that(sent[0][1]).does_not_contain_key("timeout")
     assert_that(waits[0]).is_equal_to(MAX_TIMEOUT + 1)
+
+
+def test_context_exposes_device_and_navigates() -> None:
+    host = _host()
+    try:
+        host.run_action("t.navigates", "r1", device="dev1")
+        base = {"request": "r1", "device": "dev1"}
+        expected: list[tuple[str, dict[str, Any]]] = [
+            ("switch_page", {"to": "next", "wrap": True}),
+            ("switch_page", {"page_id": "p3"}),
+            ("switch_profile", {"to": "first", "wrap": False}),
+            ("switch_profile", {"profile_id": 2}),
+        ]
+        for event, extra in expected:
+            sent = host.recv_until(event)
+            assert_that(sent).does_not_contain_key("context")
+            assert_that(sent["payload"]).is_equal_to({**base, **extra})
+        assert_that(host.recv_until("action_result")["payload"]["value"]).is_equal_to("dev1")
+    finally:
+        host.close()
+
+
+def test_nested_call_forwards_the_frame_device() -> None:
+    host = _host()
+    try:
+        host.run_action("t.nested", "r1", device="dev1")
+        call = host.recv_until("call_action")["payload"]
+        assert_that(call["device"]).is_equal_to("dev1")
+        host.send("call_result", {"request": call["request"], "ok": True, "value": None})
+        host.recv_until("action_result")
+    finally:
+        host.close()
+
+
+def test_navigation_without_device_raises() -> None:
+    host = _host()
+    try:
+        host.run_action("t.navigates", "r1")
+        result = host.recv_until("action_result")["payload"]
+        assert_that(result).contains_entry({"ok": False}, {"error": "no device for this call"})
+    finally:
+        host.close()
