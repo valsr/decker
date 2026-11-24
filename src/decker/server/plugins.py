@@ -305,8 +305,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def unregister_actions(self, plugin_id: str) -> None:
         """Forget a plugin's actions and stop its process (the "actions" contribution handler)."""
-        self._foreign_warned.discard(plugin_id)
         with self._lock:
+            self._foreign_warned.discard(plugin_id)
             self._render_warned.discard(plugin_id)
         self._action_runner.unregister(plugin_id)
         self._supervisor.unregister(plugin_id)
@@ -1201,7 +1201,6 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     @staticmethod
     def _render_layer(data: bytes | None, size: tuple[int, int], color: str | None, scale: float) -> Image.Image | None:
-        """Render the layer like the key face does: scaled and centred on a transparent canvas of the key size."""
         if data is None:
             return None
         inner = (inner_size(size[0], scale), inner_size(size[1], scale))
