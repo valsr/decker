@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from decker.asset.builtinicons import BuiltinIcons
 from decker.asset.systemicons import PACK_PREFIX, SystemIcons
 from decker.asset.usericons import USER_PACK_ID, UserIcons
-from decker.common.icon_ref import DECKER_ICON_REF, parse_icon_ref
+from decker.common.icon_ref import BUILTIN_PACK_PREFIX, DECKER_ICON_REF, parse_icon_ref
 from decker.plugin.icons import max_icon_bytes
 from decker.plugin.loader import InstalledPlugin
 
@@ -42,6 +43,7 @@ class IconPackRegistry:
     ) -> None:
         self._packs: dict[str, _Pack] = {}
         self.user_icons: UserIcons = user_icons if user_icons is not None else UserIcons()
+        self._builtin = BuiltinIcons()
         self._system = system_icons if system_icons is not None else SystemIcons()
         self._on_failure = on_failure
         self._lock = threading.RLock()
@@ -51,7 +53,7 @@ class IconPackRegistry:
         plugin_id = plugin.manifest.id
         plugin_root = plugin.plugin_dir.resolve()
         for spec in plugin.manifest.icon_packs:
-            if spec.id.startswith(PACK_PREFIX) or spec.id == USER_PACK_ID:
+            if spec.id.startswith((PACK_PREFIX, BUILTIN_PACK_PREFIX)) or spec.id == USER_PACK_ID:
                 logging.error("[%s] icon pack %s refused: reserved icon pack id", plugin_id, spec.id)
                 if self._on_failure is not None:
                     self._on_failure(plugin_id, f"icon pack {spec.id}: reserved icon pack id")
@@ -78,7 +80,7 @@ class IconPackRegistry:
             self._packs = {k: v for k, v in self._packs.items() if v.plugin_id != plugin_id}
 
     def list_packs(self) -> list[dict[str, Any]]:
-        """Return every registered pack with its owner and icon count, then the User pack and the System Icons packs."""
+        """Every registered pack with its owner and icon count, then the User, Built-In and System Icons packs."""
         with self._lock:
             packs = list(self._packs.items())
         plugin_packs = [
@@ -93,12 +95,14 @@ class IconPackRegistry:
             }
             for pack_id, pack in sorted(packs, key=lambda item: item[1].name)
         ]
-        return plugin_packs + [self.user_icons.pack_info()] + self._system.list_packs()
+        return plugin_packs + [self.user_icons.pack_info()] + self._builtin.list_packs() + self._system.list_packs()
 
     def list_icons(self, pack_id: str) -> list[str]:
         """Return the pack's image paths relative to its folder; icons.json decides the order when present."""
         if pack_id == USER_PACK_ID:
             return self.user_icons.list_icons()
+        if self._builtin.owns(pack_id):
+            return self._builtin.list_icons(pack_id)
         if self._system.owns(pack_id):
             return self._system.list_icons(pack_id)
         pack = self._pack(pack_id)
@@ -108,6 +112,8 @@ class IconPackRegistry:
         """Return the icon's bytes, or None if unknown, outside the pack folder, not an image or too large."""
         if pack_id == USER_PACK_ID:
             return self.user_icons.read_icon(name)
+        if self._builtin.owns(pack_id):
+            return self._builtin.read_icon(pack_id, name)
         if self._system.owns(pack_id):
             return self._system.read_icon(pack_id, name)
         pack = self._pack(pack_id)
@@ -132,7 +138,7 @@ class IconPackRegistry:
             return None
 
     def read_ref(self, ref: Any) -> bytes | None:
-        """Return the bytes of the icon a ``pack:<pack id>/<path>`` or ``decker:logo`` reference names, or None."""
+        """The bytes of the icon a ``pack:<id>/<path>``, ``fas:<name>`` or ``decker:logo`` reference names, or None."""
         if ref == DECKER_ICON_REF:
             return _DECKER_ICON.read_bytes()
         parsed = parse_icon_ref(ref)

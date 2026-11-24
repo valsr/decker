@@ -15,7 +15,7 @@ from decker.plugin.manifest import PluginManifest
 
 
 def _no_user(packs: list[dict]) -> list[dict]:
-    return [pack for pack in packs if pack["id"] != USER_PACK_ID]
+    return [pack for pack in packs if pack["id"] != USER_PACK_ID and pack["plugin_id"] != "decker.builtin"]
 
 
 def _plugin(tmp_path, path="pack", plugin_id="com.t.p", pack_id="com.t.p.icons") -> InstalledPlugin:
@@ -318,7 +318,7 @@ class TestSystemIconPacks:
         registry = IconPackRegistry(system_icons=self._system(tmp_path, enabled=False))
         registry.register(_plugin(tmp_path))
 
-        ids = [p["id"] for p in registry.list_packs()]
+        ids = [p["id"] for p in registry.list_packs() if p["plugin_id"] != "decker.builtin"]
 
         assert_that(ids).is_equal_to(["com.t.p.icons", USER_PACK_ID])
         assert_that(registry.list_icons("decker.system.actions")).is_empty()

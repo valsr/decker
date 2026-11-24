@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 
+from decker.asset.builtinicons import read_builtin_ref
 from decker.common import config
 
 # Elgato manifests name icons without an extension; @2x is the high-resolution variant.
@@ -30,7 +31,13 @@ def resolve_icon(plugin_dir: Path, icon: str | None) -> Path | None:
 
 
 def read_icon(plugin_dir: Path, icon: str | None) -> bytes | None:
-    """Return the icon's bytes, or None if it cannot be found, read, or exceeds max_icon_bytes()."""
+    """Return the icon's bytes, or None if it cannot be found, read, or exceeds max_icon_bytes().
+
+    A built-in short reference (``fas:play``) names a bundled Font Awesome icon instead of a plugin file.
+    """
+    builtin = read_builtin_ref(icon)
+    if builtin is not None:
+        return builtin
     path = resolve_icon(plugin_dir, icon)
     if path is None:
         return None

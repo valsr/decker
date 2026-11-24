@@ -27,7 +27,7 @@ class _Recorder:
 
 
 def _plugin_packs(registry):
-    return [pack for pack in registry.list_packs() if pack["id"] != "decker.user"]
+    return [p for p in registry.list_packs() if p["id"] != "decker.user" and p["plugin_id"] != "decker.builtin"]
 
 
 def _plugin(tmp_path: Path, contributes: dict, runtime: bool = False, decker: bool = False) -> InstalledPlugin:

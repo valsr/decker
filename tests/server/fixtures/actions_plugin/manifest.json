@@ -10,6 +10,12 @@
   "contributes": {
     "cards": [
       {
+        "id": "com.decker.acttest.iconcard",
+        "name": "Icon Card",
+        "tooltip": "A card that shows a built-in Font Awesome icon",
+        "icon": "fas:play"
+      },
+      {
         "id": "com.decker.acttest.tile",
         "name": "Tile",
         "tooltip": "A card whose gestures run plugin actions",
