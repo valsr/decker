@@ -216,6 +216,21 @@ then shows the counter and redraws on each signal.
 - `get_variable` and `has_variable` return `None` and `False` when no runtime is running (for example in unit tests);
   the other functions raise `RuntimeError` then.
 
+## Decks coming and going
+
+`connected_devices()` returns the ids of the decks the server reports as connected (sorted). Register
+`@on_device_connected` and `@on_device_disconnected` functions taking the device id; they run on the worker pool, once
+per message. A deck that reopens sends a disconnect and then a connect, so the list ends up correct; a repeated connect
+changes nothing in the list.
+
+```python
+import decker_plugin_sdk as sdk
+
+@sdk.on_device_connected
+def seen(device_id: str) -> None:
+    print("deck up:", device_id, sdk.connected_devices())
+```
+
 ## Dynamic choice options
 
 A `choice` field with an [`options_source`](settings-schema.md#dynamic-choices) lists options the plugin supplies when

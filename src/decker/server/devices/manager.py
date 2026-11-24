@@ -86,6 +86,8 @@ class DeviceManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._activity_hook: _DeviceHook | None = None
         self._wake_hook: _DeviceHook | None = None
         self._open_hook: _DeviceHook | None = None
+        self._open_listeners: list[_DeviceHook] = []
+        self._close_listeners: list[_DeviceHook] = []
         self._overlay: set[str] = set()  # devices whose hardware is held back for the screensaver
         self._overlay_lock = threading.Lock()  # serialises set_overlay so manager and device gates cannot disagree
         self._swallow_release: set[tuple[str, int]] = set()  # keys whose press woke the deck
@@ -381,6 +383,32 @@ class DeviceManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         """Call hook(device_id) after a device is opened or reopened, on the opening thread and outside the lock."""
         self._open_hook = hook
 
+    def add_open_listener(self, listener: _DeviceHook) -> None:
+        """Call listener(device_id) after every open or reopen, on the opening thread and outside the lock."""
+        with self._lock:
+            self._open_listeners.append(listener)
+
+    def add_close_listener(self, listener: _DeviceHook) -> None:
+        """Call listener(device_id) when the current device of an id closes, outside the lock."""
+        with self._lock:
+            self._close_listeners.append(listener)
+
+    def remove_open_listener(self, listener: _DeviceHook) -> None:
+        with self._lock:
+            if listener in self._open_listeners:
+                self._open_listeners.remove(listener)
+
+    def remove_close_listener(self, listener: _DeviceHook) -> None:
+        with self._lock:
+            if listener in self._close_listeners:
+                self._close_listeners.remove(listener)
+
+    def _fire(self, listeners: list[_DeviceHook], device_id: str, name: str) -> None:
+        with self._lock:
+            snapshot = list(listeners)
+        for listener in snapshot:
+            self._call_hook(listener, device_id, name)
+
     def set_overlay(self, device_id: str, active: bool) -> None:
         """Hold back (or release) hardware content writes and key events for a device; caches keep updating."""
         with self._overlay_lock:
@@ -417,10 +445,13 @@ class DeviceManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def _on_device_closed(self, device: Device) -> None:
         # Identity, not id: a stale Device reporting late must never evict the reopened Device for the same serial.
         with self._lock:
-            if self._devices.get(device.device_id) is device:
+            evicted = self._devices.get(device.device_id) is device
+            if evicted:
                 del self._devices[device.device_id]
                 self._forget_swallowed(device.device_id)
         device.close()  # outside the lock; idempotent, and never joins its own writer thread
+        if evicted:
+            self._fire(self._close_listeners, device.device_id, "close")
 
     def opened_device_ids(self) -> list[str]:
         """Ids of the devices that are open right now; touches no hardware."""
@@ -514,6 +545,7 @@ class DeviceManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._state_store.save_device(device.get_hw_info())
 
         self._call_hook(self._open_hook, device.device_id, "open")  # outside _lock, on the opener's thread
+        self._fire(self._open_listeners, device.device_id, "open")
         return device
 
     def open_device(self, device_id: str) -> Device | None:

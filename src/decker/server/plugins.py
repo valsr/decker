@@ -236,6 +236,9 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def create(self, context: "ServerContext") -> None:
         """Wire up the device manager, then scan plugins and start the supervisor."""
         self._device_manager = context.device_manager
+        if self._device_manager is not None:
+            self._device_manager.add_open_listener(self._on_device_opened)
+            self._device_manager.add_close_listener(self._on_device_closed)
         self._event_bus = context.event_bus
         self._page_controller = getattr(context, "page_controller", None)
         self._page_store = getattr(context, "page_store", None)
@@ -269,6 +272,9 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def destroy(self) -> None:
         """Stop every plugin process and release resources."""
+        if self._device_manager is not None:
+            self._device_manager.remove_open_listener(self._on_device_opened)
+            self._device_manager.remove_close_listener(self._on_device_closed)
         with self._lock:
             live = list(self._live.values())
             self._live.clear()
@@ -1171,6 +1177,17 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._sink.show_ok(target.device_id, target.key_index)
             return True, False
         return False, False
+
+    def _on_device_opened(self, device_id: str) -> None:
+        self._broadcast_device("device_connected", device_id)
+
+    def _on_device_closed(self, device_id: str) -> None:
+        self._broadcast_device("device_disconnected", device_id)
+
+    def _broadcast_device(self, event: str, device_id: str) -> None:
+        # A plugin that is not ready yet learns the live devices from the burst in _on_ready.
+        for plugin_id in self._supervisor.running_ids():
+            self._supervisor.send_if_ready(plugin_id, Message(event, payload={"device": device_id}))
 
     def _on_ready(self, plugin_id: str) -> None:
         self._variable_runner.send_snapshot(plugin_id)

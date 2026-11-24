@@ -355,3 +355,60 @@ def test_reopening_a_device_forgets_held_keys():
 
     assert_that(delivered).is_equal_to([(DEVICE_ID, 2, True)])
     manager.destroy()
+
+
+def test_open_and_close_listeners_fire_outside_the_lock():
+    deck = make_deck()
+    manager, device = open_manager(deck)
+    opened: list[str] = []
+    closed: list[str] = []
+    lock_free: list[bool] = []
+
+    def on_close(device_id: str) -> None:
+        got = manager._lock.acquire(blocking=False)  # pylint: disable=protected-access
+        lock_free.append(got)
+        if got:
+            manager._lock.release()  # pylint: disable=protected-access
+        closed.append(device_id)
+
+    manager.add_open_listener(opened.append)
+    manager.add_close_listener(on_close)
+    manager._on_device_closed(device)  # pylint: disable=protected-access
+    assert_that(closed).is_equal_to([DEVICE_ID])
+    assert_that(lock_free).is_equal_to([True])
+    with patch("decker.server.devices.manager._HardwareDeviceManager") as hw:
+        hw.return_value.enumerate.return_value = [deck]
+        manager.open_device(DEVICE_ID)
+    assert_that(opened).is_equal_to([DEVICE_ID])
+    manager.destroy()
+
+
+def test_a_failing_listener_does_not_break_open():
+    deck = make_deck()
+    manager = DeviceManager(on_key_event=lambda *_: None)
+    later: list[str] = []
+
+    def boom(_device_id: str) -> None:
+        raise RuntimeError("listener bug")
+
+    manager.add_open_listener(boom)
+    manager.add_open_listener(later.append)
+    with patch("decker.server.devices.manager._HardwareDeviceManager") as hw:
+        hw.return_value.enumerate.return_value = [deck]
+        device = manager.open_device(DEVICE_ID)
+    assert_that(device).is_not_none()
+    assert_that(later).is_equal_to([DEVICE_ID])
+    manager.destroy()
+
+
+def test_a_stale_device_closing_does_not_fire_close_listeners():
+    deck = make_deck()
+    manager, device = open_manager(deck)
+    closed: list[str] = []
+    manager.add_close_listener(closed.append)
+    manager.remove_close_listener(closed.append)
+    manager.add_close_listener(closed.append)
+    manager._on_device_closed(device)  # pylint: disable=protected-access
+    manager._on_device_closed(device)  # pylint: disable=protected-access
+    assert_that(closed).is_equal_to([DEVICE_ID])
+    manager.destroy()
