@@ -275,7 +275,8 @@ def _background_layer(appearance: Mapping[str, Any], size: int, background_image
     return img
 
 
-def _inner_size(size: int, plugin_image_scale: float) -> int:
+def inner_size(size: int, plugin_image_scale: float) -> int:
+    """The side of the square a plugin image is drawn in on a key of this size."""
     return max(1, round(size * min(1.0, max(_MIN_IMAGE_SCALE, plugin_image_scale))))
 
 
@@ -303,7 +304,7 @@ def compose_key_image(  # pylint: disable=too-many-arguments,too-many-positional
     img = _background_layer(appearance, size, background_image)
     if plugin_image:
         try:
-            inner = _inner_size(size, plugin_image_scale)
+            inner = inner_size(size, plugin_image_scale)
             layer = _RENDERER.render_bytes(plugin_image, inner, inner, plugin_image_color)
             if layer is not None:
                 offset = (size - inner) // 2
@@ -408,7 +409,7 @@ def compose_key_frames(  # pylint: disable=too-many-arguments,too-many-positiona
     With layer="background" the frames are the key's background and the static overlay is drawn over them;
     otherwise background_image (its first frame, for a GIF) is the static base under every frame.
     """
-    inner = _inner_size(size, plugin_image_scale)
+    inner = inner_size(size, plugin_image_scale)
     offset = (size - inner) // 2
     background = (
         Image.new("RGBA", (size, size), (0, 0, 0, 255))
