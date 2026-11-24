@@ -1,6 +1,13 @@
 """Dependency-free SDK for writing Decker plugins."""
 
-from ._actions import ActionCallContext, Input, action
+from ._actions import (
+    ActionCallContext,
+    ActionError,
+    Input,
+    action,
+    call_action,
+    call_action_async,
+)
 from ._context import CardContext
 from ._options import options
 from ._proxy import CardProxy, OwnCardProxy
@@ -19,6 +26,7 @@ from ._variables import (
 
 __all__ = [
     "ActionCallContext",
+    "ActionError",
     "CardContext",
     "CardProxy",
     "DeckerPlugin",
@@ -26,6 +34,8 @@ __all__ = [
     "OwnCardProxy",
     "PluginContext",
     "action",
+    "call_action",
+    "call_action_async",
     "card",
     "get_variable",
     "has_variable",

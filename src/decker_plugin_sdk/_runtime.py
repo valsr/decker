@@ -5,16 +5,24 @@ import sys
 import threading
 from collections import deque
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, BinaryIO, TypeVar
 
 from . import _options, _variables
-from ._actions import ActionCallContext, ActionFn, Input
+from ._actions import (
+    _FRAME,
+    ActionCallContext,
+    ActionFn,
+    CallFrame,
+    CallHost,
+    Input,
+    encode_value,
+    set_calls,
+)
 from ._context import MAX_LINE_BYTES, CardContext, encode_line
+from ._pool import ElasticPool
 from ._proxy import CardProxy, OwnCardProxy
 
-WORKERS = 4
 PLUGIN_WIDE = "\0plugin"  # queue key for context-less events
 
 _REGISTRY: dict[str, type["DeckerPlugin"]] = {}
@@ -84,7 +92,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._stdout = stdout
         self._write_lock = threading.Lock()
         self._state_lock = threading.Lock()
-        self._pool = ThreadPoolExecutor(max_workers=WORKERS, thread_name_prefix="decker-sdk")
+        self._pool = ElasticPool()
+        self._calls = CallHost(self.send, self._pool)
         self._queues: dict[str, deque[dict[str, Any]]] = {}
         self._contexts: dict[str, tuple[DeckerPlugin, CardContext]] = {}
         self._global_settings: dict[str, Any] = {}
@@ -92,6 +101,10 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._stopping = False
         self._vars = _variables.VariableHost(self.send, self.log_error)
         self._opts = _options.OptionsHost(self.send, self.log_error)
+
+    @property
+    def calls(self) -> CallHost:
+        return self._calls
 
     @property
     def variables(self) -> _variables.VariableHost:
@@ -125,7 +138,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         finally:
             self._stopping = True
             self._vars.stop()
-            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool.shutdown()
 
     def _handle_line(self, line: bytes) -> bool:
         """Process one line; False means stop the loop."""
@@ -157,6 +170,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self._submit(self._opts.answer, payload)
         elif event == "variables_changed":
             self._vars.changed(payload)
+        elif event == "call_result":
+            self._calls.deliver(payload)
         elif event == "run_action":
             self._submit_action(payload)
         elif event in _HANDLERS:
@@ -164,16 +179,10 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         return True
 
     def _submit_action(self, payload: dict[str, Any]) -> None:
-        try:
-            self._pool.submit(self._run_action, payload)
-        except RuntimeError:
-            pass  # pool already shut down
+        self._pool.submit(self._run_action, payload)
 
     def _submit(self, fn: Callable[[dict[str, Any]], None], payload: dict[str, Any]) -> None:
-        try:
-            self._pool.submit(fn, payload)
-        except RuntimeError:
-            pass  # pool already shut down
+        self._pool.submit(fn, payload)
 
     def _run_action(self, payload: dict[str, Any]) -> None:
         request = payload.get("request")
@@ -182,18 +191,29 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self.send("action_result", None, {"request": request, "ok": False, "error": "no such action"})
             return
         proxy: CardProxy | None = None
+        token = None
         try:
             ctx = self._action_context(payload)
             proxy = ctx.card
-            handler(ctx)
+            token = _FRAME.set(CallFrame(ctx._chain, ctx._depth, ctx._device))  # pylint: disable=protected-access
+            value = handler(ctx)
+            problem = encode_value(value)
+            if problem is not None:
+                self.send("action_result", None, {"request": request, "ok": False, "error": problem})
+                return
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.log_error(f"action {payload.get('action')} failed: {type(exc).__name__}: {exc}")
             self.send("action_result", None, {"request": request, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
             return
         finally:
+            if token is not None:
+                _FRAME.reset(token)
             if proxy is not None:
                 proxy.close()
-        self.send("action_result", None, {"request": request, "ok": True})
+        result: dict[str, Any] = {"request": request, "ok": True}
+        if value is not None:
+            result["value"] = value
+        self.send("action_result", None, result)
 
     def _action_context(self, payload: dict[str, Any]) -> ActionCallContext:
         request = str(payload.get("request"))
@@ -242,10 +262,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
                 queue.append(item)
                 return
             self._queues[key] = deque([item])
-        try:
-            self._pool.submit(self._drain, key)
-        except RuntimeError:
-            pass  # pool already shut down
+        self._pool.submit(self._drain, key)
 
     def _drain(self, key: str) -> None:
         while True:
@@ -333,7 +350,9 @@ def run(
     """Serve the protocol on the given streams until shutdown or EOF; returns the exit code."""
     runtime = _Runtime(cards, stdout, actions)
     _variables.set_current(runtime.variables)
+    set_calls(runtime.calls)
     try:
         return runtime.serve(stdin)
     finally:
         _variables.set_current(None)
+        set_calls(None)
