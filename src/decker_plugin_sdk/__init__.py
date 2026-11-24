@@ -8,6 +8,7 @@ from ._actions import (
     call_action,
     call_action_async,
 )
+from ._canvas import Canvas
 from ._context import CardContext
 from ._options import options
 from ._proxy import CardProxy, OwnCardProxy
@@ -27,6 +28,7 @@ from ._variables import (
 __all__ = [
     "ActionCallContext",
     "ActionError",
+    "Canvas",
     "CardContext",
     "CardProxy",
     "DeckerPlugin",

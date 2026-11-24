@@ -4,7 +4,11 @@ import base64
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ._canvas import Canvas, FrameTicker
 
 Sender = Callable[[str, str | None, dict[str, Any]], None]
 
@@ -37,6 +41,33 @@ class CardContext:
     size: tuple[int, int] = (72, 72)
     state: int = 0
     _send: Sender = field(default=lambda event, context, payload: None, repr=False, compare=False)
+    _frames: "FrameTicker | None" = field(default=None, repr=False, compare=False)
+    _paint: Callable[[], None] = field(default=lambda: None, repr=False, compare=False)
+    _canvas: "Canvas | None" = field(default=None, init=False, repr=False, compare=False)
+
+    @property
+    def canvas(self) -> "Canvas":
+        """The key's drawing surface (needs Pillow); it starts from the last frame this plugin sent."""
+        if self._canvas is None:
+            from ._canvas import (  # pylint: disable=import-outside-toplevel
+                Canvas,
+                FrameTarget,
+            )
+
+            frames = self._frames
+            if frames is None:
+                raise RuntimeError("the canvas works only inside a running plugin")
+            self._canvas = Canvas(frames, FrameTarget(self.context), self.size, lambda: frames.last_frame(self.context))
+        return self._canvas
+
+    @property
+    def last_paint(self) -> datetime | None:
+        """When this plugin last sent a frame for the key, if ever."""
+        return self._frames.last_paint(self.context) if self._frames is not None else None
+
+    def queue_paint(self) -> None:
+        """Ask for ``on_paint`` to run soon; repeated requests before it runs count once."""
+        self._paint()
 
     def _emit(self, event: str, payload: dict[str, Any] | None = None) -> None:
         self._send(event, self.context, payload or {})

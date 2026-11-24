@@ -6,7 +6,7 @@ import threading
 from collections import deque
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
-from typing import Any, BinaryIO, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, TypeVar
 
 from . import _options, _variables
 from ._actions import (
@@ -20,9 +20,13 @@ from ._actions import (
     encode_value,
     set_calls,
 )
+from ._canvas import FrameTicker
 from ._context import MAX_LINE_BYTES, CardContext, encode_line
 from ._pool import ElasticPool
 from ._proxy import CardProxy, OwnCardProxy
+
+if TYPE_CHECKING:
+    from PIL.Image import Image
 
 PLUGIN_WIDE = "\0plugin"  # queue key for context-less events
 
@@ -50,6 +54,9 @@ class DeckerPlugin:
 
     def on_global_settings_changed(self, ctx: CardContext) -> None:
         """The plugin's global settings changed."""
+
+    def on_paint(self, ctx: CardContext, img: "Image") -> None:
+        """Draw the key on ``img`` (RGBA, key-sized); runs after ``ctx.queue_paint()``."""
 
 
 def card(card_id: str) -> "Callable[[_T], _T]":
@@ -94,6 +101,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._write_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._pool = ElasticPool()
+        self._frames = FrameTicker(self.send)
+        self._paints: set[str] = set()
         self._calls = CallHost(self.send, self._pool)
         self._queues: dict[str, deque[dict[str, Any]]] = {}
         self._contexts: dict[str, tuple[DeckerPlugin, CardContext]] = {}
@@ -139,6 +148,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         finally:
             self._stopping = True
             self._vars.stop()
+            self._frames.stop()
             self._pool.shutdown()
 
     def _handle_line(self, line: bytes) -> bool:
@@ -173,6 +183,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self._vars.changed(payload)
         elif event == "call_result":
             self._calls.deliver(payload)
+        elif event == "image_result":
+            self._frames.deliver(payload)
         elif event == "run_action":
             self._submit_action(payload)
         elif event in _HANDLERS:
@@ -199,40 +211,43 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             token = _FRAME.set(CallFrame(ctx._chain, ctx._depth, ctx._device))  # pylint: disable=protected-access
             value = handler(ctx)
             problem = encode_value(value)
+            result: dict[str, Any] = {"request": request, "ok": problem is None}
             if problem is not None:
-                self.send("action_result", None, {"request": request, "ok": False, "error": problem})
-                return
+                result["error"] = problem
+            elif value is not None:
+                result["value"] = value
         except Exception as exc:  # pylint: disable=broad-exception-caught
             self.log_error(f"action {payload.get('action')} failed: {type(exc).__name__}: {exc}")
             error = str(exc) if isinstance(exc, ActionError) else f"{type(exc).__name__}: {exc}"
-            self.send("action_result", None, {"request": request, "ok": False, "error": error})
-            return
+            result = {"request": request, "ok": False, "error": error}
         finally:
             if token is not None:
                 _FRAME.reset(token)
-            if proxy is not None:
-                proxy.close()
-        result: dict[str, Any] = {"request": request, "ok": True}
-        if value is not None:
-            result["value"] = value
+        self._end_call(str(request), proxy)  # a foreign card is touchable only until action_result goes out
         self.send("action_result", None, result)
+
+    def _end_call(self, request: str, proxy: CardProxy | None) -> None:
+        if proxy is not None:
+            proxy.close()
+        self._frames.flush(request)
 
     def _action_context(self, payload: dict[str, Any]) -> ActionCallContext:
         request = str(payload.get("request"))
         caller = payload.get("caller")
         device = payload.get("device")
-        return ActionCallContext(
-            action=str(payload.get("action")),
-            request=request,
-            called_at=self._called_at(payload.get("called_at")),
-            input=Input(str(payload.get("input"))),
-            card=self._card_proxy(payload.get("card"), request),
-            args=self._dict(payload.get("args")),
-            caller=caller if isinstance(caller, str) else None,
-            _chain=str(payload.get("chain") or ""),
-            _depth=int(payload.get("depth") or 0),
-            _device=device if isinstance(device, str) else None,
-        )
+        fields: dict[str, Any] = {
+            "action": str(payload.get("action")),
+            "request": request,
+            "called_at": self._called_at(payload.get("called_at")),
+            "input": Input(str(payload.get("input"))),
+            "args": self._dict(payload.get("args")),
+            "caller": caller if isinstance(caller, str) else None,
+            "_chain": str(payload.get("chain") or ""),
+            "_depth": int(payload.get("depth") or 0),
+            "_device": device if isinstance(device, str) else None,
+        }
+        # last: nothing after this can fail and leave the proxy unclosed
+        return ActionCallContext(card=self._card_proxy(payload.get("card"), request), **fields)
 
     @staticmethod
     def _called_at(value: Any) -> datetime:
@@ -248,7 +263,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         entry = self._contexts.get(str(data.get("context")))
         if entry is not None and bool(self._plugin_id) and data.get("plugin") == self._plugin_id:
             return OwnCardProxy(data, entry[1], entry[0])
-        return CardProxy(data, request, self.send)
+        return CardProxy(data, request, self.send, self._frames)
 
     def _on_hello(self, payload: dict[str, Any]) -> None:
         settings = payload.get("global_settings")
@@ -279,9 +294,27 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 self.log_error(f"handler for {item['event']} failed: {type(exc).__name__}: {exc}")
 
+    def _queue_paint(self, context: str) -> None:
+        with self._state_lock:
+            if context in self._paints:
+                return
+            self._paints.add(context)
+        self._enqueue(context, {"event": "paint", "context": context, "payload": {}})
+
+    def _paint(self, context: str) -> None:
+        with self._state_lock:
+            self._paints.discard(context)
+        entry = self._contexts.get(context)
+        if entry is not None:
+            with entry[1].canvas.paint() as img:
+                entry[0].on_paint(entry[1], img)
+
     def _dispatch(self, item: dict[str, Any]) -> None:
         event, context, payload = item["event"], item["context"], item["payload"]
         if context is None:
+            return
+        if event == "paint":
+            self._paint(context)
             return
         if event == "will_appear":
             self._create(context, payload)
@@ -332,6 +365,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             global_settings=self._global_settings,
             state=state if isinstance(state, int) else 0,
             _send=self.send,
+            _frames=self._frames,
+            _paint=lambda: self._queue_paint(context),
         )
         self._contexts[context] = (cls(), ctx)
 
