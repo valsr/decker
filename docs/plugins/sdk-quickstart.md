@@ -284,7 +284,7 @@ Sized `ImageFont.load_default(size)` needs Pillow >= 10.1.
 
 Attributes: `context`, `card`, `device`, `key_index`, `column`, `row`, `settings`, `global_settings`, `bindings` (the effective bindings, read-only), `size`, `state`, `last_paint`, `canvas`.
 
-Methods: `set_image(data, format="png")`, `set_icon(ref, color=None)` (show an icon from an installed icon pack or one of Decker's System Icons, see
+Methods: `set_image(data, format="png")`, `set_icon(ref, color=None)` (show an icon: an installed icon pack, one of Decker's System Icons, or a built-in Font Awesome short ref such as `fas:play`, see
 [protocol](protocol.md#images)), `clear_image()`, `set_title(title)`, `set_state(n)`, `show_alert()`,
 `show_ok()`, `queue_paint()`, `set_settings(dict)` (send only the keys you changed), `set_global_settings(dict)`, `switch_page(to="next", wrap=False)`
 (`next`, `previous`, `first`, `last`), `go_to_page(page_id)` (see [Pages](protocol.md#pages)), `switch_profile(to="next", wrap=False)`, `go_to_profile(profile_id)` (see [Profiles](protocol.md#profiles)), `open_url(url)`, `log(message, level="info")`.

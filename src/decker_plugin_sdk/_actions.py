@@ -43,7 +43,6 @@ class ActionCallContext:  # pylint: disable=too-many-instance-attributes
     caller: str | None
     _chain: str = ""
     _depth: int = 0
-    _device: str | None = None
 
 
 ActionFn = Callable[[ActionCallContext], Any]
@@ -76,7 +75,6 @@ class CallFrame:
 
     chain: str
     depth: int
-    device: str | None
 
 
 _FRAME: contextvars.ContextVar[CallFrame | None] = contextvars.ContextVar("decker_call_frame", default=None)
@@ -133,7 +131,6 @@ class CallHost:
         frame = _FRAME.get()
         if frame is not None:
             message.update(chain=frame.chain, depth=frame.depth + 1)
-            device = device or frame.device
         if device:
             message["device"] = device
         waiter = _Waiter()
