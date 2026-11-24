@@ -162,6 +162,21 @@
         "tooltip": "Switches the call's device to the next page",
         "scope": "global",
         "settings": []
+      },
+      {
+        "id": "com.decker.acttest.snooze",
+        "name": "Snooze",
+        "tooltip": "Sleeps for five seconds",
+        "scope": "plugin",
+        "settings": []
+      },
+      {
+        "id": "com.decker.acttest.capped",
+        "name": "Capped",
+        "tooltip": "Calls snooze under a one second limit and logs how it went",
+        "scope": "global",
+        "timeout": 1,
+        "settings": []
       }
     ]
   }

@@ -6,6 +6,7 @@ import math
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -24,6 +25,7 @@ from decker.server.action_calls import MAX_DEPTH, ActionCall
 
 DEFAULT_TIMEOUT_S = 30.0
 MAX_CALL_TIMEOUT_S = 300.0
+_ENDED_KEPT = 1024  # runs remembered after they end, so a late nested call still finds its parent
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,7 @@ class ActionRunner:
         self._lock = threading.Lock()
         self._actions: dict[str, tuple[InstalledPlugin, ActionSpec]] = {}
         self._pending: dict[str, _Pending] = {}
+        self._ended: OrderedDict[str, str] = OrderedDict()
 
     def register(self, plugin: InstalledPlugin) -> None:
         """Make a plugin's actions available."""
@@ -109,6 +112,7 @@ class ActionRunner:
             waiting = {r: p for r, p in self._pending.items() if p.plugin_id == plugin_id}
             for request in waiting:
                 del self._pending[request]
+                self._remember_ended(request, plugin_id)
         for pending in waiting.values():
             pending.result = ActionResult(False, reason)
             pending.done.set()
@@ -163,6 +167,7 @@ class ActionRunner:
             pending = self._pending.get(request) if isinstance(request, str) else None
             if pending is not None and pending.plugin_id == plugin_id:
                 self._pending.pop(str(request))
+                self._remember_ended(str(request), plugin_id)
             else:
                 pending = None
         if pending is None:
@@ -308,18 +313,27 @@ class ActionRunner:
         else:
             wait = self._timeout
         wait = min(wait, MAX_CALL_TIMEOUT_S)
-        parent = self._parent_of(call)
-        return min(wait, parent.deadline - time.monotonic()) if parent is not None else wait
+        left = self._parent_time_left(call)
+        return wait if left is None else min(wait, left)
 
-    def _parent_of(self, call: ActionCall) -> _Pending | None:
-        """The live run of the caller that made this call, if the call names one."""
+    def _parent_time_left(self, call: ActionCall) -> float | None:
+        """Seconds left to the caller's run this call names; 0 once it ended; None when there is no such run."""
         if call.parent is None:
             return None
         with self._lock:
             parent = self._pending.get(call.parent)
-        if parent is None or parent.plugin_id != call.caller or parent.done.is_set():
+            ended = self._ended.get(call.parent) == call.caller
+        if parent is None:
+            return 0.0 if ended else None
+        if parent.plugin_id != call.caller:
             return None
-        return parent
+        return 0.0 if parent.done.is_set() else parent.deadline - time.monotonic()
+
+    def _remember_ended(self, request: str, plugin_id: str) -> None:
+        """Note that a run ended (the lock is held)."""
+        self._ended[request] = plugin_id
+        while len(self._ended) > _ENDED_KEPT:
+            self._ended.popitem(last=False)
 
     def _run_in_plugin(self, plugin_id: str, call: ActionCall, args: Mapping[str, Any]) -> ActionResult:
         if self._supervisor.is_failed(plugin_id):
@@ -344,4 +358,5 @@ class ActionRunner:
         finally:
             with self._lock:
                 self._pending.pop(request, None)
+                self._remember_ended(request, plugin_id)
             self._supervisor.release(plugin_id)

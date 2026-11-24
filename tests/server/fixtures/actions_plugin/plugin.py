@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -102,3 +103,20 @@ def step(ctx: ActionCallContext) -> None:
 @action("com.decker.acttest.next")
 def next_page(ctx: ActionCallContext) -> None:
     ctx.switch_page("next")
+
+
+@action("com.decker.acttest.snooze")
+def snooze(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    time.sleep(5)
+
+
+@action("com.decker.acttest.capped")
+def capped(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    started = time.monotonic()
+    try:
+        call_action("com.decker.acttest.snooze", timeout=60)
+        outcome = "finished"
+    except ActionError as exc:
+        outcome = str(exc)
+    elapsed = time.monotonic() - started
+    Path(__file__).with_name("capped.log").write_text(f"{elapsed:.1f}|{outcome}", encoding="utf-8")

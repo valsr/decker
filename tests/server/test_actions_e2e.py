@@ -233,6 +233,18 @@ def test_action_calls_own_plugin_action_and_gets_value(env: _Env) -> None:
     assert_that(env.read("chain.log")).is_equal_to("42")
 
 
+def test_a_nested_call_is_capped_by_the_limit_of_the_action_that_made_it(env: _Env) -> None:
+    env.activate_tile()
+    env.manager.set_bindings(_TILE, {"press": {"action": "com.decker.acttest.capped", "args": {}}})
+
+    env.press(_TILE)
+
+    assert_that(_wait(lambda: env.read("capped.log") != "", 15)).described_as("capped.log was never written").is_true()
+    elapsed, outcome = env.read("capped.log").split("|", 1)
+    assert_that(float(elapsed)).is_less_than(3.5)
+    assert_that(outcome).is_equal_to("timed out")
+
+
 def test_recursion_stops_at_depth_8_with_an_error(env: _Env) -> None:
     env.activate_tile()
     env.manager.set_bindings(_TILE, {"press": {"action": _RECURSE, "args": {"n": 0}}})
