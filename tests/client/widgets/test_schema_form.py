@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from decker.client.widgets.action_edit import ActionEdit
 from decker.client.widgets.color_button import ColorButton
 from decker.client.widgets.dynamic_choice_edit import DynamicChoiceEdit
 from decker.client.widgets.schema_form import AppearanceForm, SchemaForm
@@ -479,6 +480,42 @@ class TestActionFields:  # pylint: disable=protected-access
             ["(choose an action)", "", "Tools", "HTTP", "Mute"]
         )
         assert_that(form.values()["action"]).is_equal_to("com.t.mute")
+
+    def test_action_field_hides_other_plugins_plugin_scoped_actions(self, qapp):  # pylint: disable=unused-argument
+        def _action(plugin: str, name: str, scope: str) -> dict[str, Any]:
+            return {
+                "plugin_uuid": plugin,
+                "plugin_name": plugin,
+                "action_uuid": f"{plugin}.{name}",
+                "action_name": name,
+                "scope": scope,
+                "settings_schema": [],
+            }
+
+        import json
+
+        from decker.client.context import AppContext
+
+        actions = [
+            _action("com.decker.core", "global", "global"),
+            _action("com.decker.core", "private", "plugin"),
+            _action("other.plugin", "global", "global"),
+            _action("other.plugin", "private", "plugin"),
+        ]
+
+        class _Rpc:
+            def call(self, method, *_args):
+                return json.dumps(actions) if method == "plugins_actions_list" else None
+
+        AppContext.get().connection_manager = _Rpc()  # type: ignore[assignment]
+        form = SchemaForm()
+        form.set_schema([{"key": "a", "type": "action", "label": "A"}], {}, plugin_id="com.decker.core")
+        combo = form.findChild(ActionEdit)
+        assert combo is not None
+        ids = [combo.itemData(i) for i in range(combo.count())]
+
+        assert_that(ids).contains("com.decker.core.private", "other.plugin.global")
+        assert_that(ids).does_not_contain("other.plugin.private")
 
     def test_the_parameters_form_follows_the_chosen_action(self, qapp):  # pylint: disable=unused-argument
         form = _form(self._SCHEMA, {"action": "com.t.http", "parameters": {"url": "http://x"}})

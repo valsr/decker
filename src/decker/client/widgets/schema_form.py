@@ -173,8 +173,8 @@ def _profile_field(_entry: dict[str, Any]) -> _Field:
     return _Field(edit, edit.value, edit.set_value)
 
 
-def _action_field(_entry: dict[str, Any]) -> _Field:
-    edit = ActionEdit()
+def _action_field(_entry: dict[str, Any], plugin_id: str = "") -> _Field:
+    edit = ActionEdit(owner=plugin_id or None)
     return _Field(edit, edit.value, edit.set_value)
 
 
@@ -218,6 +218,8 @@ def _build_field(entry: dict[str, Any], values: dict[str, Any], plugin_id: str =
         return None
     if entry.get("type") == "choice" and entry.get("options_source"):
         field = _dynamic_choice_field(entry, plugin_id) if plugin_id else _editable_choice_field(entry)
+    elif entry.get("type") == "action":
+        field = _action_field(entry, plugin_id)
     else:
         field = builder(entry)
     field.set(values.get(entry["key"], entry.get("default")))
