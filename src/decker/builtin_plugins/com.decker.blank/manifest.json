@@ -2,7 +2,7 @@
   "format": 3,
   "id": "com.decker.blank",
   "name": "Blank",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "author": "Decker",
   "description": "A key that shows only a background and a title, plus ready-made page name and page count keys.",
   "icon": "icons/blank",

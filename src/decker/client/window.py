@@ -53,6 +53,7 @@ from decker.client.views import (
     ReconnectWaitingOverlay,
 )
 from decker.client.views.dashboard import DASHBOARD_EVENTS
+from decker.client.widgets.about_dialog import AboutDialog, server_version
 from decker.client.widgets.plugins_tab import (
     PACKAGE_SUFFIX,
     install_allowed,
@@ -144,6 +145,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def open_settings(self) -> None:
         """Show the non-modal settings dialog, or bring it to the front if already open."""
         self._settings_dialog.open_dialog()
+
+    def open_about(self) -> None:
+        """Show the modal About dialog, with the server version when connected."""
+        AboutDialog(server_version(self._connection_manager), self).exec()
 
     def set_active_device(self, device: DeviceHardwareInfo) -> None:
         """Set the active device without changing the active view."""

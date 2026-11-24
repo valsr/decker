@@ -13,6 +13,7 @@ from PIL import Image
 from decker.animation.factory import AnimationFactory
 from decker.animation.model import AnimationSpec
 from decker.common.platforms import HostPlatform, PlatformSpec
+from decker.common.version import decker_version
 from decker.plugin.events import PluginLoadFailedEvent
 from decker.plugin.manifest import VariableSpec
 from decker.plugin.repository_index import IndexPlugin, IndexVersion
@@ -106,6 +107,10 @@ class TestHeartbeatStatusDevices:
         result = json.loads(s.status())
         assert_that(result).is_instance_of(dict)
         assert_that(result["service_status"]).is_equal_to("healthy")
+
+    def test_status_reports_the_package_version(self):
+        result = json.loads(DeckerService().status())
+        assert_that(result["version"]).is_equal_to(decker_version())
 
     def test_devices_list_returns_list(self):
         s = DeckerService()

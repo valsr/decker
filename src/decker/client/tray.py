@@ -25,6 +25,7 @@ class TrayIcon(QSystemTrayIcon):
         self._toggle_action = toggle_action
         self._menu.addAction("Settings", self._open_settings)
         self._menu.addSeparator()
+        self._menu.addAction("About Decker…", self._open_about)
         self._menu.addAction("Quit", self._quit)
         self.setContextMenu(self._menu)
 
@@ -44,6 +45,9 @@ class TrayIcon(QSystemTrayIcon):
 
     def _open_settings(self) -> None:
         self._window.open_settings()
+
+    def _open_about(self) -> None:
+        self._window.open_about()
 
     def _quit(self) -> None:
         self._window.quit_app()

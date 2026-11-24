@@ -40,7 +40,7 @@ from decker.common.platforms import (
 )
 from decker.common.text_style import is_color
 from decker.common.utils import api_response
-from decker.common.version import is_compatible
+from decker.common.version import decker_version, is_compatible
 from decker.plugin.icons import read_icon
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.repository_index import IndexVersion, latest_compatible
@@ -161,6 +161,7 @@ class DeckerServiceStatus:
 
     service_status: DeckerStatusEnum
     last_heartbeat: float
+    version: str = ""
 
 
 class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one method per RPC
@@ -258,7 +259,9 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
     @api_response
     def status(self) -> DeckerServiceStatus:
         """Return service status as a JSON string."""
-        return DeckerServiceStatus(service_status=DeckerStatusEnum.HEALTHY, last_heartbeat=self._last_heartbeat)
+        return DeckerServiceStatus(
+            service_status=DeckerStatusEnum.HEALTHY, last_heartbeat=self._last_heartbeat, version=decker_version()
+        )
 
     @exposed
     @api_response
