@@ -173,7 +173,7 @@ one is refused).
   `double_press` is unbound.
 - The card sees its effective (stored or default) bindings, read-only: `will_appear` and `settings_changed` carry
   `bindings` (see the [protocol](protocol.md)), and an edit of the bindings sends `settings_changed`.
-- The Actions tab of the key picker lists the `global` actions. Dragging one onto a key drops a **Blank** card whose
+- The Actions tab of the key picker lists the `global` actions other than Do Nothing. Dragging one onto a key drops a **Blank** card whose
   press is bound to it; while the user has set no title or icon the key shows the action's name and icon.
 
 ### `actions[]`
