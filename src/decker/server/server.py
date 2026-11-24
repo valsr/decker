@@ -363,6 +363,7 @@ class ServerProcess:
         for manager in managers:
             manager.create(context)
         device_manager.set_open_hook(saver_engine.device_opened)
+        saver_controller.add_brightness_listener(plugin_manager.on_deck_brightness_changed)
         return context, managers
 
     def _run_server(self) -> None:

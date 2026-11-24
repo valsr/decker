@@ -92,8 +92,10 @@ names a different `image_path` or `folder_path`. Images are never uploaded.
 
 ## Brightness
 
-Normal brightness (1-100) is applied when a device opens or reopens and whenever settings change while awake. The
-screensaver brightness (0-100) is applied only while the screensaver shows; 0 turns the backlight off.
+Normal brightness (1-100) is applied when a device opens or reopens and whenever settings change while awake.
+Plugins can read and change the normal brightness (clamped to 1-100, stored as `brightness`) with the SDK's
+`get_deck_brightness`/`set_deck_brightness`, see [the SDK quickstart](plugins/sdk-quickstart.md#deck-brightness).
+The screensaver brightness (0-100) is applied only while the screensaver shows; 0 turns the backlight off.
 
 ## Failure behaviour
 

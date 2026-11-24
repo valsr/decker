@@ -229,3 +229,65 @@ def test_get_and_preview_work_for_a_deck_without_key_screens(stack, monkeypatch)
     assert_that(controller.get(DEV)["active"]).is_false()
     assert_that(_decode(controller.preview(DEV, _json(), loopback=True)).size).is_equal_to((72, 72))
     assert_that(ctx.screensaver_engine.activate(DEV)).is_false()
+
+
+def test_set_brightness_clamps_stores_and_announces(stack):
+    controller = _controller(stack)
+    conn = FakeConn()
+    stack[0].event_bus.register(conn, loopback=True)
+
+    assert_that(controller.set_brightness(DEV, 0)).is_equal_to(1)
+    assert_that(controller.set_brightness(DEV, 250)).is_equal_to(100)
+
+    assert_that(controller.get(DEV)["brightness"]).is_equal_to(100)
+    assert_that(controller.brightness(DEV)).is_equal_to(100)
+    assert_that(conn.events("screensaver_settings_changed")).is_not_empty()
+
+
+def test_set_brightness_keeps_other_settings_and_rejects_bad_input(stack):
+    controller = _controller(stack)
+    controller.set(DEV, _json(timeout_minutes=7), loopback=True)
+
+    controller.set_brightness(DEV, 30)
+
+    assert_that(controller.get(DEV)).contains_entry(brightness=30, timeout_minutes=7)
+    for bad in ("x", True, None):
+        with pytest.raises(ValueError, match="integer"):
+            controller.set_brightness(DEV, bad)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="unknown device"):
+        controller.set_brightness("nope", 5)
+
+
+def test_listener_fires_only_on_change_from_set_and_set_brightness(stack):
+    controller = _controller(stack)
+    seen: list[tuple[str, int]] = []
+    controller.add_brightness_listener(lambda device, percent: seen.append((device, percent)))
+
+    controller.set_brightness(DEV, 100)  # unchanged
+    controller.set(DEV, _json(brightness=60), loopback=True)
+    controller.set(DEV, _json(brightness=60, timeout_minutes=3), loopback=True)  # unchanged
+    controller.set_brightness(DEV, 20)
+
+    assert_that(seen).is_equal_to([(DEV, 60), (DEV, 20)])
+
+
+def test_a_failing_listener_does_not_break_the_edit(stack):
+    controller = _controller(stack)
+
+    def boom(_device: str, _percent: int) -> None:
+        raise RuntimeError("x")
+
+    controller.add_brightness_listener(boom)
+
+    assert_that(controller.set_brightness(DEV, 10)).is_equal_to(10)
+
+
+def test_brightness_survives_wake(stack):
+    controller = _controller(stack)
+    devices = stack[1]
+    controller.activate(DEV)
+
+    controller.set_brightness(DEV, 35)
+    controller.deactivate(DEV)
+
+    assert_that([c for c in devices.calls if c[0] == "brightness"][-1]).is_equal_to(("brightness", DEV, 35))
