@@ -68,7 +68,7 @@ client.
       "versions": [
         {
           "version": "1.0.0",
-          "decker": ">=0.2",
+          "decker": ">=0.7",
           "url": "https://github.com/valsr/decker-plugins/releases/download/com.decker.counter-v1.0.0/com.decker.counter-1.0.0.deckerplugin",
           "size": 12345,
           "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -107,7 +107,7 @@ client.
 | Field | Rules |
 |-------|-------|
 | `version` | Required; same rules as the manifest `version` and a valid PEP 440 version |
-| `decker` | Optional specifier such as `>=0.2`; the version is listed but not installable when it excludes the running Decker (prereleases count) |
+| `decker` | Optional specifier such as `>=0.7`; the version is listed but not installable when it excludes the running Decker (prereleases count) |
 | `url` | Required download URL of the `.deckerplugin` |
 | `size` | Required positive integer, bytes |
 | `sha256` | Required, 64 hex characters |

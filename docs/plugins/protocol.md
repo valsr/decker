@@ -113,7 +113,7 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
   `chain` and `depth` from its own `run_action`; the server counts the depth itself from the calls of that chain that the
   plugin is running (own depth plus one) and refuses a call deeper than **8**. The limit therefore relies on the
   caller forwarding `chain`: the Python SDK does it for you inside an action, but a raw-protocol plugin that omits
-  `chain` starts a new chain at depth 0 every time and is not limited by the chain. Forward `chain` yourself.
+  `chain` starts a new chain at the `depth` it sends (0 if none) and is not limited by the chain. Forward `chain` yourself.
 - **Device.** A chain that started from a card carries its device, so actions called inside it resolve `page` and
   `profile` arguments and templates for that device. `device` in `call_action` sets one explicitly. With neither,
   `page`/`profile` arguments arrive as their unset values and device templates expand to empty text.

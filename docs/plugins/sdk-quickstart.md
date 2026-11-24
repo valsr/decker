@@ -61,7 +61,7 @@ def send_wave(ctx: ActionCallContext) -> int:
 
 Actions run on the SDK's worker pool, independently of any key, and may overlap. Return normally for success; an
 exception is reported as the action's error. An `ActionError(msg)` shows the bare message; any other exception shows
-`"<Type>: <message>"` (for example `ValueError: boom`), and is logged. A return value that is not JSON-encodable or is
+`"<Type>: <message>"` (for example `ValueError: boom`); every action exception is also logged. A return value that is not JSON-encodable or is
 larger than 1 MiB is an error.
 
 `ActionCallContext` attributes:

@@ -54,7 +54,7 @@ devices of this machine, the players that are running):
   its saved value. A value that is not in the list is kept as it is, never replaced by the first option. The
   `default` of such a field must be a string (anything else refuses the manifest); without one it is the first static
   option's value, or `""` when there are none (`null` for an `optional` field).
-- Works wherever a settings schema is used: card settings, card settings, action arguments in the binding forms of the card editor, and `global_settings`. The plugin that
+- Works wherever a settings schema is used: card settings, action arguments in the binding forms of the card editor, and `global_settings`. The plugin that
   answers is the owner of the schema being edited (an action's `options_source` is answered by the action's plugin, even
   when the card belongs to another plugin). It needs the plugin to be reachable; the plugin is started for the request
   when it is not running.
@@ -156,7 +156,7 @@ typed settings object. Two modes exist:
   validation rules above are not applied.
 - **Strict** (saving card settings, saving bindings, running an action): the values are checked against every rule and a
   broken field is an error instead of a silent fallback. `key_update_settings` and `key_update_bindings` return
-  `{"ok": false, "errors": {...}}` (field key or `<gesture>.<argument>` to message) and persist nothing, and the client
+  `{"ok": false, "errors": {...}}` (field key, `<gesture>.<argument>`, or a bare `<gesture>` for a binding that cannot be used, to message) and persist nothing, and the client
   shows the errors inline and refuses Save. A gesture whose stored arguments fail the rules (for example after a plugin
   update tightened them) does not run and the user sees an `action_failed` message with the field errors; the editor
   still loads the stored value and flags it.
