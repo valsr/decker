@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from decker.common import config
-from decker.plugin.icons import max_icon_bytes
+from decker.common.icon_limits import max_icon_bytes
 
 SYSTEM_PLUGIN_ID = "decker.system"
 SYSTEM_PLUGIN_NAME = "System Icons"

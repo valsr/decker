@@ -8,7 +8,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from decker.animation.gif import MAX_RASTER_PIXELS, GifError, decode_gif, is_gif
-from decker.plugin.icons import max_icon_bytes
+from decker.common.icon_limits import max_icon_bytes
 
 ICON_SIZE = 144
 _FITS = ("center", "stretch")

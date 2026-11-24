@@ -4,6 +4,7 @@
 import json
 
 from assertpy import assert_that
+from PyQt6.QtWidgets import QApplication
 
 from decker.asset.iconpack import IconPackRegistry
 from decker.asset.systemicons import SystemIcons
@@ -25,7 +26,7 @@ class _RegistryRpc:
         return None
 
 
-def test_tree_has_a_built_in_node_with_three_named_packs(qapp) -> None:
+def test_tree_has_a_built_in_node_with_three_named_packs(qapp: QApplication) -> None:
     dialog = IconBrowserDialog(None, _RegistryRpc())
 
     tree = dialog._tree
@@ -38,7 +39,7 @@ def test_tree_has_a_built_in_node_with_three_named_packs(qapp) -> None:
     )
 
 
-def test_choosing_a_built_in_icon_yields_a_short_reference(qapp) -> None:
+def test_choosing_a_built_in_icon_yields_a_short_reference(qapp: QApplication) -> None:
     rpc = _RegistryRpc()
     edit = IconEdit(lambda: rpc)
 

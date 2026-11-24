@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from assertpy import assert_that
@@ -8,7 +9,7 @@ from decker.asset.usericons import USER_PACK_ID, UserIcons
 from tests.asset.test_iconpack import _pack, _plugin
 
 
-def _registry(tmp_path, failures=None) -> IconPackRegistry:
+def _registry(tmp_path: Path, failures: list[tuple[str, str]] | None = None) -> IconPackRegistry:
     return IconPackRegistry(
         on_failure=(lambda pid, err: failures.append((pid, err))) if failures is not None else None,
         system_icons=SystemIcons(enabled=False),
@@ -16,7 +17,7 @@ def _registry(tmp_path, failures=None) -> IconPackRegistry:
     )
 
 
-def test_list_packs_orders_plugin_user_builtin_then_system(tmp_path) -> None:
+def test_list_packs_orders_plugin_user_builtin_then_system(tmp_path: Path) -> None:
     _pack(tmp_path)
     registry = _registry(tmp_path)
     registry.register(_plugin(tmp_path))
@@ -36,7 +37,7 @@ def test_list_packs_orders_plugin_user_builtin_then_system(tmp_path) -> None:
     assert_that(registry.read_icon("decker.builtin.fontawesome.solid", "play.svg")).is_not_none()
 
 
-def test_a_plugin_pack_cannot_take_a_builtin_id(tmp_path) -> None:
+def test_a_plugin_pack_cannot_take_a_builtin_id(tmp_path: Path) -> None:
     _pack(tmp_path)
     failures: list[tuple[str, str]] = []
     registry = _registry(tmp_path, failures)
@@ -52,7 +53,7 @@ def test_a_plugin_pack_cannot_take_a_builtin_id(tmp_path) -> None:
     assert_that(failures[0][1]).contains("reserved")
 
 
-def test_read_ref_serves_short_references(tmp_path) -> None:
+def test_read_ref_serves_short_references(tmp_path: Path) -> None:
     registry = _registry(tmp_path)
 
     for ref in ("fas:play", "far:paper-plane", "fab:font-awesome", "pack:decker.builtin.fontawesome.solid/play.svg"):

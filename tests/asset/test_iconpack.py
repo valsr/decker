@@ -8,8 +8,8 @@ from assertpy import assert_that
 from decker.asset.iconpack import IconPackRegistry
 from decker.asset.systemicons import SystemIcons
 from decker.asset.usericons import USER_PACK_ID, USER_PLUGIN_NAME, UserIcons
+from decker.common.icon_limits import max_icon_bytes
 from decker.common.icon_ref import DECKER_ICON_REF
-from decker.plugin.icons import max_icon_bytes
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import PluginManifest
 

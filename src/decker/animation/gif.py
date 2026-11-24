@@ -7,7 +7,7 @@ from typing import Callable, NamedTuple
 
 from PIL import Image, ImageSequence
 
-from decker.plugin.icons import max_icon_bytes
+from decker.common.icon_limits import max_icon_bytes
 
 MAX_RASTER_PIXELS = 4096 * 4096  # per-frame canvas cap, shared with the static asset renderer
 MAX_GIF_FRAMES = 300

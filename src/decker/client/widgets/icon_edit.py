@@ -171,7 +171,7 @@ class IconEdit(QWidget):
             super().mouseDoubleClickEvent(a0)
 
     def value(self) -> dict[str, Any]:
-        """The icon value: ``{"ref": "", or "pack:<pack id>/<path>", "color": "#rrggbb[aa]"}``."""
+        """The icon value: ``{"ref": "", "pack:<id>/<path>" or "fas:play", "color": "#rrggbb[aa]"}``."""
         return {"ref": self._ref, "color": self._color}
 
     def set_value(self, value: Any) -> None:

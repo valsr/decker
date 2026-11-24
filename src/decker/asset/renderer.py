@@ -9,7 +9,7 @@ from PIL import Image, UnidentifiedImageError
 
 from decker.animation.gif import MAX_RASTER_PIXELS, GifError, check_gif_bounds, is_gif
 from decker.asset.tint import tint_svg
-from decker.plugin.icons import max_icon_bytes
+from decker.common.icon_limits import max_icon_bytes
 
 _SVG_SNIFF_BYTES = 64 * 1024
 

@@ -2,7 +2,8 @@ from pathlib import Path
 
 from assertpy import assert_that
 
-from decker.plugin.icons import max_icon_bytes, read_icon, resolve_icon
+from decker.common.icon_limits import max_icon_bytes
+from decker.plugin.icons import read_icon, resolve_icon
 
 
 class TestResolveIcon:
@@ -78,13 +79,16 @@ def test_max_icon_bytes_follows_config(isolated_config) -> None:
 
 
 class TestBuiltinReference:
-    def test_short_reference_reads_the_built_in_icon(self, tmp_path):
+    def test_short_reference_reads_the_built_in_icon(self, tmp_path: Path) -> None:
         assert_that(read_icon(tmp_path, "fas:play")).contains(b"<svg")
 
-    def test_plugin_relative_icons_still_work(self, tmp_path):
+    def test_plugin_relative_icons_still_work(self, tmp_path: Path) -> None:
         (tmp_path / "icon.png").write_bytes(b"png")
 
         assert_that(read_icon(tmp_path, "icon.png")).is_equal_to(b"png")
 
-    def test_a_plugin_file_named_like_a_short_ref_is_not_shadowed_when_invalid(self, tmp_path):
+    def test_a_ref_that_is_not_a_valid_short_ref_resolves_plugin_relative(self, tmp_path: Path) -> None:
         assert_that(read_icon(tmp_path, "fas:Play")).is_none()
+        (tmp_path / "fas:Play").write_bytes(b"mine")
+
+        assert_that(read_icon(tmp_path, "fas:Play")).is_equal_to(b"mine")

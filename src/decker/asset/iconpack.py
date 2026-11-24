@@ -11,8 +11,8 @@ from typing import Any
 from decker.asset.builtinicons import BuiltinIcons
 from decker.asset.systemicons import PACK_PREFIX, SystemIcons
 from decker.asset.usericons import USER_PACK_ID, UserIcons
+from decker.common.icon_limits import max_icon_bytes
 from decker.common.icon_ref import BUILTIN_PACK_PREFIX, DECKER_ICON_REF, parse_icon_ref
-from decker.plugin.icons import max_icon_bytes
 from decker.plugin.loader import InstalledPlugin
 
 _IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".svg"})

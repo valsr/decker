@@ -4,15 +4,10 @@ import logging
 from pathlib import Path
 
 from decker.asset.builtinicons import read_builtin_ref
-from decker.common import config
+from decker.common.icon_limits import max_icon_bytes
 
 # Elgato manifests name icons without an extension; @2x is the high-resolution variant.
 _CANDIDATE_SUFFIXES = ("", ".svg", "@2x.png", ".png")
-
-
-def max_icon_bytes() -> int:
-    """Return the library's maximum image file size in bytes (`icons.max_file_size`)."""
-    return config.get_as("icons.max_file_size", int)
 
 
 def resolve_icon(plugin_dir: Path, icon: str | None) -> Path | None:
@@ -31,10 +26,7 @@ def resolve_icon(plugin_dir: Path, icon: str | None) -> Path | None:
 
 
 def read_icon(plugin_dir: Path, icon: str | None) -> bytes | None:
-    """Return the icon's bytes, or None if it cannot be found, read, or exceeds max_icon_bytes().
-
-    A built-in short reference (``fas:play``) names a bundled Font Awesome icon instead of a plugin file.
-    """
+    """The icon's bytes (a built-in ``fas:play`` ref or a plugin file), or None if missing or over the size limit."""
     builtin = read_builtin_ref(icon)
     if builtin is not None:
         return builtin
