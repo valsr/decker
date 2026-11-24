@@ -17,6 +17,21 @@ def test_python_uses_plugin_venv_uses_plugin_venv(tmp_path: Path) -> None:
     assert_that(cmd[1:3]).is_equal_to(["-m", "decker_plugin_sdk"])
 
 
+def test_builtin_python_runtime_uses_the_server_interpreter(tmp_path: Path) -> None:
+    cmd = launch_command(tmp_path, RuntimeSpec("python", "main.py"), builtin=True)
+    assert_that(cmd).is_equal_to([sys.executable, "-m", "decker_plugin_sdk", str(tmp_path / "main.py")])
+
+
+def test_user_python_runtime_still_uses_the_venv(tmp_path: Path) -> None:
+    cmd = launch_command(tmp_path, RuntimeSpec("python", "main.py"), builtin=False)
+    assert_that(cmd[0]).is_equal_to(str(venv_python(tmp_path)))
+
+
+def test_builtin_entry_outside_plugin_dir_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        launch_command(tmp_path, RuntimeSpec("python", "../evil.py"), builtin=True)
+
+
 def test_executable_runs_entry_directly(tmp_path: Path) -> None:
     cmd = launch_command(tmp_path, RuntimeSpec("executable", "bin/run"))
     assert_that(cmd).is_equal_to([str(tmp_path / "bin/run")])

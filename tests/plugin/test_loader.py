@@ -40,6 +40,19 @@ class TestPluginLoader:
         assert_that(result.plugins[0].plugin_dir).is_equal_to(plugin_dir)
         assert_that(result.failures).is_empty()
 
+    def test_scan_builtin_marks_plugins_builtin(self, tmp_path):
+        result = PluginLoader(tmp_path).scan_builtin()
+
+        assert_that(result.plugins).is_not_empty()
+        assert_that([p.builtin for p in result.plugins]).contains_only(True)
+
+    def test_user_scan_never_marks_plugins_builtin(self, tmp_path):
+        _make_plugin(tmp_path)
+
+        result = PluginLoader(tmp_path).scan()
+
+        assert_that([p.builtin for p in result.plugins]).contains_only(False)
+
     def test_invalid_manifest_reported_as_failure(self, tmp_path):
         broken = tmp_path / "com.decker.broken"
         broken.mkdir()
