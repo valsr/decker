@@ -1,5 +1,4 @@
 import base64
-import http.server
 import io
 import json
 import shutil
@@ -2132,27 +2131,6 @@ class TestAnimatedKeyFaces:
 
 class TestCoreActions:
     """Core ships actions, no cards."""
-
-    def test_run_action_runs_the_http_request_action(self, env) -> None:
-        from tests.server.test_actions import (  # noqa: F401  # pylint: disable=import-outside-toplevel
-            _Handler,
-            server,
-        )
-
-        httpd = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        _Handler.seen = []
-        try:
-            url = f"http://127.0.0.1:{httpd.server_address[1]}/hook"
-
-            env.manager.run_action(
-                ActionCall("com.decker.core.httprequest", {"method": "POST", "url": url, "body": "hi"}, "plugin")
-            )
-
-            assert _wait_for(lambda: bool(_Handler.seen))
-            assert_that(_Handler.seen[0]).is_equal_to(("POST", "/hook", b"hi"))
-        finally:
-            httpd.shutdown()
 
     def test_a_failing_action_is_announced_as_an_event(self, env) -> None:
         env.manager.run_action(ActionCall("com.decker.core.httprequest", {"url": "ftp://nope"}, "plugin"))

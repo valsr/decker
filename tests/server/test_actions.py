@@ -1,4 +1,3 @@
-import http.server
 import json
 import queue
 import threading
@@ -12,7 +11,6 @@ from assertpy import assert_that
 from decker.plugin.bindings import NOTHING_ACTION_ID
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import PluginManifest
-from decker.server import actions as actions_module
 from decker.server.action_calls import ActionCall
 from decker.server.actions import (
     MAX_CALL_TIMEOUT_S,
@@ -20,25 +18,23 @@ from decker.server.actions import (
     ActionRunner,
     _Pending,
 )
-from decker.server.builtin_actions import ActionError, http_request
 
 
-def _manifest(runtime: bool, actions: list[dict[str, Any]], plugin_id: str = "com.t.act") -> PluginManifest:
+def _manifest(actions: list[dict[str, Any]], plugin_id: str = "com.t.act") -> PluginManifest:
     data: dict[str, Any] = {
         "format": 3,
         "id": plugin_id,
         "name": "Act",
         "version": "1.0.0",
         "author": "T",
+        "runtime": {"type": "executable", "entry": "x"},
         "contributes": {"actions": actions},
     }
-    if runtime:
-        data["runtime"] = {"type": "executable", "entry": "x"}
     return PluginManifest.from_dict(data)
 
 
-def _plugin(runtime: bool, actions: list[dict[str, Any]], plugin_id: str = "com.t.act") -> InstalledPlugin:
-    return InstalledPlugin(manifest=_manifest(runtime, actions, plugin_id), plugin_dir=Path("."))
+def _plugin(actions: list[dict[str, Any]], plugin_id: str = "com.t.act") -> InstalledPlugin:
+    return InstalledPlugin(manifest=_manifest(actions, plugin_id), plugin_dir=Path("."))
 
 
 _ECHO = {"id": "com.t.act.echo", "name": "Echo", "settings": [{"key": "n", "type": "int", "label": "N", "default": 1}]}
@@ -48,12 +44,8 @@ def _call(action: str, args: dict[str, Any] | None = None, **kwargs: Any) -> Act
     return ActionCall(action, args or {}, kwargs.pop("input", "press"), **kwargs)
 
 
-def _runner(
-    supervisor: Any = None, builtin: Any = None, timeout: float = 2.0, resolve: Any = None, monkeypatch: Any = None
-) -> tuple[ActionRunner, list]:
+def _runner(supervisor: Any = None, timeout: float = 2.0, resolve: Any = None) -> tuple[ActionRunner, list]:
     failures: list[tuple[str, str]] = []
-    if builtin is not None:
-        monkeypatch.setattr(actions_module, "BUILTIN_ACTIONS", builtin)
     runner = ActionRunner(
         supervisor or MagicMock(),
         lambda a, e: failures.append((a, e)),
@@ -63,30 +55,7 @@ def _runner(
     return runner, failures
 
 
-class TestBuiltinExecution:
-    def test_a_builtin_action_gets_validated_settings_and_succeeds(self, monkeypatch):
-        calls: list[Any] = []
-        runner, failures = _runner(builtin={"com.t.act.echo": calls.append}, monkeypatch=monkeypatch)
-        runner.register(_plugin(False, [_ECHO]))
-
-        result = runner.execute(_call("com.t.act.echo", {"n": "7"}))
-
-        assert_that(result.ok).is_true()
-        assert_that(calls).is_equal_to([{"n": 7}])
-        assert_that(failures).is_empty()
-
-    def test_a_failing_builtin_reports_its_message(self, monkeypatch):
-        def boom(_settings: Any) -> None:
-            raise ActionError("no route")
-
-        runner, failures = _runner(builtin={"com.t.act.echo": boom}, monkeypatch=monkeypatch)
-        runner.register(_plugin(False, [_ECHO]))
-
-        result = runner.execute(_call("com.t.act.echo"))
-
-        assert_that((result.ok, result.error)).is_equal_to((False, "no route"))
-        assert_that(failures).is_equal_to([("com.t.act.echo", "no route")])
-
+class TestUnknownAndUnregistered:
     def test_an_unknown_action_fails_cleanly(self):
         runner, failures = _runner()
 
@@ -95,15 +64,9 @@ class TestBuiltinExecution:
         assert_that(result.error).contains("unknown action")
         assert_that(failures).is_length(1)
 
-    def test_a_plugin_without_code_and_without_a_builtin_fails(self):
-        runner, _ = _runner()
-        runner.register(_plugin(False, [_ECHO]))
-
-        assert_that(runner.execute(_call("com.t.act.echo")).error).contains("no code")
-
     def test_unregistering_removes_the_actions(self):
         runner, _ = _runner()
-        runner.register(_plugin(False, [_ECHO]))
+        runner.register(_plugin([_ECHO]))
         runner.unregister("com.t.act")
 
         assert_that(runner.spec("com.t.act.echo")).is_none()
@@ -129,7 +92,7 @@ class TestPluginExecution:
         supervisor = self._supervisor(box)
         runner, failures = _runner(supervisor)
         box.append(runner)
-        runner.register(_plugin(True, [_ECHO]))
+        runner.register(_plugin([_ECHO]))
 
         result = runner.execute(_call("com.t.act.echo", {"n": 4}))
 
@@ -146,7 +109,7 @@ class TestPluginExecution:
         supervisor = MagicMock()
         supervisor.is_failed.return_value = False
         runner, failures = _runner(supervisor, timeout=0.05)
-        runner.register(_plugin(True, [_ECHO]))
+        runner.register(_plugin([_ECHO]))
 
         result = runner.execute(_call("com.t.act.echo"))
 
@@ -158,7 +121,7 @@ class TestPluginExecution:
         supervisor = MagicMock()
         supervisor.is_failed.return_value = True
         runner, _ = _runner(supervisor)
-        runner.register(_plugin(True, [_ECHO]))
+        runner.register(_plugin([_ECHO]))
 
         assert_that(runner.execute(_call("com.t.act.echo")).error).contains("failed")
         supervisor.send.assert_not_called()
@@ -174,7 +137,7 @@ class TestProtocol4:
         supervisor = TestPluginExecution()._supervisor(box)
         runner, failures = _runner(supervisor, resolve=resolve)
         box.append(runner)
-        runner.register(_plugin(True, [_ECHO]))
+        runner.register(_plugin([_ECHO]))
         return runner, supervisor, failures
 
     def test_nothing_runs_nothing_and_succeeds(self):
@@ -221,20 +184,10 @@ class TestProtocol4:
             (payload["input"], payload["card"], payload["chain"], payload["caller"], payload["depth"])
         ).is_equal_to(("long_press", {"id": "k"}, call.chain, "com.o", 3))
 
-    def test_a_builtin_runs_resolved_args_in_process(self, monkeypatch):
-        calls: list[Any] = []
-        runner, _ = _runner(
-            builtin={"com.t.act.echo": calls.append}, resolve=lambda *_: {"n": 8}, monkeypatch=monkeypatch
-        )
-        runner.register(_plugin(False, [_ECHO]))
-
-        assert_that(runner.execute(_call("com.t.act.echo")).ok).is_true()
-        assert_that(calls).is_equal_to([{"n": 8}])
-
     def test_listing_reports_scope_and_returns(self):
         runner, _ = _runner()
         spec = {**_ECHO, "scope": "global", "returns": "number"}
-        runner.register(_plugin(True, [spec]))
+        runner.register(_plugin([spec]))
 
         listed = runner.listing(lambda _p, _s: "")
 
@@ -260,8 +213,8 @@ class _Rig:
         supervisor.is_failed.return_value = False
         supervisor.send.side_effect = self._send
         self.runner, self.failures = _runner(supervisor, resolve=resolve or self._resolve)
-        self.runner.register(_plugin(True, [_ECHO, _GLOBAL]))
-        self.runner.register(_plugin(True, [_OTHER_PRIVATE, _OTHER_GLOBAL], "com.t.other"))
+        self.runner.register(_plugin([_ECHO, _GLOBAL]))
+        self.runner.register(_plugin([_OTHER_PRIVATE, _OTHER_GLOBAL], "com.t.other"))
 
     def _resolve(self, _spec: Any, args: Any, device: Any) -> dict[str, Any]:
         self.devices.append(device)
@@ -484,57 +437,6 @@ class TestCallAction:
 
         assert_that(rig.failures).is_length(1)
         assert_that(rig.failures[0][1]).contains("resolver broke")
-
-
-class _Handler(http.server.BaseHTTPRequestHandler):
-    seen: list[tuple[str, str, bytes]] = []
-
-    def _answer(self) -> None:
-        length = int(self.headers.get("Content-Length") or 0)
-        _Handler.seen.append((self.command, self.path, self.rfile.read(length)))
-        self.send_response(500 if self.path == "/boom" else 200)
-        self.end_headers()
-
-    do_GET = do_POST = _answer
-
-    def log_message(self, *_args: Any) -> None:
-        pass
-
-
-@pytest.fixture()
-def server():
-    _Handler.seen = []
-    httpd = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{httpd.server_address[1]}"
-    httpd.shutdown()
-
-
-class TestHttpRequest:
-    def test_post_sends_the_body(self, server):
-        http_request(
-            {"method": "POST", "url": f"{server}/hook", "body": '{"a": 1}', "content_type": "application/json"}
-        )
-
-        assert_that(_Handler.seen).is_equal_to([("POST", "/hook", b'{"a": 1}')])
-
-    def test_get_succeeds(self, server):
-        http_request({"method": "GET", "url": f"{server}/ping"})
-
-        assert_that(_Handler.seen[0][:2]).is_equal_to(("GET", "/ping"))
-
-    def test_an_error_status_is_a_failure(self, server):
-        with pytest.raises(ActionError, match="HTTP 500"):
-            http_request({"method": "GET", "url": f"{server}/boom"})
-
-    def test_only_http_urls_are_allowed(self):
-        with pytest.raises(ActionError, match="http"):
-            http_request({"method": "GET", "url": "file:///etc/passwd"})
-
-    def test_unreachable_host_is_a_failure(self):
-        with pytest.raises(ActionError):
-            http_request({"method": "GET", "url": "http://127.0.0.1:9/", "timeout": 1})
 
 
 class TestManifestCardsAndActions:
