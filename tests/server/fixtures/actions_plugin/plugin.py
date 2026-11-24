@@ -89,3 +89,16 @@ def paint(ctx: ActionCallContext) -> None:
 def probe(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
     found = {name: importlib.util.find_spec(name) is not None for name in ("PIL", "psutil", "yaml", "rpyc", "decker")}
     Path(__file__).with_name("probe.log").write_text(json.dumps(found), encoding="utf-8")
+
+
+@action("com.decker.acttest.step")
+def step(ctx: ActionCallContext) -> None:
+    with Path(__file__).with_name("steps.log").open("a", encoding="utf-8") as log:
+        log.write(str(ctx.args["n"]))
+    if ctx.args["fail"]:
+        raise ActionError("boom")
+
+
+@action("com.decker.acttest.next")
+def next_page(ctx: ActionCallContext) -> None:
+    ctx.switch_page("next")

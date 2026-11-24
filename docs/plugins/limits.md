@@ -24,6 +24,7 @@
 | Canvas frame tick | about 30 per second; at most 2 frames per tick (about 60 per second), so the canvas stays under the flood limit; a key not sent stays dirty for the next tick |
 | Canvas image fetch (`get_image`) | the plugin waits up to 5 s for `image_result` |
 | HTTP Request action | body up to 512 KiB read and decoded, then trimmed so the encoded result fits 1 MiB; the request timeout setting allows 1 to 120 s but Core clamps it to 25 s, because a gesture call waits 30 s |
+| Delay and Sequence actions | Delay waits 0 to 60 s (manifest `timeout` 65); Sequence runs up to 10 steps within 300 s of starting (manifest `timeout` 300), each step called with the time left |
 | Raster image from `set_image` | at most 4096 x 4096 pixels |
 | Icon file (pack icon or card or action `icon`) | at most 4 MiB; larger files are ignored |
 | Animated GIF (`set_image` bytes or pack icon) | at most 4 MiB, 300 frames, 4096 x 4096 pixels per frame, and 96 million pixels in total (frames x width x height, so 300 frames of 480 x 480 fit but 100 frames of 1024 x 1024 do not; both are enforced from the frame headers and again as frames are read, counting a frame that is bigger than the header's screen at its grown size); frame delays under 20 ms play as 100 ms; a GIF over any limit stays a still first frame |
