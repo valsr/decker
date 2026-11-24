@@ -14,7 +14,12 @@ from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import PluginManifest
 from decker.server import actions as actions_module
 from decker.server.action_calls import ActionCall
-from decker.server.actions import ActionRunner
+from decker.server.actions import (
+    MAX_CALL_TIMEOUT_S,
+    ActionResult,
+    ActionRunner,
+    _Pending,
+)
 from decker.server.builtin_actions import ActionError, http_request
 
 
@@ -280,8 +285,16 @@ class _Rig:
         return self.replies.get(timeout=3)
 
 
+def _wait_sent(rig: "_Rig") -> None:
+    for _ in range(400):
+        if rig.sent:
+            return
+        threading.Event().wait(0.01)
+    raise AssertionError("the outer call never reached the plugin")
+
+
 class TestCallAction:
-    def test_call_result_returns_the_callee_value(self):
+    def test_call_result_returns_the_callee_value(self) -> None:
         rig = _Rig(lambda _p: {"ok": True, "value": {"n": 5}})
 
         reply = rig.call("com.t.act")
@@ -291,17 +304,17 @@ class TestCallAction:
         assert_that(rig.sent[0]["caller"]).is_equal_to("com.t.act")
         assert_that(rig.sent[0]["card"]).is_none()
 
-    def test_a_failing_callee_replies_with_its_error(self):
+    def test_a_failing_callee_replies_with_its_error(self) -> None:
         rig = _Rig(lambda _p: {"ok": False, "error": "boom"})
 
         assert_that(rig.call("com.t.act")).is_equal_to({"request": "r1", "ok": False, "error": "boom"})
 
-    def test_own_plugin_scoped_action_is_callable(self):
+    def test_own_plugin_scoped_action_is_callable(self) -> None:
         rig = _Rig(lambda _p: {"ok": True})
 
         assert_that(rig.call("com.t.other", action="com.t.other.secret")["ok"]).is_true()
 
-    def test_foreign_plugin_scoped_action_is_refused(self):
+    def test_foreign_plugin_scoped_action_is_refused(self) -> None:
         rig = _Rig(lambda _p: {"ok": True})
 
         reply = rig.call("com.t.act", action="com.t.other.secret")
@@ -310,19 +323,19 @@ class TestCallAction:
         assert_that(reply["error"]).is_equal_to("action com.t.other.secret is not callable from com.t.act")
         assert_that(rig.sent).is_empty()
 
-    def test_global_action_of_another_plugin_is_callable(self):
+    def test_global_action_of_another_plugin_is_callable(self) -> None:
         rig = _Rig(lambda _p: {"ok": True, "value": 1})
 
         assert_that(rig.call("com.t.act", action="com.t.other.open")["ok"]).is_true()
 
-    def test_unknown_action_and_invalid_args_are_refused(self):
+    def test_unknown_action_and_invalid_args_are_refused(self) -> None:
         rig = _Rig(lambda _p: {"ok": True})
 
         assert_that(rig.call("com.t.act", action="nope")["error"]).is_equal_to("unknown action nope")
         assert_that(rig.call("com.t.act", args={"n": "abc"})["error"]).starts_with("invalid arguments: n: ")
         assert_that(rig.sent).is_empty()
 
-    def test_depth_9_is_refused_and_8_is_allowed(self):
+    def test_depth_9_is_refused_and_8_is_allowed(self) -> None:
         rig = _Rig(lambda _p: {"ok": True})
 
         refused = rig.call("com.t.act", depth=9)
@@ -331,13 +344,12 @@ class TestCallAction:
         assert_that(refused).is_equal_to({"request": "r1", "ok": False, "error": "call depth limit (8) exceeded"})
         assert_that(allowed["ok"]).is_true()
 
-    def test_chain_device_is_inherited_by_nested_calls(self):
+    def test_chain_device_is_inherited_by_nested_calls(self) -> None:
         rig = _Rig(lambda p: {"ok": True} if p["depth"] == 4 else None)
         outer = _call("com.t.act.echo", chain="c1", depth=3, device="dev-1", input="press")
         thread = threading.Thread(target=rig.runner.execute, args=(outer,))
         thread.start()
-        while not rig.sent:
-            threading.Event().wait(0.005)
+        _wait_sent(rig)
 
         reply = rig.call("com.t.act", chain="c1", depth=0)
 
@@ -347,13 +359,12 @@ class TestCallAction:
         rig.runner.on_result("com.t.act", {"request": rig.sent[0]["request"], "ok": True})
         thread.join(3)
 
-    def test_explicit_device_wins(self):
+    def test_explicit_device_wins(self) -> None:
         rig = _Rig(lambda p: {"ok": True} if p["depth"] == 1 else None)
         outer = _call("com.t.act.echo", chain="c2", depth=0, device="dev-1")
         thread = threading.Thread(target=rig.runner.execute, args=(outer,))
         thread.start()
-        while not rig.sent:
-            threading.Event().wait(0.005)
+        _wait_sent(rig)
 
         rig.call("com.t.act", chain="c2", device="dev-2")
 
@@ -361,7 +372,7 @@ class TestCallAction:
         rig.runner.on_result("com.t.act", {"request": rig.sent[0]["request"], "ok": True})
         thread.join(3)
 
-    def test_unmatched_chain_uses_the_payload_depth(self):
+    def test_unmatched_chain_uses_the_payload_depth(self) -> None:
         rig = _Rig(lambda _p: {"ok": True})
 
         rig.call("com.t.act", chain="zzz", depth=-4)
@@ -369,14 +380,14 @@ class TestCallAction:
 
         assert_that([p["depth"] for p in rig.sent]).is_equal_to([0, 2])
 
-    def test_oversized_value_is_an_error(self):
+    def test_oversized_value_is_an_error(self) -> None:
         rig = _Rig(lambda _p: {"ok": True, "value": "x" * (1024 * 1024)})
 
         reply = rig.call("com.t.act")
 
         assert_that(reply).is_equal_to({"request": "r1", "ok": False, "error": "return value larger than 1 MiB"})
 
-    def test_gesture_run_discards_the_value_and_failure_still_announces(self):
+    def test_gesture_run_discards_the_value_and_failure_still_announces(self) -> None:
         answers = iter([{"ok": True, "value": 3}, {"ok": False, "error": "bad"}])
         rig = _Rig(lambda _p: next(answers))
 
@@ -395,6 +406,8 @@ class TestCallAction:
             {"args": []},
             {"timeout": "soon"},
             {"timeout": 0},
+            {"timeout": float("nan")},
+            {"timeout": float("inf")},
             {"depth": "3"},
             {"depth": True},
             {"chain": 5},
@@ -411,7 +424,33 @@ class TestCallAction:
         assert_that(reply["request"]).is_equal_to("r1")
         assert_that(rig.sent).is_empty()
 
-    def test_a_call_without_a_string_request_is_dropped(self):
+    def test_a_valid_timeout_reaches_the_call_and_is_clamped(self) -> None:
+        rig = _Rig()
+        seen: list[Any] = []
+
+        def record(call: ActionCall) -> ActionResult:
+            seen.append(call)
+            return ActionResult(True)
+
+        rig.runner._execute = record  # type: ignore[method-assign]  # pylint: disable=protected-access
+
+        rig.call("com.t.act", timeout=5)
+        rig.call("com.t.act", timeout=10_000)
+        rig.call("com.t.act")
+
+        assert_that([c.timeout for c in seen]).is_equal_to([5.0, MAX_CALL_TIMEOUT_S, None])
+
+    def test_a_result_from_another_plugin_leaves_the_pending_call_alone(self) -> None:
+        rig = _Rig()
+        pending = _Pending("com.t.act", _call("com.t.act.echo"))
+        rig.runner._pending["req"] = pending  # pylint: disable=protected-access
+
+        rig.runner.on_result("com.t.other", {"request": "req", "ok": True})
+
+        assert_that(rig.runner._pending).contains_key("req")  # pylint: disable=protected-access
+        assert_that(pending.done.is_set()).is_false()
+
+    def test_a_call_without_a_string_request_is_dropped(self) -> None:
         rig = _Rig()
 
         rig.runner.on_plugin_call("com.t.act", {"request": 5, "action": "com.t.act.echo"})
@@ -420,7 +459,7 @@ class TestCallAction:
         with pytest.raises(queue.Empty):
             rig.replies.get(timeout=0.2)
 
-    def test_an_exception_while_running_becomes_an_error_reply(self):
+    def test_an_exception_while_running_becomes_an_error_reply(self) -> None:
         def explode(*_a: Any) -> dict[str, Any]:
             raise RuntimeError("resolver broke")
 
@@ -431,7 +470,7 @@ class TestCallAction:
         assert_that(reply["ok"]).is_false()
         assert_that(reply["error"]).contains("resolver broke")
 
-    def test_an_exception_in_a_gesture_run_still_announces_failure(self):
+    def test_an_exception_in_a_gesture_run_still_announces_failure(self) -> None:
         def explode(*_a: Any) -> dict[str, Any]:
             raise RuntimeError("resolver broke")
 
