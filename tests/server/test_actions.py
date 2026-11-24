@@ -518,7 +518,7 @@ class TestTimeLimit:
         parent = self._parent(runner, 1.0)
         started = time.monotonic()
 
-        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act"))
+        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1))
 
         assert_that(result.error).is_equal_to("timed out")
         assert_that(time.monotonic() - started).is_between(0.5, 3)
@@ -527,7 +527,19 @@ class TestTimeLimit:
         runner, supervisor = self._silent([_ECHO, _LONG])
         parent = self._parent(runner, -1.0)
 
-        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act"))
+        result = runner.execute(_call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1))
 
         assert_that(result.error).is_equal_to("the calling action ran out of time")
         supervisor.send.assert_not_called()
+
+    def test_a_short_lived_sibling_does_not_cap_another_nested_call(self) -> None:
+        runner, _ = self._silent([_ECHO, _LONG])
+        parent = self._parent(runner, 60.0)
+        sibling = _call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1, timeout=2)
+        sibling_pending = _Pending("com.t.act", sibling)
+        sibling_pending.deadline = time.monotonic() + 0.01
+        runner._pending["sibling"] = sibling_pending  # pylint: disable=protected-access
+
+        wait = runner.timeout_for(_call("com.t.act.long", chain=parent.chain, caller="com.t.act", depth=1))
+
+        assert_that(wait).is_between(55, 61)

@@ -292,9 +292,18 @@ class ActionRunner:
         else:
             wait = self._timeout
         wait = min(wait, MAX_CALL_TIMEOUT_S)
+        parent = self._parent_of(call)
+        return min(wait, parent.deadline - time.monotonic()) if parent is not None else wait
+
+    def _parent_of(self, call: ActionCall) -> _Pending | None:
+        """The caller's own live pending in the call's chain (the deepest one), if any."""
         with self._lock:
-            deadlines = [p.deadline for p in self._pending.values() if p.call.chain == call.chain]
-        return min(wait, min(deadlines) - time.monotonic()) if deadlines else wait
+            mine = [
+                p
+                for p in self._pending.values()
+                if p.call.chain == call.chain and p.plugin_id == call.caller and p.call.depth < call.depth
+            ]
+        return max(mine, key=lambda p: p.call.depth, default=None)
 
     def _run_in_plugin(self, plugin_id: str, call: ActionCall, args: Mapping[str, Any]) -> ActionResult:
         if self._supervisor.is_failed(plugin_id):
