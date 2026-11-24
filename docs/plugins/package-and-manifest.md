@@ -195,9 +195,11 @@ them with `call_action`.
 | `timeout` | Optional whole seconds, 1 to 300: how long a run may take before the server gives up. Default 30. A caller's own `timeout` wins, and a nested call never outlives the action that made it. |
 
 A plugin with actions needs a `runtime`: Decker starts the plugin and sends `run_action` (see the
-[protocol](protocol.md)). Decker itself ships two actions in the built-in Core plugin, both `global`: **Do Nothing**
-(`com.decker.core.nothing`, handled by the server, never sent to a process) and **HTTP Request**
-(`com.decker.core.httprequest`, returns `{"status", "body"}`).
+[protocol](protocol.md)). Decker itself ships four actions in the built-in Core plugin, all `global`: **Do Nothing**
+(`com.decker.core.nothing`, handled by the server, never sent to a process), **HTTP Request**
+(`com.decker.core.httprequest`, returns `{"status", "body"}`), **Delay** (`com.decker.core.delay`, waits 0 to 60
+seconds, manifest `timeout` 65) and **Sequence** (`com.decker.core.sequence`, runs up to ten actions in order within
+300 seconds, manifest `timeout` 300).
 
 ### What changed in format 3
 
@@ -242,5 +244,5 @@ need no `runtime`. Packs are served to clients over RPC and appear in the client
 
 ## Where plugins come from
 
-Decker ships two built-in plugins. **Blank** (`com.decker.blank`) is static: a key with only a background and a title, which is also what an action dropped from the Actions tab becomes. **Core** (`com.decker.core`) holds the Do Nothing and HTTP Request actions and runs as a normal plugin process on Decker's own interpreter (see [`runtime`](#runtime)). Built-in plugins cannot be uninstalled or replaced (a package or repository plugin with a built-in id is refused). Other plugins are installed from a `.deckerplugin` package or from a plugin repository
+Decker ships two built-in plugins. **Blank** (`com.decker.blank`) is static: a key with only a background and a title, which is also what an action dropped from the Actions tab becomes. **Core** (`com.decker.core`) holds the Do Nothing, HTTP Request, Delay and Sequence actions and runs as a normal plugin process on Decker's own interpreter (see [`runtime`](#runtime)). Built-in plugins cannot be uninstalled or replaced (a package or repository plugin with a built-in id is refused). Other plugins are installed from a `.deckerplugin` package or from a plugin repository
 (see [repositories](repositories.md)); the default repository publishes the Counter, Pages and Profiles plugins.
