@@ -5,6 +5,7 @@ from datetime import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from ._canvas import Canvas, FrameTarget, FrameTicker
 from ._context import CardContext, Sender
 
 if TYPE_CHECKING:
@@ -14,7 +15,9 @@ if TYPE_CHECKING:
 class CardProxy:
     """The card an action was called from; usable only while the call is in flight."""
 
-    def __init__(self, payload: Mapping[str, Any], request: str, send: Sender) -> None:
+    def __init__(
+        self, payload: Mapping[str, Any], request: str, send: Sender, frames: FrameTicker | None = None
+    ) -> None:
         key: Mapping[str, Any] = payload.get("key") or {}
         size = payload.get("size") or (72, 72)
         last_paint = payload.get("last_paint")
@@ -30,6 +33,8 @@ class CardProxy:
         self._last_paint: datetime | None = datetime.fromisoformat(last_paint) if last_paint else None
         self._request: str = request
         self._send: Sender = send
+        self._frames: FrameTicker | None = frames
+        self._canvas: Canvas | None = None
         self._closed: bool = False
 
     @property
@@ -82,16 +87,37 @@ class CardProxy:
         """When the card was last painted by a plugin, if ever."""
         return self._last_paint
 
+    @property
+    def canvas(self) -> Canvas:
+        """The card's drawing surface (needs Pillow); the first access fetches the key's current image."""
+        self._check_open()
+        if self._canvas is None:
+            frames = self._frames
+            if frames is None:
+                raise RuntimeError("the canvas works only inside a running plugin")
+            context, request = self._context, self._request
+            self._canvas = Canvas(
+                frames, FrameTarget(context, request), self._size, lambda: frames.fetch(context, request)
+            )
+        return self._canvas
+
     def queue_paint(self) -> None:
-        """Queue a repaint of the card (not available yet)."""
+        """Send the canvas buffer again; the card belongs to another plugin, so it has no ``on_paint``."""
+        self._check_open()
+        if self._canvas is not None:
+            self._canvas.queue_paint()
 
     def close(self) -> None:
         """End access to the card; later calls raise."""
         self._closed = True
+        self._canvas = None
 
-    def _emit(self, event: str, payload: dict[str, Any] | None = None) -> None:
+    def _check_open(self) -> None:
         if self._closed:
             raise RuntimeError("card access ended with the action call")
+
+    def _emit(self, event: str, payload: dict[str, Any] | None = None) -> None:
+        self._check_open()
         self._send(event, self._context, {**(payload or {}), "request": self._request})
 
     def show_ok(self) -> None:
@@ -136,6 +162,20 @@ class OwnCardProxy(CardProxy):
     def settings(self) -> Mapping[str, Any]:
         """A read-only copy of the card's current settings."""
         return MappingProxyType(dict(self._ctx.settings))
+
+    @property
+    def last_paint(self) -> datetime | None:
+        """When the card was last painted by this plugin, if ever."""
+        return super().last_paint or self._ctx.last_paint
+
+    @property
+    def canvas(self) -> Canvas:
+        """The card's drawing surface (needs Pillow)."""
+        return self._ctx.canvas
+
+    def queue_paint(self) -> None:
+        """Ask for ``on_paint`` to run soon; repeated requests before it runs count once."""
+        self._ctx.queue_paint()
 
     def set_settings(self, settings: dict[str, Any]) -> None:
         """Store settings for the card; send only the keys you changed."""
