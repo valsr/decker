@@ -393,3 +393,14 @@ def test_plugin_process_sees_pillow_but_not_the_test_venv(env: _Env) -> None:
     assert_that(_wait(lambda: env.read("probe.log") != "")).described_as("probe.log was never written").is_true()
     found = json.loads(env.read("probe.log"))
     assert_that(found).is_equal_to({"PIL": True, "psutil": False, "yaml": False, "rpyc": False, "decker": False})
+
+
+def test_plugin_set_icon_with_a_built_in_short_reference_lands_on_the_key(env: _Env) -> None:
+    target = CardTarget(_PLUGIN, "com.decker.acttest.iconcard", "ctx-icon", "dev-1", 2)
+    env.manager.activate_card(target)
+
+    centre = env.centre(2)
+
+    assert_that(_wait(lambda: _is_green(env.key_pixel(2, centre, centre)))).described_as(
+        "the built-in play icon never appeared"
+    ).is_true()

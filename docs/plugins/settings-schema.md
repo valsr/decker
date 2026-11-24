@@ -122,7 +122,7 @@ The value is an object; missing or invalid fields fall back to the field's defau
 
 | Field | Type | Default |
 |-------|------|---------|
-| `ref` | `""` (no icon) or `pack:<pack id>/<icon path>` | `""` |
+| `ref` | `""` (no icon), `pack:<pack id>/<icon path>` or a built-in short form such as `fas:play` | `""` |
 | `color` | `#rrggbb` or `#rrggbbaa` (alpha last) | `"#ffffff"` |
 
 To show the icon on the key, pass both to the SDK: `ctx.set_icon(settings["icon"]["ref"], settings["icon"]["color"])`

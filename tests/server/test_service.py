@@ -934,12 +934,12 @@ class TestProfileRpcs:
         assert_that(service.profile_activate("dev1", bad)).is_false()
         assert_that(json.loads(service.profile_clone("dev1", bad))).is_none()
 
-    @pytest.mark.parametrize("icon", ["http://x", "pack:", "pack:a/../b", 5, None])
+    @pytest.mark.parametrize("icon", ["http://x", "pack:", "pack:a/../b", "fas:", "fas:Play", 5, None])
     def test_set_icon_rejects_bad_refs(self, service, icon):
         assert_that(service.profile_set_icon("dev1", 0, icon)).is_false()
 
     def test_set_icon_accepts_blank_pack_and_decker_refs(self, service):
-        for icon in ("", "pack:com.x/a.svg", "decker:logo"):
+        for icon in ("", "pack:com.x/a.svg", "decker:logo", "fas:play", "far:paper-plane", "fab:font-awesome"):
             assert_that(service.profile_set_icon("dev1", 0, icon)).is_true()
 
     def test_profile_commands_are_listed(self, service):
@@ -1162,8 +1162,10 @@ class TestSystemIconRpcs:
         svc = DeckerService()
 
         packs = json.loads(svc.iconpacks_list())
-        assert_that([p["id"] for p in packs]).is_equal_to(["decker.user", "decker.system.actions"])
-        assert_that(packs[1]["plugin_name"]).is_equal_to("System Icons")
+        assert_that([p["id"] for p in packs if p["plugin_id"] != "decker.builtin"]).is_equal_to(
+            ["decker.user", "decker.system.actions"]
+        )
+        assert_that(packs[-1]["plugin_name"]).is_equal_to("System Icons")
         assert_that(json.loads(svc.iconpack_icons("decker.system.actions"))).is_equal_to(["edit-copy"])
         assert_that(base64.b64decode(svc.iconpack_icon("decker.system.actions", "edit-copy"))).is_equal_to(b"<svg/>")
         assert_that(svc.iconpack_icon("decker.system.actions", "../x")).is_equal_to("")

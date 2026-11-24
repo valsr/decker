@@ -25,6 +25,12 @@ class Tile(DeckerPlugin):
         img.paste((255, 0, 0, 255), (0, 0, *img.size))
 
 
+@card("com.decker.acttest.iconcard")
+class IconCard(DeckerPlugin):
+    def on_will_appear(self, ctx: CardContext) -> None:
+        ctx.set_icon("fas:play", "#00ff00")
+
+
 @action("com.decker.acttest.mark")
 def mark(ctx: ActionCallContext) -> None:
     with Path(__file__).with_name("marks.log").open("a", encoding="utf-8") as log:

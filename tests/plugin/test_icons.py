@@ -75,3 +75,16 @@ def test_max_icon_bytes_follows_config(isolated_config) -> None:
     isolated_config.set("icons.max_file_size", 1024)
 
     assert_that(max_icon_bytes()).is_equal_to(1024)
+
+
+class TestBuiltinReference:
+    def test_short_reference_reads_the_built_in_icon(self, tmp_path):
+        assert_that(read_icon(tmp_path, "fas:play")).contains(b"<svg")
+
+    def test_plugin_relative_icons_still_work(self, tmp_path):
+        (tmp_path / "icon.png").write_bytes(b"png")
+
+        assert_that(read_icon(tmp_path, "icon.png")).is_equal_to(b"png")
+
+    def test_a_plugin_file_named_like_a_short_ref_is_not_shadowed_when_invalid(self, tmp_path):
+        assert_that(read_icon(tmp_path, "fas:Play")).is_none()
