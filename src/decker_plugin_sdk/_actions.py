@@ -1,12 +1,20 @@
 """Action registration and the context an action receives."""
 
+import asyncio
+import contextvars
+import json
+import threading
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, TypeVar
 
+from ._pool import ElasticPool
 from ._proxy import CardProxy
+
+MAX_VALUE_BYTES = 1024 * 1024  # keep in sync with decker.plugin.protocol.MAX_VALUE_BYTES
 
 
 class Input(StrEnum):
@@ -52,3 +60,103 @@ def action(action_id: str) -> "Callable[[_F], _F]":
 def registered_actions() -> dict[str, ActionFn]:
     """The actions registered so far with @action."""
     return dict(_ACTIONS)
+
+
+class ActionError(Exception):
+    """A call_action was refused, failed or timed out; the message says why."""
+
+
+@dataclass(frozen=True)
+class CallFrame:
+    """The call an action runs in: what a nested call_action forwards."""
+
+    chain: str
+    depth: int
+    device: str | None
+
+
+_FRAME: contextvars.ContextVar[CallFrame | None] = contextvars.ContextVar("decker_call_frame", default=None)
+
+
+def encode_value(value: Any) -> str | None:
+    """The error text when value cannot be sent as an action result, else None."""
+    try:
+        size = len(json.dumps(value).encode("utf-8"))
+    except (TypeError, ValueError, RecursionError) as exc:
+        return f"return value is not JSON-encodable: {exc}"
+    if size > MAX_VALUE_BYTES:
+        return f"return value too large ({size} bytes, limit {MAX_VALUE_BYTES})"
+    return None
+
+
+class _Waiter:
+    def __init__(self) -> None:
+        self.done: threading.Event = threading.Event()
+        self.payload: dict[str, Any] = {}
+
+
+class CallHost:
+    """Sends call_action requests and matches the call_result replies."""
+
+    def __init__(self, send: Callable[[str, str | None, dict[str, Any] | None], None], pool: ElasticPool) -> None:
+        self._send: Callable[[str, str | None, dict[str, Any] | None], None] = send
+        self._pool: ElasticPool = pool
+        self._lock: threading.Lock = threading.Lock()
+        self._pending: dict[str, _Waiter] = {}
+
+    def deliver(self, payload: dict[str, Any]) -> None:
+        """Hand a call_result to its waiting caller; unknown requests are ignored."""
+        with self._lock:
+            waiter = self._pending.pop(str(payload.get("request")), None)
+        if waiter is not None:
+            waiter.payload = payload
+            waiter.done.set()
+
+    def call(self, action_id: str, args: dict[str, Any] | None, timeout: float, device: str | None) -> Any:
+        request = uuid.uuid4().hex
+        message: dict[str, Any] = {"request": request, "action": action_id, "args": args or {}, "timeout": timeout}
+        frame = _FRAME.get()
+        if frame is not None:
+            message.update(chain=frame.chain, depth=frame.depth + 1)
+            device = device or frame.device
+        if device:
+            message["device"] = device
+        waiter = _Waiter()
+        with self._lock:
+            self._pending[request] = waiter
+        self._send("call_action", None, message)
+        with self._pool.blocking():
+            arrived = waiter.done.wait(timeout + 1)
+        if not arrived:
+            with self._lock:
+                self._pending.pop(request, None)
+            raise ActionError(f"call to {action_id} timed out")
+        if not waiter.payload.get("ok"):
+            raise ActionError(str(waiter.payload.get("error") or "call failed"))
+        return waiter.payload.get("value")
+
+
+_CALLS: CallHost | None = None
+
+
+def set_calls(host: CallHost | None) -> None:
+    """Make host the target of call_action."""
+    global _CALLS  # pylint: disable=global-statement
+    _CALLS = host
+
+
+def call_action(
+    action_id: str, args: dict[str, Any] | None = None, timeout: float = 30.0, device: str | None = None
+) -> Any:
+    """Run an action through the server and return its value; raises ActionError on refusal, failure or timeout."""
+    host = _CALLS
+    if host is None:
+        raise RuntimeError("no Decker plugin runtime is running")
+    return host.call(action_id, args, timeout, device)
+
+
+async def call_action_async(
+    action_id: str, args: dict[str, Any] | None = None, timeout: float = 30.0, device: str | None = None
+) -> Any:
+    """call_action for coroutines; it waits on a thread so the event loop stays free."""
+    return await asyncio.to_thread(call_action, action_id, args, timeout, device)
