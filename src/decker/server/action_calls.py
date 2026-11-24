@@ -32,6 +32,7 @@ class ActionCall:
     device: str | None = None
     called_at: datetime = field(default_factory=_now)
     timeout: float | None = None
+    parent: str | None = None
 
     def payload(self, request: str, args: Mapping[str, Any]) -> dict[str, Any]:
         """The ``run_action`` payload for a plugin."""

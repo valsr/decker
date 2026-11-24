@@ -212,8 +212,10 @@ class ActionRunner:
             return "timeout must be a positive number"
         if depth is not None and (isinstance(depth, bool) or not isinstance(depth, int)):
             return "depth must be an integer"
-        if not all(payload.get(key) is None or isinstance(payload.get(key), str) for key in ("chain", "device")):
-            return "chain and device must be strings"
+        if not all(
+            payload.get(key) is None or isinstance(payload.get(key), str) for key in ("chain", "device", "parent")
+        ):
+            return "chain, device and parent must be strings"
         return ""
 
     def _plugin_call(self, plugin_id: str, payload: Mapping[str, Any]) -> ActionResult:
@@ -236,6 +238,7 @@ class ActionRunner:
             depth=call_depth,
             device=device if device is not None else inherited,
             timeout=min(float(timeout), MAX_CALL_TIMEOUT_S) if timeout is not None else None,
+            parent=payload.get("parent"),
         )
         return self._execute_safely(call)
 
@@ -296,14 +299,14 @@ class ActionRunner:
         return min(wait, parent.deadline - time.monotonic()) if parent is not None else wait
 
     def _parent_of(self, call: ActionCall) -> _Pending | None:
-        """The caller's own live pending in the call's chain (the deepest one), if any."""
+        """The live run of the caller that made this call, if the call names one."""
+        if call.parent is None:
+            return None
         with self._lock:
-            mine = [
-                p
-                for p in self._pending.values()
-                if p.call.chain == call.chain and p.plugin_id == call.caller and p.call.depth < call.depth
-            ]
-        return max(mine, key=lambda p: p.call.depth, default=None)
+            parent = self._pending.get(call.parent)
+        if parent is None or parent.plugin_id != call.caller or parent.done.is_set():
+            return None
+        return parent
 
     def _run_in_plugin(self, plugin_id: str, call: ActionCall, args: Mapping[str, Any]) -> ActionResult:
         if self._supervisor.is_failed(plugin_id):

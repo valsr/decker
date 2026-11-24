@@ -236,7 +236,7 @@ def test_nested_call_inside_action_sends_chain_and_depth_plus_one() -> None:
     try:
         host.run_action("t.caller", "r1", chain="ch", depth=2)
         call = host.recv_until("call_action")["payload"]
-        assert_that(call).contains_entry({"chain": "ch"}, {"depth": 3}).does_not_contain_key("device")
+        assert_that(call).contains_entry({"chain": "ch"}, {"depth": 3}, {"parent": "r1"}).does_not_contain_key("device")
         host.send("call_result", {"request": call["request"], "ok": True, "value": None})
         host.recv_until("action_result")
     finally:
@@ -250,7 +250,7 @@ def test_call_from_main_thread_starts_new_chain_without_device() -> None:
         caller = threading.Thread(target=lambda: outcome.append(call_action("t.target", {"x": 1})))
         caller.start()
         call = host.recv_until("call_action")["payload"]
-        assert_that(call).does_not_contain_key("chain", "depth", "device")
+        assert_that(call).does_not_contain_key("chain", "depth", "device", "parent")
         host.send("call_result", {"request": call["request"], "ok": True, "value": "done"})
         caller.join(WAIT)
         assert_that(outcome).is_equal_to(["done"])
