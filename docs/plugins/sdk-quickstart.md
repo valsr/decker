@@ -113,7 +113,9 @@ result = await call_action_async("com.example.hello.sendwave", {"times": 2})  # 
 
 `call_action(action_id, args=None, timeout=None, device=None)` blocks until the action returns its value and raises
 `ActionError` when the call is refused (see [Action calls](protocol.md#action-calls) for who may call what), fails or
-times out; `timeout` is capped at 300 s. Inside an action it forwards the call chain, so the depth limit of 8 and the
+times out; `timeout` is capped at 300 s. `timeout=None` (the default) lets the server use the called action's manifest
+`timeout` (1-300 s) and otherwise 30 s; an explicit `timeout` overrides it. A nested call is also capped by the time its
+caller has left. Inside an action it forwards the call chain, so the depth limit of 8 and the
 device apply automatically. A nested call blocks only its own worker, and the pool grows for nested calls so a chain
 cannot starve itself. `call_action` outside a running plugin raises `RuntimeError`.
 
@@ -213,14 +215,14 @@ then shows the counter and redraws on each signal.
 - Each async hook or getter call runs on its own event loop, so an async client created in `init` cannot be reused in
   `main` or in getters; create it where you use it.
 - Calling a sync SDK function from an async hook blocks that hook's loop while an async getter runs.
-- `get_variable` and `has_variable` return `None` and `False` when no runtime is running (for example in unit tests);
-  the other functions raise `RuntimeError` then.
+- `get_variable`, `has_variable` and `connected_devices` return `None`, `False` and `[]` when no runtime is running (for
+  example in unit tests); the other functions raise `RuntimeError` then.
 
 ## Decks coming and going
 
 `connected_devices()` returns the ids of the decks the server reports as connected (sorted). Register
 `@on_device_connected` and `@on_device_disconnected` functions taking the device id; they run on the worker pool, once
-per message. A deck that reopens sends a disconnect and then a connect, so the list ends up correct; a repeated connect
+per message. The hooks must be plain (synchronous) callables: an `async def` handler is not awaited. A deck that reopens sends a disconnect and then a connect, so the list ends up correct; a repeated connect
 changes nothing in the list.
 
 ```python
