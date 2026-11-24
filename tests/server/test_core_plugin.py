@@ -1,9 +1,12 @@
+import http.client
 import http.server
 import importlib.util
 import json
 import os
 import queue
+import random
 import threading
+import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
@@ -13,6 +16,7 @@ import pytest
 from assertpy import assert_that
 
 from decker_plugin_sdk import run
+from decker_plugin_sdk._actions import encode_value
 
 _PLUGIN = Path(__file__).parents[2] / "src" / "decker" / "builtin_plugins" / "com.decker.core" / "plugin.py"
 _HTTP = "com.decker.core.httprequest"
@@ -89,6 +93,13 @@ class _Host:
             stream.close()
 
 
+_BODIES: dict[str, bytes] = {
+    "/big": b"hello \xff" + b"x" * 600_000,
+    "/binary": random.Random(1).randbytes(512 * 1024),
+    "/japanese": "あ".encode("utf-8") * 400_000,
+}
+
+
 class _Handler(http.server.BaseHTTPRequestHandler):
     seen: list[tuple[str, str, bytes, str | None]] = []
 
@@ -98,7 +109,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         status = int(self.path[1:]) if self.path[1:].isdigit() else 200
         self.send_response(status)
         self.end_headers()
-        self.wfile.write(b"hello \xff" + b"x" * 600_000 if self.path == "/big" else b"hello")
+        self.wfile.write(_BODIES.get(self.path, b"hello"))
 
     do_GET = do_POST = _answer
 
@@ -148,8 +159,54 @@ def test_get_returns_body(host: _Host, server: str) -> None:
 def test_the_body_is_decoded_leniently_and_truncated_to_512_kib(host: _Host, server: str) -> None:
     body = host.call({"method": "GET", "url": f"{server}/big"})["value"]["body"]
 
-    assert_that(len(body.encode("utf-8"))).is_less_than_or_equal_to(512 * 1024 + 4)
-    assert_that(body).starts_with("hello ")
+    assert_that(body).starts_with("hello \ufffd")
+    assert_that(len(body)).is_equal_to(512 * 1024 - len(b"hello \xff") + len("hello \ufffd"))
+
+
+@pytest.mark.parametrize("path", ["/binary", "/japanese"])
+def test_a_body_that_escapes_to_a_large_encoding_still_fits_the_value_limit(
+    host: _Host, server: str, path: str
+) -> None:
+    reply = host.call({"method": "GET", "url": f"{server}{path}"})
+
+    assert_that(reply["ok"]).is_true()
+    assert_that(encode_value(reply["value"])).is_none()
+    assert_that(reply["value"]["body"]).is_not_empty()
+
+
+def test_the_timeout_is_clamped_to_25_seconds(host: _Host, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[float] = []
+
+    def fake(_request: Any, timeout: float) -> Any:
+        seen.append(timeout)
+        raise OSError("stop")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+
+    host.call({"method": "GET", "url": "http://x/", "timeout": 120})
+
+    assert_that(seen).is_equal_to([25.0])
+
+
+def test_a_truncated_response_is_an_action_error(host: _Host, monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Response:
+        status = 200
+
+        def __enter__(self) -> "_Response":
+            return self
+
+        def __exit__(self, *_exc: Any) -> None:
+            return None
+
+        def read(self, _size: int) -> bytes:
+            raise http.client.IncompleteRead(b"ab", 10)
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *_a, **_k: _Response())
+
+    reply = host.call({"method": "GET", "url": "http://x/"})
+
+    assert_that(reply["ok"]).is_false()
+    assert_that(reply["error"]).starts_with("IncompleteRead").contains("bytes read")
 
 
 def test_error_status_raises_action_error(host: _Host, server: str) -> None:
