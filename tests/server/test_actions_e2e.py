@@ -1,4 +1,5 @@
 import http.server
+import io
 import json
 import shutil
 import sys
@@ -12,8 +13,11 @@ from unittest.mock import MagicMock
 import psutil
 import pytest
 from assertpy import assert_that
+from PIL import Image
 
 from decker.plugin.environment import venv_python
+from decker.plugin.loader import InstalledPlugin
+from decker.plugin.manifest import PluginManifest
 from decker.plugin.runtime.supervisor import SupervisorPolicy
 from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
@@ -31,6 +35,7 @@ _NAV = "com.decker.acttest.nav"
 _CHAIN = "com.decker.acttest.chain"
 _RECURSE = "com.decker.acttest.recurse"
 _RELAY = "com.decker.acttest.relay"
+_PAINT = "com.decker.acttest.paint"
 _CORE = "com.decker.core"
 _HTTP = "com.decker.core.httprequest"
 _POLICY = SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0)
@@ -57,11 +62,13 @@ class _Env:
         python = venv_python(self.plugin_dir)  # a plugin with no requirements needs no uv build: any interpreter does
         python.parent.mkdir(parents=True)
         python.symlink_to(sys.executable)
+        self._expose_pillow(python.parent.parent)
         self.manager = PluginManager(plugins_dir, _POLICY, PluginSettingsStore(tmp_path / "plugins.db"))
         self.bus = FakeBus()
         self.pages = FakePages()
+        self.devices = FakeDeviceManager()
         context = SimpleNamespace(
-            device_manager=FakeDeviceManager(),
+            device_manager=self.devices,
             event_bus=self.bus,
             page_controller=self.pages,
             page_store=self.pages,
@@ -72,6 +79,14 @@ class _Env:
         except BaseException:
             self.close()
             raise
+
+    @staticmethod
+    def _expose_pillow(venv: Path) -> None:
+        # A venv layout around the symlink lets a .pth file lend the test interpreter's Pillow to the plugin.
+        (venv / "pyvenv.cfg").write_text(f"home = {Path(sys.executable).resolve().parent}\n", encoding="utf-8")
+        site = venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+        site.mkdir(parents=True)
+        (site / "pillow.pth").write_text(str(Path(Image.__file__).resolve().parent.parent), encoding="utf-8")
 
     def close(self) -> None:
         pids = [pid for pid in (self.pid(_PLUGIN), self.pid(_CORE)) if pid is not None]
@@ -101,6 +116,21 @@ class _Env:
         if hold:
             time.sleep(hold)
         self.manager.dispatch_key_up(target)
+
+    def key_pixel(self, key: int, x: int, y: int) -> tuple[int, ...] | None:
+        """The pixel of the latest composed key image, or None before any image was written."""
+        images = [data for index, data in self.devices.hardware_images if index == key]
+        if not images:
+            return None
+        pixel = Image.open(io.BytesIO(images[-1])).convert("RGB").getpixel((x, y))
+        return pixel if isinstance(pixel, tuple) else None
+
+    def key_size(self, key: int) -> tuple[int, int]:
+        data = [image for index, image in self.devices.hardware_images if index == key][-1]
+        return Image.open(io.BytesIO(data)).size
+
+    def last_paint(self, target: CardTarget) -> object:
+        return self.manager._live[target.context_id].last_paint  # pylint: disable=protected-access
 
     def read(self, name: str) -> str:
         path = self.plugin_dir / name
@@ -265,3 +295,77 @@ def test_core_is_started_lazily(env: _Env, hook: str) -> None:
     env.press(_BLANK)
 
     assert_that(_wait(lambda: env.has_process(_CORE))).is_true()
+
+
+_DOT_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+    b'<path fill="currentColor" d="M0 0h10v10H0z"/></svg>'
+)
+_DOT_REF = "pack:com.t.ip.icons/dot.svg"
+
+
+def _is_red(pixel: tuple[int, ...] | None) -> bool:
+    return pixel is not None and pixel[0] > 200 and pixel[1] < 60 and pixel[2] < 60
+
+
+def _is_blue(pixel: tuple[int, ...] | None) -> bool:
+    return pixel is not None and pixel[2] > 200 and pixel[0] < 60 and pixel[1] < 60
+
+
+def _is_green(pixel: tuple[int, ...] | None) -> bool:
+    return pixel is not None and pixel[1] > 100 and pixel[0] < 60 and pixel[2] < 60
+
+
+def _install_dot_pack(env: _Env, tmp_path: Path) -> None:
+    root = tmp_path / "ip"
+    (root / "pack").mkdir(parents=True)
+    (root / "pack" / "dot.svg").write_bytes(_DOT_SVG)
+    manifest = PluginManifest.from_dict(
+        {
+            "format": 3,
+            "id": "com.t.ip",
+            "name": "IP",
+            "version": "1.0.0",
+            "author": "a",
+            "description": "d",
+            "contributes": {"icon_packs": [{"id": "com.t.ip.icons", "name": "Pack", "path": "pack"}]},
+        }
+    )
+    env.manager.icon_packs.register(InstalledPlugin(manifest, root))
+
+
+def test_queue_paint_lands_on_the_key(env: _Env) -> None:
+    env.activate_tile()
+
+    painted = _wait(lambda: _is_red(env.key_pixel(0, 36, 36)))
+
+    assert_that(painted).described_as("no red frame reached the key within the deadline").is_true()
+    assert_that(env.last_paint(_TILE)).is_not_none()
+
+
+def test_global_action_paints_a_foreign_blank_card_before_its_result(env: _Env) -> None:
+    env.manager.activate_card(_BLANK, {"background": {"type": "color", "color": "#00ff00"}})
+    env.manager.set_bindings(_BLANK, {"press": {"action": _PAINT, "args": {}}})
+    centre = env.key_size(1)[0] // 2
+
+    env.press(_BLANK)
+
+    assert_that(_wait(lambda: _is_blue(env.key_pixel(1, centre, centre)))).described_as(
+        "centre never turned blue"
+    ).is_true()
+    assert_that(_is_green(env.key_pixel(1, 2, 2))).described_as(
+        "the user's background should show at the edge"
+    ).is_true()
+    assert_that(env.bus.of("action_failed")).is_empty()
+
+
+def test_user_icon_override_still_wins_over_canvas_frames(env: _Env, tmp_path: Path) -> None:
+    _install_dot_pack(env, tmp_path)
+    env.manager.activate_card(_TILE, {"icon": {"ref": _DOT_REF, "color": "#00ff00"}})
+    assert_that(_wait(env.ready)).is_true()
+
+    assert_that(_wait(lambda: env.last_paint(_TILE) is not None)).described_as("no frame was accepted").is_true()
+    time.sleep(0.3)
+
+    centre = env.key_size(0)[0] // 2
+    assert_that(_is_green(env.key_pixel(0, centre, centre))).described_as("override lost to the canvas").is_true()
