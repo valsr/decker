@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, BinaryIO, TypeVar
 
-from . import _options, _variables
+from . import _deck, _options, _variables
 from ._actions import (
     _FRAME,
     ActionCallContext,
@@ -111,6 +111,11 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
         self._stopping = False
         self._vars = _variables.VariableHost(self.send, self.log_error)
         self._opts = _options.OptionsHost(self.send, self.log_error)
+        self._deck = _deck.DeckHost(self._pool.submit, self.log_error)
+
+    @property
+    def deck(self) -> _deck.DeckHost:
+        return self._deck
 
     @property
     def calls(self) -> CallHost:
@@ -185,6 +190,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self._calls.deliver(payload)
         elif event == "image_result":
             self._frames.deliver(payload)
+        elif event in (_deck.DEVICE_CONNECTED, _deck.DEVICE_DISCONNECTED):
+            self._deck.device_event(event, payload)
         elif event == "run_action":
             self._submit_action(payload)
         elif event in _HANDLERS:
@@ -390,8 +397,10 @@ def run(
     runtime = _Runtime(cards, stdout, actions)
     _variables.set_current(runtime.variables)
     set_calls(runtime.calls)
+    _deck.set_current(runtime.deck)
     try:
         return runtime.serve(stdin)
     finally:
         _variables.set_current(None)
         set_calls(None)
+        _deck.set_current(None)

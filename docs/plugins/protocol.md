@@ -37,15 +37,16 @@ discarded.
 | `call_result` | | `{"request": "<id>", "ok": true, "value": ...}` or `{"request": "<id>", "ok": false, "error": "text"}`, answering your `call_action` (see [Action calls](#action-calls)) |
 | `image_result` | | `{"request": "<id>", "image": "<base64 PNG>"\|null, "format": "png"}`, answering `get_image` (see [Painting](#painting)) |
 | `global_settings_changed` | | `{"global_settings": {...}}` |
-| `device_connected` | | `{"device": "<device id>"}` |
+| `device_connected` | | `{"device": "<device id>"}`: sent for every known device when you become ready, and whenever a deck connects or reconnects while you run (repeats are possible, treat it as a set) |
+| `device_disconnected` | | `{"device": "<device id>"}`: a deck went away; a deck that reopens (for example after a brightness write) sends this and then `device_connected` |
 | `get_variable` | | `{"request": "<id>", "name": "<variable>"}`: answer with `variable_value` carrying the same `request` (see [Variables](#variables)) |
 | `variables_changed` | | `{"set": {"name": "value", ...}, "removed": ["name", ...]}`: the global variables that changed; the full set of values is sent once after `ready` |
 | `get_options` | | `{"request": "<id>", "source": "<options source>"}`: answer with `options_result` carrying the same `request` (see [Dynamic choice options](#dynamic-choice-options)) |
 | `ping` | | none; reply with `pong` |
 | `shutdown` | | none; exit promptly |
 
-(`device_disconnected` is part of the vocabulary but not sent in v1. Protocol 4 removed the `press`, `double_press` and
-`long_press` events: the server recognises the gestures itself and runs the bound actions.)
+(Protocol 4 removed the `press`, `double_press` and `long_press` events: the server recognises the gestures itself and
+runs the bound actions.)
 
 ## Plugin to server
 

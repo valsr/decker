@@ -169,6 +169,30 @@ class FakeDeviceManager:
         self.state = DeviceState("dev-1", None, lambda _k: "up", "p1")  # type: ignore[arg-type,return-value]
         self.cleared: list[int] = []
         self.hardware_images: list[tuple[int, bytes]] = []
+        self.open_listeners: list[Any] = []
+        self.close_listeners: list[Any] = []
+
+    def add_open_listener(self, fn: Any) -> None:
+        self.open_listeners.append(fn)
+
+    def add_close_listener(self, fn: Any) -> None:
+        self.close_listeners.append(fn)
+
+    def remove_open_listener(self, fn: Any) -> None:
+        if fn in self.open_listeners:
+            self.open_listeners.remove(fn)
+
+    def remove_close_listener(self, fn: Any) -> None:
+        if fn in self.close_listeners:
+            self.close_listeners.remove(fn)
+
+    def fire_open(self, device_id: str) -> None:
+        for fn in list(self.open_listeners):
+            fn(device_id)
+
+    def fire_close(self, device_id: str) -> None:
+        for fn in list(self.close_listeners):
+            fn(device_id)
 
     def get_device_state(self, device_id: str) -> DeviceState | None:
         return self.state if device_id == "dev-1" else None
@@ -503,6 +527,26 @@ class TestWillAppear:
         assert_that(env.received("device_connected")[0]["payload"]).is_equal_to({"device": "dev-1"})
         events = [m["event"] for m in env.received()]
         assert_that(events.index("device_connected")).is_greater_than(events.index("will_appear"))
+
+    def test_plugins_get_connected_and_disconnected_on_hotplug(self, env):
+        env.manager.activate_card(REC_TARGET)
+        assert _wait_for(lambda: env.received("device_connected"))
+
+        env.dm.fire_open("dev-2")
+        env.dm.fire_close("dev-2")
+
+        def payloads(event: str) -> list[dict]:
+            return [m["payload"] for m in env.received(event)]
+
+        assert _wait_for(lambda: {"device": "dev-2"} in payloads("device_disconnected"))
+        assert_that(payloads("device_connected")).contains({"device": "dev-2"})
+        events = [m["event"] for m in env.received() if m["payload"] == {"device": "dev-2"}]
+        assert_that(events).is_equal_to(["device_connected", "device_disconnected"])
+
+    def test_destroy_unsubscribes_from_the_device_manager(self, env):
+        env.manager.destroy()
+        assert_that(env.dm.open_listeners).is_empty()
+        assert_that(env.dm.close_listeners).is_empty()
 
 
 class TestCounterEndToEnd:

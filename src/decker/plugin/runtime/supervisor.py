@@ -148,6 +148,11 @@ class PluginSupervisor:  # pylint: disable=too-many-instance-attributes
         with self._lock:
             return list(self._entries)
 
+    def running_ids(self) -> list[str]:
+        """Ids of the plugins that have a process attached."""
+        with self._lock:
+            return [pid for pid, entry in self._entries.items() if entry.process is not None]
+
     def is_failed(self, plugin_id: str) -> bool:
         """True once a plugin crashed too often and was given up on."""
         with self._lock:

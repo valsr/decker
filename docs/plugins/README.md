@@ -40,5 +40,5 @@ Decker draws the key background and title (the user's appearance settings). Your
   `WAYLAND_DISPLAY`, `XDG_RUNTIME_DIR` and `DBUS_SESSION_BUS_ADDRESS` are not passed on, so plugins that talk to the
   desktop session (media keys over D-Bus, notifications, launching GUI programs) will not work without extra effort
   such as locating the session themselves. There is no allow-list setting in v1.
-- `device_disconnected` is declared by the protocol but not sent yet; `device_connected` is sent for the devices
-  known when the plugin becomes ready.
+- `device_connected` is sent for the devices known when the plugin becomes ready and again whenever a deck connects;
+  `device_disconnected` is sent when one goes away.

@@ -66,6 +66,11 @@ class FakeBus:
 
 
 class FakeDeviceManager:
+    def add_open_listener(self, _fn):
+        pass
+
+    add_close_listener = remove_open_listener = remove_close_listener = add_open_listener
+
     def get_device_state(self, _device_id):
         return None
 

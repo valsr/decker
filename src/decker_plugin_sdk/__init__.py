@@ -10,6 +10,7 @@ from ._actions import (
 )
 from ._canvas import Canvas
 from ._context import CardContext
+from ._deck import connected_devices, on_device_connected, on_device_disconnected
 from ._options import options
 from ._proxy import CardProxy, OwnCardProxy
 from ._runtime import DeckerPlugin, card, run
@@ -39,10 +40,13 @@ __all__ = [
     "call_action",
     "call_action_async",
     "card",
+    "connected_devices",
     "get_variable",
     "has_variable",
     "init",
     "main",
+    "on_device_connected",
+    "on_device_disconnected",
     "options",
     "register_variable",
     "run",
