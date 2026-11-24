@@ -208,3 +208,67 @@ class TestForeignFeedback:
         _foreign(env, "show_alert", {"request": "req-1"})
 
         assert_that(shown).is_equal_to(["ok", "alert"])
+
+
+class TestPackIconAndWarnings:
+    def test_get_image_draws_a_pack_icon_scaled_and_centred_like_the_key(self, env, tmp_path) -> None:
+        from decker.plugin.loader import (
+            InstalledPlugin,  # pylint: disable=import-outside-toplevel
+        )
+        from decker.plugin.manifest import (
+            PluginManifest,  # pylint: disable=import-outside-toplevel
+        )
+        from decker.server.appearance import (
+            PACK_ICON_SCALE,  # pylint: disable=import-outside-toplevel
+        )
+
+        pack = tmp_path / "pk" / "pack"
+        pack.mkdir(parents=True)
+        buf = io.BytesIO()
+        Image.new("RGB", (16, 16), "#00ff00").save(buf, format="PNG")
+        (pack / "g.png").write_bytes(buf.getvalue())
+        manifest = PluginManifest.from_dict(
+            {
+                "format": 3,
+                "id": "com.t.pk",
+                "name": "P",
+                "version": "1.0.0",
+                "author": "a",
+                "description": "d",
+                "contributes": {"icon_packs": [{"id": "com.t.pk.icons", "name": "P", "path": "pack"}]},
+            }
+        )
+        env.manager.icon_packs.register(InstalledPlugin(manifest, tmp_path / "pk"))
+        env.manager.activate_card(REC_TARGET)
+        _own(env, "set_image", {"icon": "pack:com.t.pk.icons/g.png"})
+        sent = _sent(env)
+
+        _own(env, "get_image", {"request": "r1", "context": REC_TARGET.context_id})
+
+        image = _decode(sent[0])
+        width, height = image.size
+        assert_that(image.getchannel("A").getpixel((1, 1))).is_equal_to(0)
+        assert_that(image.getpixel((width // 2, height // 2))).is_equal_to((0, 255, 0, 255))
+        inner = round(width * PACK_ICON_SCALE)
+        left, top = (width - inner) // 2, (height - inner) // 2
+        assert_that(image.getbbox()).is_equal_to((left, top, left + inner, top + inner))
+
+    def test_each_plugin_gets_its_own_render_warning(self, env, monkeypatch, caplog) -> None:
+        env.manager.activate_card(REC_TARGET)
+        _own(env, "set_image", {"image": _b64()})
+        _sent(env)
+
+        def boom(*_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("decker.server.plugins.AssetRenderer.render_bytes", boom)
+        in_flight = {"call": "req-1"}
+        _in_flight(env)
+        context = REC_TARGET.context_id
+        for _ in range(2):
+            _own(env, "get_image", {"request": "a", "context": context})
+            _foreign(env, "get_image", {"request": "b", "context": context, **in_flight})
+
+        warned = [r for r in caplog.records if r.levelname == "WARNING" and "could not render" in r.getMessage()]
+        assert_that([r.getMessage().split("]")[0] for r in warned]).is_length(2)
+        assert_that(env.manager._render_warned).is_equal_to({_REC, _COUNTER})  # pylint: disable=protected-access

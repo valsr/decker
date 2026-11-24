@@ -14,6 +14,8 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from PIL import Image
+
 from decker.asset.iconpack import IconPackRegistry
 from decker.asset.renderer import AssetRenderer
 from decker.asset.tint import tint_svg
@@ -64,6 +66,7 @@ from decker.server.appearance import (
     PACK_ICON_SCALE,
     Composed,
     compose_key_face,
+    inner_size,
     intern_background,
     resolve_appearance,
 )
@@ -216,7 +219,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._supervisor.on_exit = self._on_plugin_exit
         self._action_runner = ActionRunner(self._supervisor, self._on_action_failed, self._resolve_args)
         self._foreign_warned: set[str] = set()
-        self._render_warned: bool = False
+        self._render_warned: set[str] = set()
         self.icon_packs = IconPackRegistry(on_failure=self._record_failure)
         self.variables = VariableStore(on_change=self._on_variables_changed)
         self._variable_runner = VariableRunner(
@@ -303,6 +306,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def unregister_actions(self, plugin_id: str) -> None:
         """Forget a plugin's actions and stop its process (the "actions" contribution handler)."""
         self._foreign_warned.discard(plugin_id)
+        with self._lock:
+            self._render_warned.discard(plugin_id)
         self._action_runner.unregister(plugin_id)
         self._supervisor.unregister(plugin_id)
         with self._lock:
@@ -1178,17 +1183,34 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         try:
             if icon_ref is not None:
                 data = self.icon_packs.read_ref(icon_ref)
-            rendered = AssetRenderer().render_bytes(data, size[0], size[1], color) if data is not None else None
+            rendered = self._render_layer(data, size, color, PACK_ICON_SCALE if icon_ref is not None else 1.0)
             if rendered is None:
                 return None
             buffer = io.BytesIO()
             rendered.save(buffer, format="PNG")
             return base64.b64encode(buffer.getvalue()).decode("ascii")
         except Exception:  # pylint: disable=broad-except
-            if not self._render_warned:
-                self._render_warned = True
+            with self._lock:
+                first = plugin_id not in self._render_warned
+                self._render_warned.add(plugin_id)
+            if first:
                 logging.warning("[%s] get_image could not render %s", plugin_id, context[:80], exc_info=True)
+            else:
+                logging.debug("[%s] get_image could not render %s", plugin_id, context[:80], exc_info=True)
             return None
+
+    @staticmethod
+    def _render_layer(data: bytes | None, size: tuple[int, int], color: str | None, scale: float) -> Image.Image | None:
+        """Render the layer like the key face does: scaled and centred on a transparent canvas of the key size."""
+        if data is None:
+            return None
+        inner = (inner_size(size[0], scale), inner_size(size[1], scale))
+        layer = AssetRenderer().render_bytes(data, inner[0], inner[1], color)
+        if layer is None:
+            return None
+        canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+        canvas.alpha_composite(layer, dest=((size[0] - inner[0]) // 2, (size[1] - inner[1]) // 2))
+        return canvas
 
     def _set_icon(self, live: _Live, payload: dict[str, Any]) -> bool:
         who = live.target.plugin_uuid
