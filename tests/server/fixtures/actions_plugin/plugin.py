@@ -2,8 +2,26 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
-from decker_plugin_sdk import ActionCallContext, ActionError, action, call_action
+from decker_plugin_sdk import (
+    ActionCallContext,
+    ActionError,
+    CardContext,
+    DeckerPlugin,
+    action,
+    call_action,
+    card,
+)
+
+
+@card("com.decker.acttest.tile")
+class Tile(DeckerPlugin):
+    def on_will_appear(self, ctx: CardContext) -> None:
+        ctx.queue_paint()
+
+    def on_paint(self, ctx: CardContext, img: Any) -> None:  # pylint: disable=unused-argument
+        img.paste((255, 0, 0, 255), (0, 0, *img.size))
 
 
 @action("com.decker.acttest.mark")
@@ -49,3 +67,12 @@ def recurse(ctx: ActionCallContext) -> None:
 @action("com.decker.acttest.relay")
 def relay(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
     call_action("com.decker.acttest.public", {"page": "p1"})
+
+
+@action("com.decker.acttest.paint")
+def paint(ctx: ActionCallContext) -> None:
+    card_proxy = ctx.card
+    assert card_proxy is not None
+    with card_proxy.canvas.paint() as img:
+        width, height = img.size
+        img.paste((0, 0, 255, 255), (width // 3, height // 3, width * 2 // 3, height * 2 // 3))

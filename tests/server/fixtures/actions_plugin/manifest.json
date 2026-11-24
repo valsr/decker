@@ -73,6 +73,13 @@
         ]
       },
       {
+        "id": "com.decker.acttest.paint",
+        "name": "Paint",
+        "tooltip": "Paints a blue square on the calling card",
+        "scope": "global",
+        "settings": []
+      },
+      {
         "id": "com.decker.acttest.relay",
         "name": "Relay",
         "tooltip": "Calls public for page p1 without naming a device",
