@@ -118,16 +118,20 @@ class CallHost:
         """Mark the calling pool worker as waiting (see ElasticPool.blocking)."""
         return self._pool.blocking()
 
-    def call(self, action_id: str, args: dict[str, Any] | None, timeout: float, device: str | None) -> Any:
-        """Send call_action and wait for its call_result."""
-        if not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0:
+    def call(self, action_id: str, args: dict[str, Any] | None, timeout: float | None, device: str | None) -> Any:
+        """Send call_action and wait for its call_result; no timeout lets the server use the action's own."""
+        if timeout is not None and (
+            not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0
+        ):
             raise ActionError(f"timeout must be a positive finite number, not {timeout!r}")
         try:
             json.dumps(args or {})
         except (TypeError, ValueError, RecursionError) as exc:
             raise ActionError(f"args are not JSON-encodable: {exc}") from exc
         request = uuid.uuid4().hex
-        message: dict[str, Any] = {"request": request, "action": action_id, "args": args or {}, "timeout": timeout}
+        message: dict[str, Any] = {"request": request, "action": action_id, "args": args or {}}
+        if timeout is not None:
+            message["timeout"] = timeout
         frame = _FRAME.get()
         if frame is not None:
             message.update(chain=frame.chain, depth=frame.depth + 1)
@@ -142,7 +146,7 @@ class CallHost:
             self._forget(request)
             raise
         with self._pool.blocking():
-            arrived = waiter.done.wait(min(timeout, MAX_TIMEOUT) + 1)
+            arrived = waiter.done.wait(MAX_TIMEOUT + 1 if timeout is None else min(timeout, MAX_TIMEOUT) + 1)
         if not arrived and self._forget(request) is not None:
             raise ActionError(f"call to {action_id} timed out")
         waiter.done.wait(WAIT_AFTER_RACE)  # a reply took the entry just before the timeout did
@@ -167,7 +171,7 @@ def set_calls(host: CallHost | None) -> None:
 
 
 def call_action(
-    action_id: str, args: dict[str, Any] | None = None, timeout: float = 30.0, device: str | None = None
+    action_id: str, args: dict[str, Any] | None = None, timeout: float | None = None, device: str | None = None
 ) -> Any:
     """Run an action through the server and return its value; raises ActionError on refusal, failure or timeout."""
     host = _CALLS
@@ -177,7 +181,7 @@ def call_action(
 
 
 async def call_action_async(
-    action_id: str, args: dict[str, Any] | None = None, timeout: float = 30.0, device: str | None = None
+    action_id: str, args: dict[str, Any] | None = None, timeout: float | None = None, device: str | None = None
 ) -> Any:
     """call_action for coroutines; it waits on a thread so the event loop stays free."""
     host = _CALLS

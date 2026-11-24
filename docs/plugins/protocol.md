@@ -61,7 +61,7 @@ discarded.
 | `switch_page` | yes | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"page_id": "<id>"}`: switch the key's device to that page (see [Pages](#pages)) |
 | `switch_profile` | yes | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"profile_id": 2}`: switch the key's device to that profile's default page (see [Profiles](#profiles)) |
 | `set_global_settings` | | `{"settings": {...}}`, validated against `global_settings` and saved |
-| `action_result` | | `{"request": "<id>", "ok": true, "value": ...}` (`value` optional) or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. `value` is any JSON, at most 1 MiB encoded, larger is an error. The server gives up after the call's timeout (30 s unless the caller set one) and shows the user the error |
+| `action_result` | | `{"request": "<id>", "ok": true, "value": ...}` (`value` optional) or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. `value` is any JSON, at most 1 MiB encoded, larger is an error. The server gives up after the call's timeout (the caller's `timeout`, else the action's manifest `timeout`, else 30 s) and shows the user the error |
 | `call_action` | | `{"request": "<id>", "action": "<action id>", "args": {...}, "timeout": 30, "chain": "<id>", "depth": 0, "device": "<device id>"}` (all but `request` and `action` optional): run an action and get its value, see [Action calls](#action-calls) |
 | `get_image` | | `{"request": "<id>", "context": "<ctx>", "call": "<run_action request>"}`: ask for a key's current plugin image, see [Painting](#painting) |
 | `register_variable` | | `{"name": "<concrete name>"}`: announce a name inside one of your declared patterns (see [Variables](#variables)) |
@@ -107,7 +107,7 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
 - A plugin may call its own actions of either scope and any other plugin's `global` actions; anything else, and unknown
   action ids, are refused with an error. Do Nothing is accepted.
 - The server validates `args` against the action's schema before the callee sees them.
-- `timeout` (seconds, a positive number) defaults to 30 and is capped at 300.
+- `timeout` (seconds, a positive number) is optional: when omitted, the action's manifest `timeout` applies, else 30. It is capped at 300 and at the time left to the calling action; with none left the call is refused ("the calling action ran out of time").
 - `value` in `call_result` and `action_result` is at most 1 MiB encoded (`1048576` bytes of JSON).
 - **Chains.** `chain` is an id shared by every call that stems from one gesture. An action that calls out passes the
   `chain` and `depth` from its own `run_action`; the server counts the depth itself from the calls of that chain that the

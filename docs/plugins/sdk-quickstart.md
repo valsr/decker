@@ -109,7 +109,7 @@ except ActionError as exc:   # refused, failed or timed out; the message says wh
 result = await call_action_async("com.example.hello.sendwave", {"times": 2})  # in async code
 ```
 
-`call_action(action_id, args=None, timeout=30.0, device=None)` blocks until the action returns its value and raises
+`call_action(action_id, args=None, timeout=None, device=None)` blocks until the action returns its value and raises
 `ActionError` when the call is refused (see [Action calls](protocol.md#action-calls) for who may call what), fails or
 times out; `timeout` is capped at 300 s. Inside an action it forwards the call chain, so the depth limit of 8 and the
 device apply automatically. A nested call blocks only its own worker, and the pool grows for nested calls so a chain

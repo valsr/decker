@@ -19,7 +19,7 @@
 | Options source name | 64 characters |
 | Options ask (`get_options`) | the plugin has 5 s to answer; on a timeout the client gets an error and no options |
 | Action or call result value (`action_result`, `call_result`) | 1 MiB encoded as JSON (`MAX_VALUE_BYTES = 1024 * 1024`); a larger value is an error |
-| Action call timeout | 30 s by default; `call_action` may ask for more, capped at 300 s |
+| Action call timeout | the action's manifest `timeout`, else 30 s; `call_action` may ask for another, capped at 300 s and at the calling action's remaining time |
 | Action call depth | a chain of calls may nest 8 deep; deeper calls are refused (the server counts it from the `chain` the caller forwards) |
 | Canvas frame tick | about 30 per second; at most 2 frames per tick (about 60 per second), so the canvas stays under the flood limit; a key not sent stays dirty for the next tick |
 | Canvas image fetch (`get_image`) | the plugin waits up to 5 s for `image_result` |
