@@ -198,9 +198,8 @@ def test_builtin_plugin_starts_without_a_venv(tmp_path: Path) -> None:
         assert_that(_command(manager, _ACT_ID)[0]).is_equal_to(sys.executable)
 
         manager.activate_card(_ACT_TILE)
-        assert_that(
-            _wait_for(lambda: manager._supervisor.is_ready(_ACT_ID))
-        ).is_true()  # pylint: disable=protected-access
+        ready = _wait_for(lambda: manager._supervisor.is_ready(_ACT_ID))  # pylint: disable=protected-access
+        assert_that(ready).is_true()
         manager.dispatch_key_down(_ACT_TILE)
         manager.dispatch_key_up(_ACT_TILE)
 
