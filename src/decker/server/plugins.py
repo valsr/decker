@@ -2,17 +2,20 @@
 
 import base64
 import binascii
+import io
 import json
 import logging
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from decker.asset.iconpack import IconPackRegistry
+from decker.asset.renderer import AssetRenderer
 from decker.asset.tint import tint_svg
 from decker.common import config
 from decker.common.manager import Manager
@@ -158,9 +161,10 @@ class _Live:  # pylint: disable=too-many-instance-attributes
     plugin_title: str = ""
     state: int = 0
     delivered: dict[str, Any] = field(default_factory=dict)
+    last_paint: datetime | None = None
 
 
-_FOREIGN_EVENTS: frozenset[str] = frozenset({"switch_page", "switch_profile", "show_ok", "show_alert"})
+_FOREIGN_EVENTS: frozenset[str] = frozenset({"switch_page", "switch_profile", "show_ok", "show_alert", "set_image"})
 _VARIABLE_EVENTS: frozenset[str] = frozenset(
     {"register_variable", "unregister_variable", "variable_updated", "variable_value"}
 )
@@ -212,6 +216,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._supervisor.on_exit = self._on_plugin_exit
         self._action_runner = ActionRunner(self._supervisor, self._on_action_failed, self._resolve_args)
         self._foreign_warned: set[str] = set()
+        self._render_warned: bool = False
         self.icon_packs = IconPackRegistry(on_failure=self._record_failure)
         self.variables = VariableStore(on_change=self._on_variables_changed)
         self._variable_runner = VariableRunner(
@@ -744,7 +749,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             "key": {"index": target.key_index, "column": column, "row": row},
             "size": list(self._key_size(target)),
             "settings": self.delivered_settings(live),
-            "last_paint": None,
+            "last_paint": live.last_paint.isoformat() if live.last_paint is not None else None,
         }
 
     def _settings_payload(self, live: _Live, delivered: dict[str, Any]) -> dict[str, Any]:
@@ -1025,6 +1030,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._action_runner.on_result(plugin_id, message.payload)
         elif event == "call_action":
             self._action_runner.on_plugin_call(plugin_id, message.payload)
+        elif event == "get_image":
+            self._on_get_image(plugin_id, message.payload)
         elif event == "options_result":
             self._options_runner.on_result(plugin_id, message.payload)
         elif event in _VARIABLE_EVENTS:
@@ -1092,7 +1099,10 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         """Update the instance (caller holds the lock); returns (handled, needs a recompose)."""
         target, payload = live.target, message.payload
         if message.event == "set_image":
-            return True, self._on_set_image(live, payload)
+            recompose = self._on_set_image(live, payload)
+            if recompose:
+                live.last_paint = datetime.now(timezone.utc)
+            return True, recompose
         if message.event == "set_title":
             live.plugin_title = str(payload.get("title", ""))
             self._sink.set_title(target.device_id, target.key_index, live.plugin_title)
@@ -1141,6 +1151,44 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             return False
         live.plugin_image = data
         return True
+
+    def _on_get_image(self, plugin_id: str, payload: dict[str, Any]) -> None:
+        request, context, call = payload.get("request"), payload.get("context"), payload.get("call")
+        if not isinstance(request, str):
+            logging.debug("[%s] dropped get_image without a string request", plugin_id)
+            return
+        image = None
+        if isinstance(context, str) and (call is None or isinstance(call, str)):
+            image = self._plugin_layer_png(plugin_id, context, call)
+        reply = {"request": request, "image": image, "format": "png"}
+        self._supervisor.send(plugin_id, Message("image_result", None, reply))
+
+    def _plugin_layer_png(self, plugin_id: str, context: str, call: str | None) -> str | None:
+        """The key's plugin image layer as base64 PNG at key size; None when absent, refused or unrenderable."""
+        with self._lock:
+            live = self._live.get(context)
+            if live is None:
+                return None
+            if live.target.plugin_uuid != plugin_id and not (
+                call is not None and self._action_runner.may_touch(plugin_id, call, context)
+            ):
+                return None
+            data, icon_ref, color = live.plugin_image, live.plugin_icon_ref, live.plugin_image_color
+            size = self._key_size(live.target)
+        try:
+            if icon_ref is not None:
+                data = self.icon_packs.read_ref(icon_ref)
+            rendered = AssetRenderer().render_bytes(data, size[0], size[1], color) if data is not None else None
+            if rendered is None:
+                return None
+            buffer = io.BytesIO()
+            rendered.save(buffer, format="PNG")
+            return base64.b64encode(buffer.getvalue()).decode("ascii")
+        except Exception:  # pylint: disable=broad-except
+            if not self._render_warned:
+                self._render_warned = True
+                logging.warning("[%s] get_image could not render %s", plugin_id, context[:80], exc_info=True)
+            return None
 
     def _set_icon(self, live: _Live, payload: dict[str, Any]) -> bool:
         who = live.target.plugin_uuid
