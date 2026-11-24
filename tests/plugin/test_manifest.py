@@ -575,6 +575,17 @@ def test_bad_binding_is_a_manifest_error() -> None:
         PluginManifest.from_dict(_with_actions(_ACT, bindings={"swipe": {"action": "com.other.act"}}))
 
 
+def test_runtimeless_static_card_may_bind_a_foreign_action() -> None:
+    data = _with_actions(static=True, bindings={"press": {"action": "com.other.act"}})
+    del data["runtime"]
+    data["contributes"]["actions"] = []
+
+    manifest = PluginManifest.from_dict(data)
+
+    assert_that(manifest.runtime).is_none()
+    assert_that(manifest.cards[0].bindings["press"].action).is_equal_to("com.other.act")
+
+
 def test_static_card_may_declare_bindings() -> None:
     data = _with_actions(_ACT, static=True, bindings={"press": {"action": "com.acme.demo.act"}})
     assert_that(PluginManifest.from_dict(data).cards[0].bindings["press"].action).is_equal_to("com.acme.demo.act")
