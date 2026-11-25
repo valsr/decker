@@ -70,13 +70,6 @@ class OpenUrlRequestedEvent:
 
 
 @dataclass(frozen=True)
-class ActionListUpdatedEvent:
-    """The set of plugin actions known to the server has changed."""
-
-    actions: list[dict[str, Any]]
-
-
-@dataclass(frozen=True)
 class PresetListUpdatedEvent:
     """The set of plugin presets known to the server has changed."""
 
@@ -225,7 +218,6 @@ AppEvent = (
     | ActionFailedEvent
     | OpenUrlRequestedEvent
     | CardListUpdatedEvent
-    | ActionListUpdatedEvent
     | PresetListUpdatedEvent
     | KeyDisplayStatesUpdatedEvent
     | PagesUpdatedEvent

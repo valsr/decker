@@ -113,11 +113,11 @@ class TestDeviceListHandling:
             mock_build.assert_not_called()
 
 
-class TestActionListHandling:
+class TestCardListHandling:
     def setup_method(self):
         AppContext._instance = None  # pylint: disable=protected-access
 
-    def test_populates_sidebar_actions(self, qapp, tmp_path):  # pylint: disable=unused-argument
+    def test_populates_sidebar_cards(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
         actions = [{"plugin_uuid": "p", "plugin_name": "P", "card_uuid": "p.a", "card_name": "A"}]
 
@@ -556,12 +556,37 @@ class TestKeyInteractions:
 
         view._config_panel.show_gesture_tab.assert_called_once_with("press")  # pylint: disable=protected-access
 
+    def test_dropping_a_preset_without_errors_does_not_open_the_press_tab(
+        self, qapp, tmp_path
+    ) -> None:  # pylint: disable=unused-argument
+        view, _cm = self._preset_view(tmp_path, {"ok": True, "errors": {}})
+
+        view._on_preset_dropped(2, self._PRESET)  # pylint: disable=protected-access
+        view._key_slots[2] = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        view._on_display_states_updated("dev1", [{"key_index": 2}])  # pylint: disable=protected-access
+
+        view._config_panel.show_gesture_tab.assert_not_called()  # pylint: disable=protected-access
+
+    def test_moving_a_key_drops_a_pending_press_tab_request(
+        self, qapp, tmp_path
+    ) -> None:  # pylint: disable=unused-argument
+        view, _cm = self._preset_view(tmp_path, {"ok": True, "errors": {"press.url": "required"}})
+        view._on_preset_dropped(2, self._PRESET)  # pylint: disable=protected-access
+
+        view._on_key_moved(2, 5, False)  # pylint: disable=protected-access
+        view._key_slots[5] = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        view._on_display_states_updated("dev1", [{"key_index": 5}])  # pylint: disable=protected-access
+
+        view._config_panel.show_gesture_tab.assert_not_called()  # pylint: disable=protected-access
+
     def test_failed_preset_drop_changes_nothing(self, qapp, tmp_path) -> None:  # pylint: disable=unused-argument
         view, cm = self._preset_view(tmp_path, {"ok": False, "errors": {}})
+        slot = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        view._key_slots[2] = slot  # pylint: disable=protected-access
 
         view._on_card_dropped(2, self._PRESET)  # pylint: disable=protected-access
 
-        assert_that(view._key_slots).is_empty()  # pylint: disable=protected-access
+        assert_that(view._key_slots).is_equal_to({2: slot})  # pylint: disable=protected-access
         assert_that(view._select_after_refresh).is_none()  # pylint: disable=protected-access
         cm.request_device_refresh.assert_not_called()
 

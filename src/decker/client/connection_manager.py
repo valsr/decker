@@ -19,7 +19,6 @@ from rpyc.utils.helpers import BgServingThread, async_
 from decker.client import config as client_config
 from decker.client.events import (
     ActionFailedEvent,
-    ActionListUpdatedEvent,
     AppRulesUpdatedEvent,
     CardListUpdatedEvent,
     DetectionStatusEvent,
@@ -118,7 +117,6 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
         self._reported_plugin_failures: set[str] = set()
         self._last_devices: list[DeviceHardwareInfo] | None = None
         self._last_cards: list[dict[str, Any]] | None = None
-        self._last_actions: list[dict[str, Any]] | None = None
         self._last_presets: list[dict[str, Any]] | None = None
         self.server_settings: ServerSettingsInfo | None = None
 
@@ -220,7 +218,6 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
         if self._cards_refresh_requested.is_set():
             self._cards_refresh_requested.clear()
             self._refresh_cards()
-            self._refresh_actions()
             self._refresh_presets()
         if self._rules_refresh_requested.is_set():
             self._rules_refresh_requested.clear()
@@ -257,7 +254,6 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
         self.state = ServerState.INITIALIZING
         self._last_devices = None
         self._last_cards = None
-        self._last_actions = None
         self._last_presets = None
         self._bg_server = BgServingThread(self._conn)
         self.call("client_attached")
@@ -300,7 +296,6 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
     def _refresh_all(self) -> None:
         self._refresh_devices()
         self._refresh_cards()
-        self._refresh_actions()
         self._refresh_presets()
         self._check_plugin_failures()
 
@@ -355,19 +350,6 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
             return
         self._last_devices = devices
         EventManager.get().push(DeviceListUpdatedEvent(devices=devices))
-
-    def _refresh_actions(self) -> None:
-        if self._conn is None:
-            return
-        try:
-            actions: list[dict[str, Any]] = self._call_json("plugins_actions_list")
-        except Exception as e:  # pylint: disable=broad-except
-            logging.warning("Could not list plugin actions: %s", e)
-            return
-        if not isinstance(actions, list) or actions == self._last_actions:
-            return
-        self._last_actions = actions
-        EventManager.get().push(ActionListUpdatedEvent(actions=actions))
 
     def _refresh_presets(self) -> None:
         if self._conn is None:
