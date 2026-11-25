@@ -944,7 +944,7 @@ def _version(version: str, decker: str | None = None, platforms: PlatformSpec | 
     )
 
 
-def _entry(*versions: IndexVersion) -> CatalogEntry:
+def _entry(*versions: IndexVersion, icon_ref: str | None = None) -> CatalogEntry:
     plugin = IndexPlugin(
         id="com.repo",
         name="Repo Plugin",
@@ -954,6 +954,7 @@ def _entry(*versions: IndexVersion) -> CatalogEntry:
         homepage="",
         icon_url=None,
         versions=tuple(versions),
+        icon_ref=icon_ref,
     )
     return CatalogEntry(plugin=plugin, repository_url="https://example.com/index.json", shadowed_by=None)
 
@@ -1503,6 +1504,11 @@ class TestPlatformData:
         assert_that(info["platforms"]).is_equal_to(["linux"])
         assert_that(info["linux"]).is_equal_to({"desktops": ["gnome"]})
         assert_that(info["supported"]).is_false()
+
+
+def test_catalog_item_carries_icon_ref() -> None:
+    assert_that(_catalog(_entry(icon_ref="fas:toolbox"))["icon_ref"]).is_equal_to("fas:toolbox")
+    assert_that(_catalog(_entry())["icon_ref"]).is_none()
 
 
 def _catalog(entry: CatalogEntry) -> dict:

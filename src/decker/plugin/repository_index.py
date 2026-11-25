@@ -9,6 +9,7 @@ from urllib.parse import urljoin, urlparse
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from decker.common.icon_ref import parse_builtin_ref
 from decker.common.platforms import PlatformSpec, parse_platform_spec
 from decker.common.version import is_compatible
 from decker.plugin.manifest import is_valid_plugin_id, is_valid_version
@@ -54,6 +55,7 @@ class IndexPlugin:
     homepage: str
     icon_url: str | None
     versions: tuple[IndexVersion, ...]
+    icon_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -146,7 +148,11 @@ def _parse_plugin(raw: Any, index_url: str, warnings: list[str]) -> IndexPlugin 
         return None
     versions.sort(key=lambda v: Version(v.version), reverse=True)
     icon_url: str | None = None
-    if raw.get("icon"):
+    icon_ref: str | None = None
+    raw_icon = raw.get("icon")
+    if isinstance(raw_icon, str) and parse_builtin_ref(raw_icon.strip()) is not None:
+        icon_ref = raw_icon.strip()
+    elif raw_icon:
         try:
             icon_url = _resolve_url(raw["icon"], index_url)
         except _EntryError as exc:
@@ -160,6 +166,7 @@ def _parse_plugin(raw: Any, index_url: str, warnings: list[str]) -> IndexPlugin 
         homepage=_text(raw.get("homepage"), 500),
         icon_url=icon_url,
         versions=tuple(versions),
+        icon_ref=icon_ref,
     )
 
 

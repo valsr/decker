@@ -129,6 +129,7 @@ def _catalog_item(entry: CatalogEntry, installed_version: str | None, host: Host
         "description": plugin.description,
         "category": plugin.category,
         "homepage": plugin.homepage,
+        "icon_ref": plugin.icon_ref,
         "repository": entry.repository_url,
         "shadowed_by": entry.shadowed_by,
         "installed_version": installed_version,

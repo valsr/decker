@@ -99,7 +99,7 @@ client.
 | `author`, `category` | Optional, trimmed to 100 characters |
 | `description` | Optional, trimmed to 2000 characters |
 | `homepage` | Optional, trimmed to 500 characters |
-| `icon` | Optional URL of a PNG; an invalid icon URL is ignored (the plugin stays) |
+| `icon` | Optional: a PNG URL, or a built-in icon ref such as `fas:toolbox` that Decker draws from its bundled Font Awesome (older Decker versions ignore a ref and show a placeholder); an invalid value is ignored (the plugin stays) |
 | `versions` | Required non-empty list; Decker sorts it newest first itself |
 
 ### Version entry

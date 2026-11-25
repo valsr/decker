@@ -8,6 +8,7 @@ import pytest
 from assertpy import assert_that
 from PyQt6.QtWidgets import QMessageBox
 
+from decker.client.card_icons import placeholder_pixmap
 from decker.client.context import AppContext
 from decker.client.events import (
     PluginInstallFinishedEvent,
@@ -175,6 +176,30 @@ def test_icons_load_one_at_a_time_off_the_ui_thread(dialog, manager, qapp):
     _settle(dialog, qapp)
     ids = [c.args[1] for c in manager.call.call_args_list if c.args[0] == "repository_icon"]
     assert_that(ids).contains("a.fresh", "a.old")
+
+
+def _dialog_with(manager, qapp, plugin):
+    manager.answers["repository_catalog"] = [plugin]
+    widget = GetMorePluginsDialog()
+    _settle(widget, qapp)
+    return widget
+
+
+def test_ref_icon_row_draws_without_rpc(manager, qapp):
+    widget = _dialog_with(manager, qapp, _plugin("a.ref", "Ref", icon_ref="fas:toolbox"))
+    row = widget._rows["a.ref"]
+    placeholder = placeholder_pixmap("Ref", 40).toImage()
+    assert_that(row.icon_label.pixmap().toImage() == placeholder).is_false()
+    assert_that(widget._pending).does_not_contain("a.ref")
+    ids = [c.args[1] for c in manager.call.call_args_list if c.args[0] == "repository_icon"]
+    assert_that(ids).does_not_contain("a.ref")
+    widget.close()
+
+
+def test_unknown_ref_falls_back_to_placeholder(manager, qapp):
+    widget = _dialog_with(manager, qapp, _plugin("a.bad", "Bad", icon_ref="fas:no-such-icon"))
+    assert_that(widget._rows).contains_key("a.bad")
+    widget.close()
 
 
 def test_human_size():
