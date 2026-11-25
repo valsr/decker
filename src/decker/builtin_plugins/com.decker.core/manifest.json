@@ -5,7 +5,7 @@
   "version": "0.8.1",
   "author": "Decker",
   "description": "The actions Decker ships.",
-  "icon": "icons/blank",
+  "icon": "far:square",
   "decker": ">=0.8",
   "runtime": {
     "type": "python",
@@ -28,14 +28,14 @@
         "name": "Do Nothing",
         "tooltip": "Does nothing",
         "scope": "global",
-        "icon": "icons/nothing"
+        "icon": "fas:ban"
       },
       {
         "id": "com.decker.core.httprequest",
         "name": "HTTP Request",
         "tooltip": "Sends an HTTP request",
         "scope": "global",
-        "icon": "icons/blank",
+        "icon": "fas:globe",
         "returns": "{\"status\": int, \"body\": str}: the HTTP status and up to 512 KiB of the response body",
         "settings": [
           {
@@ -245,7 +245,7 @@
         "id": "com.decker.core.preset-httprequest",
         "name": "HTTP Request",
         "tooltip": "Sends an HTTP request when pressed",
-        "icon": "icons/blank",
+        "icon": "fas:globe",
         "bindings": {
           "press": {
             "action": "com.decker.core.httprequest"

@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import sys
 import time
@@ -12,6 +13,7 @@ import pytest
 from assertpy import assert_that
 from PIL import Image
 
+from decker.asset.builtinicons import read_builtin_ref
 from decker.plugin.environment import venv_python
 from decker.plugin.loader import BUILTIN_PLUGINS_DIR, InstalledPlugin, PluginLoader
 from decker.plugin.manifest import PluginManifest
@@ -45,6 +47,20 @@ def test_core_manifest_has_the_static_blank_card():
     assert_that(manifest.cards[0].name).is_equal_to("Blank")
     assert_that(manifest.cards[0].tooltip).is_equal_to("Draws only the background and title")
     assert_that((BUILTIN_PLUGINS_DIR / "com.decker.blank").exists()).is_false()
+
+
+def test_builtin_plugin_icons_are_font_awesome_refs():
+    folder = BUILTIN_PLUGINS_DIR / BLANK
+    data = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+    contributes = data["contributes"]
+    icons = [data["icon"]]
+    for kind in ("cards", "actions", "presets"):
+        icons += [item["icon"] for item in contributes.get(kind, []) if "icon" in item]
+
+    for icon in icons:
+        assert_that(icon).matches(r"^(fas|far|fab):[a-z0-9-]+$")
+        assert_that(read_builtin_ref(icon)).is_not_none()
+    assert_that((folder / "icons").exists()).is_false()
 
 
 def test_scan_builtin_finds_core(tmp_path):
