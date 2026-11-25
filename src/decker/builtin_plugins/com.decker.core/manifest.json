@@ -238,11 +238,6 @@
         "name": "HTTP Request",
         "tooltip": "Sends an HTTP request when pressed",
         "icon": "icons/blank",
-        "appearance": {
-          "icon": {
-            "ref": "fas:globe"
-          }
-        },
         "bindings": {
           "press": {
             "action": "com.decker.core.httprequest"
@@ -254,11 +249,6 @@
         "name": "Delay",
         "tooltip": "Waits when pressed",
         "icon": "fas:hourglass-half",
-        "appearance": {
-          "icon": {
-            "ref": "fas:hourglass-half"
-          }
-        },
         "bindings": {
           "press": {
             "action": "com.decker.core.delay"
@@ -270,11 +260,6 @@
         "name": "Sequence",
         "tooltip": "Runs several actions in a row when pressed",
         "icon": "fas:list-ol",
-        "appearance": {
-          "icon": {
-            "ref": "fas:list-ol"
-          }
-        },
         "bindings": {
           "press": {
             "action": "com.decker.core.sequence"
