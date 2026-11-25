@@ -31,8 +31,8 @@ _PAGE_PLACEHOLDER = 0
 _PAGE_FORM = 1
 _PREVIEW_DEBOUNCE_MS = 150
 CARD_TAB = "Card"
-_CARD_ICON = "fas:sliders"
-_GESTURE_ICONS = {"press": "fas:hand-pointer", "double_press": "fas:clone", "long_press": "fas:hourglass-half"}
+_CARD_ICON = "fas:image"
+_GESTURE_ICONS = {"press": "fas:caret-right", "double_press": "fas:caret-square-right", "long_press": "fas:hourglass"}
 _NO_CARD_SETTINGS = "This card has no settings"
 
 _TOP = Qt.AlignmentFlag.AlignTop
@@ -74,7 +74,7 @@ def _run_in_thread(job: Callable[[], str | None], done: Callable[[str | None], N
 
 
 class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attributes
-    """Stacked config panel: page 0 = placeholder, page 1 = preview, appearance, Save and the Card, Press, Double Press and Long Press tabs."""
+    """Stacked config panel: a placeholder page, then preview, appearance, Save and the Card and gesture tabs."""
 
     _preview_ready = pyqtSignal(int, object)
 
@@ -104,6 +104,8 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._no_settings = QLabel(_NO_CARD_SETTINGS)
         self._no_settings.setProperty("role", "muted")
         self._tabs = QTabWidget()
+        self._card_index = 0
+        self._gesture_index: dict[str, int] = {}
         self._save_btn = QPushButton("Save")
         self._save_btn.setProperty("dirty", False)
         self._preview_timer = QTimer(self)
@@ -194,18 +196,18 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
     def _show_tabs(self, has_settings: bool, has_bindings: bool) -> None:
         """Show the tabs that apply; an empty card keeps its Card tab so it can say there is nothing to set."""
         self._no_settings.setVisible(not has_settings)
-        self._tabs.setTabVisible(0, has_settings or not has_bindings)
-        for index in range(1, self._tabs.count()):
+        self._tabs.setTabVisible(self._card_index, has_settings or not has_bindings)
+        for index in self._gesture_index.values():
             self._tabs.setTabVisible(index, has_bindings)
-        first = 0 if self._tabs.isTabVisible(0) else 1
-        self._tabs.setCurrentIndex(first)
+        visible = [i for i in range(self._tabs.count()) if self._tabs.isTabVisible(i)]
+        self._tabs.setCurrentIndex(visible[0] if visible else 0)
 
     def _refresh_tab_marks(self) -> None:
-        modified = [self._settings_form.values() != self._settings_form.defaults()]
-        modified += [self._bindings_edit.is_modified(gesture) for gesture, _title in GESTURES]
-        names = [CARD_TAB] + [title for _gesture, title in GESTURES]
-        for index, (name, mark) in enumerate(zip(names, modified)):
-            self._tabs.setTabText(index, tab_text(name, mark))
+        card_modified = self._settings_form.values() != self._settings_form.defaults()
+        self._tabs.setTabText(self._card_index, tab_text(CARD_TAB, card_modified))
+        for gesture, title in GESTURES:
+            modified = self._bindings_edit.is_modified(gesture)
+            self._tabs.setTabText(self._gesture_index[gesture], tab_text(title, modified))
 
     def _build_form_page(self) -> QWidget:
         page = QWidget()
@@ -228,10 +230,12 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._preview.clear_icon_requested.connect(self._clear_icon)
 
         self._tabs.setDocumentMode(True)  # tabs on a rule across the panel, no frame round the pages
-        self._tabs.addTab(_scrolling(self._no_settings, self._settings_form), tab_icon(_CARD_ICON), CARD_TAB)
+        self._card_index = self._tabs.addTab(
+            _scrolling(self._no_settings, self._settings_form), tab_icon(_CARD_ICON), CARD_TAB
+        )
         for gesture, title in GESTURES:
             scroll = _scrolling(self._bindings_edit.row_widget(gesture))
-            self._tabs.addTab(scroll, tab_icon(_GESTURE_ICONS[gesture]), title)
+            self._gesture_index[gesture] = self._tabs.addTab(scroll, tab_icon(_GESTURE_ICONS[gesture]), title)
         layout.addWidget(self._tabs, 1)
         return page
 
