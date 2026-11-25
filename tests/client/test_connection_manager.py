@@ -31,6 +31,7 @@ from decker.client.events import (
     PluginLoadFailedEvent,
     PluginsChangedEvent,
     PluginUpdatesAvailableEvent,
+    PresetListUpdatedEvent,
     ProfilesUpdatedEvent,
     RepositoriesCheckFinishedEvent,
     ServerConnectedEvent,
@@ -347,6 +348,18 @@ class TestConnectionManager:
 
         events = [e for e in EventManager.get().drain() if isinstance(e, ActionListUpdatedEvent)]
         assert_that([e.actions for e in events]).is_equal_to([actions])
+
+    def test_presets_refresh_pushes_event_once_per_change(self):
+        presets = [{"preset_uuid": "p.a", "preset_name": "Do"}]
+        mock_conn = MagicMock()
+        mock_conn.root.plugins_presets_list.return_value = json.dumps(presets)
+        self.manager._conn = mock_conn  # pylint: disable=protected-access
+
+        self.manager._refresh_presets()  # pylint: disable=protected-access
+        self.manager._refresh_presets()  # pylint: disable=protected-access
+
+        events = [e for e in EventManager.get().drain() if isinstance(e, PresetListUpdatedEvent)]
+        assert_that([e.presets for e in events]).is_equal_to([presets])
 
     def test_refresh_actions_failure_does_not_raise(self):
         mock_conn = MagicMock()

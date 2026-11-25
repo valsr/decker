@@ -33,6 +33,7 @@ from decker.client.events import (
     PluginLoadFailedEvent,
     PluginsChangedEvent,
     PluginUpdatesAvailableEvent,
+    PresetListUpdatedEvent,
     ProfilesUpdatedEvent,
     RepositoriesCheckFinishedEvent,
     ScreensaverSettingsEvent,
@@ -118,6 +119,7 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
         self._last_devices: list[DeviceHardwareInfo] | None = None
         self._last_cards: list[dict[str, Any]] | None = None
         self._last_actions: list[dict[str, Any]] | None = None
+        self._last_presets: list[dict[str, Any]] | None = None
         self.server_settings: ServerSettingsInfo | None = None
 
     @property
@@ -219,6 +221,7 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
             self._cards_refresh_requested.clear()
             self._refresh_cards()
             self._refresh_actions()
+            self._refresh_presets()
         if self._rules_refresh_requested.is_set():
             self._rules_refresh_requested.clear()
             self.refresh_app_rules()
@@ -255,6 +258,7 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
         self._last_devices = None
         self._last_cards = None
         self._last_actions = None
+        self._last_presets = None
         self._bg_server = BgServingThread(self._conn)
         self.call("client_attached")
         EventManager.get().push(ServerConnectedEvent(host=host, port=port))
@@ -297,6 +301,7 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
         self._refresh_devices()
         self._refresh_cards()
         self._refresh_actions()
+        self._refresh_presets()
         self._check_plugin_failures()
 
     def _call_json(self, method: str, *args: Any) -> Any:
@@ -363,6 +368,19 @@ class ConnectionManager:  # pylint: disable=too-many-instance-attributes
             return
         self._last_actions = actions
         EventManager.get().push(ActionListUpdatedEvent(actions=actions))
+
+    def _refresh_presets(self) -> None:
+        if self._conn is None:
+            return
+        try:
+            presets: list[dict[str, Any]] = self._call_json("plugins_presets_list")
+        except Exception as e:  # pylint: disable=broad-except
+            logging.warning("Could not list plugin presets: %s", e)
+            return
+        if not isinstance(presets, list) or presets == self._last_presets:
+            return
+        self._last_presets = presets
+        EventManager.get().push(PresetListUpdatedEvent(presets=presets))
 
     def _refresh_cards(self) -> None:
         if self._conn is None:

@@ -13,13 +13,13 @@ from PyQt6.QtWidgets import QMenu, QMessageBox
 from decker.client.call_bridge import CallBridge
 from decker.client.context import AppContext
 from decker.client.events import (
-    ActionListUpdatedEvent,
     AppRulesUpdatedEvent,
     CardListUpdatedEvent,
     DetectionStatusEvent,
     DeviceListUpdatedEvent,
     KeyDisplayStatesUpdatedEvent,
     PagesUpdatedEvent,
+    PresetListUpdatedEvent,
     ProfilesUpdatedEvent,
 )
 from decker.client.ui_state_store import UiStateStore
@@ -515,36 +515,63 @@ class TestKeyInteractions:
         assert_that(mock_cm.call.call_args[0][:4]).is_equal_to(("key_assign", "dev1", "p1", 4))
         assert_that(view._key_slots).contains_key(4)  # pylint: disable=protected-access
 
-    def test_dropping_an_action_assigns_blank_with_press_bound(
-        self, qapp, tmp_path
-    ) -> None:  # pylint: disable=unused-argument
+    @staticmethod
+    def _preset_view(tmp_path, response):
         view = _make_view(tmp_path)
         _active_dev1(view)
         mock_cm = MagicMock()
-        mock_cm.call.return_value = True
+        mock_cm.call.return_value = response
         AppContext.get().connection_manager = mock_cm
+        view._config_panel = MagicMock()  # pylint: disable=protected-access
+        return view, mock_cm
 
-        view._on_card_dropped(  # pylint: disable=protected-access
-            2,
-            {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank", "preset_action": "com.t.mute"},
-        )
+    _PRESET = {
+        "plugin_uuid": "com.t.audio",
+        "plugin_name": "Audio",
+        "preset_uuid": "com.t.audio.mute",
+        "preset_name": "Mute",
+    }
 
-        args = mock_cm.call.call_args[0]
-        assert_that(args[:7]).is_equal_to(
-            ("key_assign", "dev1", "p1", 2, "com.decker.blank", "com.decker.blank.blank", args[6])
-        )
-        assert_that(json.loads(args[7])).is_equal_to({})
-        assert_that(json.loads(args[8])).is_equal_to({"press": {"action": "com.t.mute", "args": {}}})
+    def test_dropping_a_preset_calls_key_assign_preset_and_selects_the_key(
+        self, qapp, tmp_path
+    ) -> None:  # pylint: disable=unused-argument
+        view, cm = self._preset_view(tmp_path, {"ok": True, "errors": {}})
 
-    def test_action_list_event_fills_the_actions_tab(self, qapp, tmp_path):  # pylint: disable=unused-argument
+        view._on_card_dropped(2, self._PRESET)  # pylint: disable=protected-access
+
+        args = cm.call.call_args[0]
+        assert_that(args[:6]).is_equal_to(("key_assign_preset", "dev1", "p1", 2, "com.t.audio", "com.t.audio.mute"))
+        assert_that(args[6]).is_not_empty()  # the fresh context id
+        assert_that(view._select_after_refresh).is_equal_to(2)  # pylint: disable=protected-access
+        cm.request_device_refresh.assert_called_once()
+
+    def test_dropping_a_preset_with_errors_selects_the_key_on_the_press_tab(
+        self, qapp, tmp_path
+    ) -> None:  # pylint: disable=unused-argument
+        view, _cm = self._preset_view(tmp_path, json.dumps({"ok": True, "errors": {"press.url": "required"}}))
+
+        view._on_preset_dropped(2, self._PRESET)  # pylint: disable=protected-access
+        view._key_slots[2] = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        view._on_display_states_updated("dev1", [{"key_index": 2}])  # pylint: disable=protected-access
+
+        view._config_panel.show_gesture_tab.assert_called_once_with("press")  # pylint: disable=protected-access
+
+    def test_failed_preset_drop_changes_nothing(self, qapp, tmp_path) -> None:  # pylint: disable=unused-argument
+        view, cm = self._preset_view(tmp_path, {"ok": False, "errors": {}})
+
+        view._on_card_dropped(2, self._PRESET)  # pylint: disable=protected-access
+
+        assert_that(view._key_slots).is_empty()  # pylint: disable=protected-access
+        assert_that(view._select_after_refresh).is_none()  # pylint: disable=protected-access
+        cm.request_device_refresh.assert_not_called()
+
+    def test_preset_list_event_fills_the_sidebar(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
-        actions = [
-            {"plugin_uuid": "p", "plugin_name": "P", "action_uuid": "p.a", "action_name": "Do", "scope": "global"}
-        ]
+        presets = [{"plugin_uuid": "p", "plugin_name": "P", "preset_uuid": "p.a", "preset_name": "Do"}]
 
-        view.handle_event(ActionListUpdatedEvent(actions=actions))
+        view.handle_event(PresetListUpdatedEvent(presets=presets))
 
-        assert_that(view._sidebar.action_sections).is_equal_to([("P", ["Do"])])  # pylint: disable=protected-access
+        assert_that(view._sidebar.sections).is_equal_to([("P", ["Do"])])  # pylint: disable=protected-access
 
     def test_save_key_settings_calls_update_settings_rpc(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)

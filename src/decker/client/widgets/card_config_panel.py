@@ -306,6 +306,12 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         )
         self._show_first_error_tab()
 
+    def show_gesture_tab(self, gesture: str) -> None:
+        """Switch to a gesture's tab when it is visible."""
+        index = self._gesture_index.get(gesture)
+        if index is not None and self._tabs.isTabVisible(index):
+            self._tabs.setCurrentIndex(index)
+
     def _show_first_error_tab(self) -> None:
         """Switch to the first visible tab that has errors; leave the current tab alone when none does."""
         candidates = [(self._card_index, self._settings_form.has_errors())]
