@@ -1,6 +1,5 @@
 """Settings → Plugins tab: installed plugins (failed ones grayed), install/uninstall/update and global settings."""
 
-import base64
 import json
 import logging
 import threading
@@ -21,6 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from decker.client.card_icons import decode_icon, icon_tint
 from decker.client.context import AppContext
 from decker.client.events import (
     PluginInstallFinishedEvent,
@@ -129,10 +129,8 @@ def _contribution_summary(plugin: dict[str, Any]) -> str:
 
 
 def _plugin_icon(plugin: dict[str, Any], failed: bool = False) -> QIcon:
-    pixmap = QPixmap()
     encoded = plugin.get("icon_b64")
-    if encoded:
-        pixmap.loadFromData(base64.b64decode(encoded))
+    pixmap = (decode_icon(str(encoded), icon_tint()) if encoded else None) or QPixmap()
     icon = QIcon(pixmap)
     return QIcon(icon.pixmap(pixmap.size(), QIcon.Mode.Disabled)) if failed and not pixmap.isNull() else icon
 

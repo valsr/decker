@@ -447,3 +447,24 @@ def test_refresh_drops_failures_the_server_no_longer_reports(manager):
 
     assert_that(tab._plugin_list.count()).is_equal_to(2)
     assert_that(_item(tab, "com.acme.extra").text()).does_not_contain("Failed")
+
+
+_CURRENT_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+    b'<path fill="currentColor" d="M0 0h10v10H0z"/></svg>'
+)
+
+
+def test_plugin_icon_svg_follows_the_icon_colour_and_failed_is_disabled(qapp):
+    plugin = {"icon_b64": base64.b64encode(_CURRENT_SVG).decode("ascii")}
+    qapp.setProperty("iconColor", "#ff0000")
+    try:
+        normal = plugins_tab._plugin_icon(plugin).pixmap(16, 16).toImage()
+        failed = plugins_tab._plugin_icon(plugin, failed=True).pixmap(16, 16).toImage()
+    finally:
+        qapp.setProperty("iconColor", None)
+
+    colour = normal.pixelColor(8, 8)
+    assert_that((colour.red(), colour.green(), colour.blue())).is_equal_to((255, 0, 0))
+    assert_that(failed.pixelColor(8, 8).name()).is_not_equal_to("#ff0000")
+    assert_that(plugins_tab._plugin_icon({}).isNull()).is_true()

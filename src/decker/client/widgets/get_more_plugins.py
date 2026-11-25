@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from decker.client.card_icons import builtin_pixmap, decode_icon, placeholder_pixmap
+from decker.client.card_icons import builtin_pixmap, decode_icon, icon_tint, placeholder_pixmap
 from decker.client.connection_manager import to_plain
 from decker.client.context import AppContext
 from decker.client.events import (
@@ -336,7 +336,7 @@ class GetMorePluginsDialog(QDialog):  # pylint: disable=too-many-instance-attrib
 
     def _icon_loaded(self, plugin_id: str, raw: Any) -> None:
         self._icon_busy = False
-        pixmap = decode_icon(raw) if isinstance(raw, str) else None
+        pixmap = decode_icon(raw, icon_tint()) if isinstance(raw, str) else None
         self._icons[plugin_id] = pixmap
         row = self._rows.get(plugin_id)
         if row is not None and pixmap is not None:

@@ -1,6 +1,8 @@
 """Tests for decker.client.widgets.get_more_plugins."""
 
+import base64
 import json
+from pathlib import Path
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +11,7 @@ from assertpy import assert_that
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMessageBox
 
-from decker.client.card_icons import builtin_pixmap, placeholder_pixmap
+from decker.client.card_icons import builtin_pixmap, decode_icon, placeholder_pixmap
 from decker.client.context import AppContext
 from decker.client.events import (
     PluginInstallFinishedEvent,
@@ -541,3 +543,41 @@ def test_platform_info_is_fetched_off_the_ui_thread(platform_manager, store, qap
     assert_that(threads).is_not_empty()
     assert_that(threads).does_not_contain(threading.get_ident())
     widget.close()
+
+
+_CURRENT_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+    b'<path fill="currentColor" d="M0 0h10v10H0z"/></svg>'
+)
+
+
+def test_repository_svg_icon_is_drawn_in_the_icon_colour(manager, qapp):
+    manager.answers["repository_icon"] = base64.b64encode(_CURRENT_SVG).decode("ascii")
+    qapp.setProperty("iconColor", "#ff0000")
+    try:
+        widget = _dialog_with(manager, qapp, _plugin("a.svg", "Svg"))
+        image = widget._rows["a.svg"].icon_label.pixmap().toImage()
+    finally:
+        qapp.setProperty("iconColor", None)
+
+    colour = image.pixelColor(image.width() // 2, image.height() // 2)
+    assert_that((colour.red(), colour.green(), colour.blue())).is_equal_to((255, 0, 0))
+
+
+def test_repository_png_icon_is_unchanged(manager, qapp):
+    png = Path(__file__).parents[2] / "fixtures" / "plugins" / "com.decker.testfixture" / "icons" / "counter.png"
+    encoded = base64.b64encode(png.read_bytes()).decode("ascii")
+    manager.answers["repository_icon"] = encoded
+    expected = decode_icon(encoded)
+    qapp.setProperty("iconColor", "#ff0000")
+    try:
+        widget = _dialog_with(manager, qapp, _plugin("a.png", "Png"))
+        shown = widget._rows["a.png"].icon_label.pixmap()
+    finally:
+        qapp.setProperty("iconColor", None)
+
+    assert expected is not None
+    scaled = expected.scaled(
+        shown.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+    )
+    assert_that(shown.toImage() == scaled.toImage()).is_true()
