@@ -764,7 +764,7 @@ class TestCardConfigPanelValidation:
 
 
 class TestPanelBindings:  # pylint: disable=protected-access
-    _ACTIONS = [
+    _ACTIONS: list[dict[str, Any]] = [
         {
             "plugin_uuid": "com.p",
             "plugin_name": "P",
@@ -784,11 +784,13 @@ class TestPanelBindings:  # pylint: disable=protected-access
     ]
 
     def setup_method(self) -> None:
+        self._serve(self._ACTIONS)
+
+    @staticmethod
+    def _serve(actions: list[dict[str, Any]]) -> None:
         import json
 
         from decker.client.context import AppContext
-
-        actions = self._ACTIONS
 
         class _Rpc:
             def call(self, method: str, *_args: Any) -> Any:
@@ -824,6 +826,28 @@ class TestPanelBindings:  # pylint: disable=protected-access
         index = combo.findData(action_id)
         combo.setCurrentIndex(index)
         combo.activated.emit(index)
+
+    def test_card_id_reaches_the_dropdown(self, qapp) -> None:  # pylint: disable=unused-argument
+        from decker.client.widgets.action_edit import ActionEdit
+        from decker.client.widgets.bindings_edit import GESTURES
+
+        self._serve([{**self._ACTIONS[0], "cards": ["com.p.card-a"]}, {**self._ACTIONS[1], "cards": ["com.p.card-b"]}])
+        panel = CardConfigPanel()
+        defaults = {"press": {"action": "com.p.stop", "args": {}}}
+        panel.show_card_config(
+            _COUNTER_SCHEMA,
+            {},
+            dict(_DEFAULTS),
+            dict(_DEFAULTS),
+            lambda s, a, b: SaveOutcome(True),
+            plugin_id="com.p",
+            card_id="com.p.card-a",
+            bindings=BindingsSpec(defaults, {}),
+        )
+
+        combo = panel._bindings_edit.row_widget(GESTURES[1][0]).findChildren(ActionEdit)[0]
+        assert_that(combo.findData("com.p.go")).is_greater_than_or_equal_to(0)
+        assert_that(combo.findData("com.p.stop")).is_equal_to(-1)
 
     def test_bindings_edit_marks_panel_dirty_and_save_sends_bindings(
         self, qapp
@@ -903,6 +927,7 @@ class TestPanelBindings:  # pylint: disable=protected-access
 class TestTabs:  # pylint: disable=protected-access
     _ACTIONS = TestPanelBindings._ACTIONS
     setup_method = TestPanelBindings.setup_method
+    _serve = staticmethod(TestPanelBindings._serve)
     teardown_method = TestPanelBindings.teardown_method
     _DEFAULT_BINDINGS = {"press": {"action": "com.p.stop", "args": {}}}
 

@@ -83,7 +83,8 @@ def _sort_key(action: dict[str, Any]) -> tuple[str, str, str, str]:
 class ActionEdit(QComboBox):
     """Pick an action; ``value()`` is its id.
 
-    With an ``owner``: Do Nothing, then Card actions (the owner's plugin-scoped actions), Built-in (Core) and Global
+    With an ``owner``: Do Nothing, then Card actions (the owner's plugin-scoped actions that the card ``card_id`` lists
+    or that no card lists, plus the one currently chosen; every one when ``card_id`` is empty), Built-in (Core) and Global
     (every plugin's global actions, the owner's included, one sub-header per plugin). Without an owner the card section
     is left out. Empty sections have no header.
     """
@@ -95,10 +96,12 @@ class ActionEdit(QComboBox):
         rpc: Callable[[], RpcCaller | None] | None = None,
         parent: QWidget | None = None,
         owner: str | None = None,
+        card_id: str = "",
     ) -> None:
         super().__init__(parent)
         self._rpc = rpc or _app_rpc
         self._owner = owner
+        self._card_id = card_id
         self._value = ""
         self._actions: list[dict[str, Any]] = []
         self._online = False
@@ -114,9 +117,10 @@ class ActionEdit(QComboBox):
         self._value = value if isinstance(value, str) else ""
         self._rebuild()
 
-    def set_owner(self, plugin_id: str) -> None:
-        """List the actions the plugin ``plugin_id`` may bind; keeps the shown value."""
+    def set_owner(self, plugin_id: str, card_id: str = "") -> None:
+        """List the actions the card ``card_id`` of plugin ``plugin_id`` may bind; keeps the shown value."""
         self._owner = plugin_id
+        self._card_id = card_id
         self._rebuild()
 
     def reload(self) -> None:
@@ -128,15 +132,20 @@ class ActionEdit(QComboBox):
 
     def _sections(self) -> list[tuple[str, list[dict[str, Any]]]]:
         usable = [a for a in self._actions if a.get("action_uuid") != NOTHING_ACTION_ID]
-        card = [
+        own = [
             a
             for a in usable
             if self._owner is not None and a.get("plugin_uuid") == self._owner and a.get("scope") != "global"
         ]
+        card = [a for a in own if self._offered(a)]
         built_in = [a for a in usable if a.get("plugin_uuid") == _CORE_PLUGIN_ID and a not in card]
         rest = [a for a in usable if a not in card and a not in built_in and a.get("scope") == "global"]
         sections = [(_CARD, card), (_BUILT_IN, built_in), (_GLOBAL, rest)]
         return [(title, sorted(actions, key=_sort_key)) for title, actions in sections if actions]
+
+    def _offered(self, action: dict[str, Any]) -> bool:
+        cards = action.get("cards") or []
+        return not self._card_id or not cards or self._card_id in cards or action.get("action_uuid") == self._value
 
     def _rebuild(self) -> None:
         self.blockSignals(True)

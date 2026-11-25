@@ -160,6 +160,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         save_cb: SaveCallback,
         title: str = "",
         plugin_id: str = "",
+        card_id: str = "",
         bindings: BindingsSpec | None = None,
     ) -> None:
         """Populate and show the forms; identical values re-sent while shown leave edits in progress alone."""
@@ -179,6 +180,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
             _resolved(appearance, appearance_defaults),
             dict(appearance_defaults),
             plugin_id,
+            card_id,
             spec,
         )
         if self.currentIndex() == _PAGE_FORM and loaded == self._loaded:
@@ -186,7 +188,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._loaded = loaded
         self._appearance_form.set_schema(APPEARANCE_SCHEMA, appearance)
         self._settings_form.set_schema(settings_schema, settings, plugin_id)
-        self._bindings_edit.set_bindings(spec, plugin_id)
+        self._bindings_edit.set_bindings(spec, plugin_id, card_id)
         self._show_tabs(bool(settings_schema), bindings is not None)
         self.setCurrentIndex(_PAGE_FORM)
         self._baseline = self._current_values()
@@ -337,7 +339,8 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
                 _resolved(form_appearance, self._appearance_defaults),
                 self._loaded[3],
                 self._loaded[4],
-                BindingsSpec(self._loaded[5].defaults, bindings),
+                self._loaded[5],
+                BindingsSpec(self._loaded[6].defaults, bindings),
             )
         self._baseline = self._current_values()
         draft = self._draft_appearance()
