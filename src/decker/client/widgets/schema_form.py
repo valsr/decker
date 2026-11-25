@@ -278,8 +278,10 @@ class SchemaForm(QWidget):
 
     changed = pyqtSignal()
 
-    def __init__(self) -> None:
+    def __init__(self, track_defaults: bool = True) -> None:
         super().__init__()
+        self._track_defaults = track_defaults
+        self._defaults: dict[str, Any] = {}
         self._layout = QFormLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._fields: dict[str, _Field] = {}
@@ -311,6 +313,7 @@ class SchemaForm(QWidget):
         self._link_action_fields(schema)
         for key, field in self._fields.items():  # after linking, so a profile change clears the page before `changed`
             _watch(field.widget, self._edit_slot(key))
+        self._defaults = self._compute_defaults(schema) if self._track_defaults else {}
         self._show_errors()
 
     def _row(self, key: str, control: QWidget) -> QWidget:
@@ -389,12 +392,12 @@ class SchemaForm(QWidget):
 
     def defaults(self) -> dict[str, Any]:
         """What ``values()`` returns for the current schema when nothing has been entered."""
-        result: dict[str, Any] = {}
-        for entry in self._schema:
-            field = _build_field(entry, {}) if "key" in entry else None
-            if field is not None:
-                result[entry["key"]] = field.get()
-                field.widget.deleteLater()
+        return dict(self._defaults)
+
+    def _compute_defaults(self, schema: list[dict[str, Any]]) -> dict[str, Any]:
+        probe = SchemaForm(track_defaults=False)
+        probe.set_schema(schema, {})
+        result = probe.values()
         return result
 
 

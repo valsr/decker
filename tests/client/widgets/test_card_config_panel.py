@@ -945,12 +945,62 @@ class TestTabs:  # pylint: disable=protected-access
     def test_marks_clear_after_a_saving_round_trip(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         stored = {"press": {"action": "com.p.go", "args": {"url": "x"}}}
-        self._show(panel, bindings=BindingsSpec(self._DEFAULT_BINDINGS, stored))
+
+        def save(_s: dict[str, Any], _a: dict[str, Any], _b: dict[str, Any]) -> SaveOutcome:
+            echoed = BindingsSpec(self._DEFAULT_BINDINGS, {"press": {"action": "com.p.stop"}})
+            self._show(panel, bindings=echoed)
+            return SaveOutcome(True)
+
+        self._show(panel, bindings=BindingsSpec(self._DEFAULT_BINDINGS, stored), save=save)
         assert_that(self._texts(panel)[1]).is_equal_to("Press *")
 
-        self._show(panel, bindings=BindingsSpec(self._DEFAULT_BINDINGS, {"press": {"action": "com.p.stop"}}))
+        _save_button(panel).click()
 
         assert_that(self._texts(panel)[1]).is_equal_to("Press")
+
+    def test_tab_icons_use_the_specified_references(self, qapp, monkeypatch):  # pylint: disable=unused-argument
+        refs: list[str] = []
+        original = panel_module.tab_icon
+
+        def spy(ref: str, size: int = 16) -> Any:
+            refs.append(ref)
+            return original(ref, size)
+
+        monkeypatch.setattr(panel_module, "tab_icon", spy)
+
+        CardConfigPanel()
+
+        assert_that(refs).is_equal_to(["fas:image", "fas:caret-right", "fas:caret-square-right", "fas:hourglass"])
+
+    def test_untouched_action_and_params_fields_do_not_mark_the_card_tab(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        schema = [
+            {"key": "act", "type": "action", "label": "Action"},
+            {"key": "args", "type": "action_params", "label": "Args", "action_field": "act"},
+        ]
+        self._show(panel, schema=schema)
+
+        assert_that(self._texts(panel)[0]).is_equal_to("Card")
+
+    def test_edits_do_not_rebuild_the_defaults(self, qapp, monkeypatch):  # pylint: disable=unused-argument
+        from decker.client.widgets import schema_form
+
+        panel = CardConfigPanel()
+        self._show(panel)
+        built: list[str] = []
+        original = schema_form._build_field
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            built.append("x")
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(schema_form, "_build_field", spy)
+
+        for step in (2, 3, 4):
+            panel._settings_form._fields["step"].set(step)
+            panel._on_edited()
+
+        assert_that(built).is_empty()
 
     def test_card_tab_hidden_without_settings(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
