@@ -21,6 +21,7 @@ from decker.animation.gif import (
 )
 from decker.animation.model import AnimationSpec
 from decker.asset.renderer import AssetRenderer
+from decker.asset.tint import is_unstyled_svg
 from decker.common.appearance_schema import APPEARANCE_SCHEMA
 from decker.common.background import normalize_background
 from decker.common.text_style import fold_legacy_title
@@ -305,7 +306,9 @@ def compose_key_image(  # pylint: disable=too-many-arguments,too-many-positional
     if plugin_image:
         try:
             inner = inner_size(size, plugin_image_scale)
-            layer = _RENDERER.render_bytes(plugin_image, inner, inner, plugin_image_color)
+            layer = _RENDERER.render_bytes(
+                plugin_image, inner, inner, _default_icon_color(plugin_image, plugin_image_color)
+            )
             if layer is not None:
                 offset = (size - inner) // 2
                 img.alpha_composite(layer, dest=(offset, offset))
@@ -382,11 +385,17 @@ def _compose_background_frame(
     return img
 
 
+def _default_icon_color(image: bytes, color: str | None) -> str | None:
+    if color is None and is_unstyled_svg(image):
+        return "#ffffff"
+    return color
+
+
 def _overlay_layer(overlay: bytes | None, inner: int, color: str | None) -> Image.Image | None:
     if not overlay:
         return None
     try:
-        return _RENDERER.render_bytes(overlay, inner, inner, color)
+        return _RENDERER.render_bytes(overlay, inner, inner, _default_icon_color(overlay, color))
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logging.debug("skipping unreadable plugin image: %s", exc)
         return None

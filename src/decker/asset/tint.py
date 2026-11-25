@@ -43,3 +43,19 @@ def tint_svg(data: bytes, color: str) -> bytes:
     if alpha < 255:
         extra += f' opacity="{_opacity(alpha)}"'
     return data[:start] + head + extra.encode() + closing + data[end:]
+
+
+_STYLE_ELEMENT = re.compile(rb"<style\b", re.IGNORECASE)
+_STYLE_ATTRIBUTE = re.compile(rb"\sstyle\s*=", re.IGNORECASE)
+_PAINT_ATTRIBUTE = re.compile(rb"\s(?:fill|stroke)\s*=\s*(?:\"([^\"]*)\"|'([^']*)')", re.IGNORECASE)
+_NEUTRAL_PAINT = {b"none", b"currentcolor"}
+
+
+def is_unstyled_svg(data: bytes) -> bool:
+    """True for an SVG that sets no colour anywhere, so its paths draw in the default colour (black)."""
+    if _root_span(data) is None or _STYLE_ELEMENT.search(data) or _STYLE_ATTRIBUTE.search(data):
+        return False
+    for match in _PAINT_ATTRIBUTE.finditer(data):
+        if (match.group(1) or match.group(2) or b"").strip().lower() not in _NEUTRAL_PAINT:
+            return False
+    return True

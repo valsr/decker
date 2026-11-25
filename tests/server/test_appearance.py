@@ -408,9 +408,9 @@ def test_plugin_icon_colour_tints_the_plugin_svg() -> None:
     assert_that(_pixel(img, 72, 72)).is_equal_to((255, 0, 0))
 
 
-def test_plugin_icon_without_colour_is_unchanged() -> None:
+def test_plugin_icon_without_colour_draws_white() -> None:
     img = _open(compose_key_image(_appearance(background="#0000ff"), _ICON_SVG, ""))
-    assert_that(_pixel(img, 72, 72)).is_equal_to((0, 0, 0))
+    assert_that(_pixel(img, 72, 72)).is_equal_to((255, 255, 255))
 
 
 def test_translucent_plugin_icon_colour_blends_with_background() -> None:
@@ -561,3 +561,27 @@ def test_compose_key_face_without_a_poster_skips_the_png_but_still_finds_the_ani
     assert_that(face.png).is_empty()
     assert_that(face.animation).is_equal_to(AnimationSpec(gif, appearance, "", 1.0))
     assert_that(compose_key_face(appearance, _png("#00ff00"), "", poster=False).animation).is_none()
+
+
+_BLACK_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0z"/></svg>'
+
+
+def test_unstyled_svg_icon_draws_white() -> None:
+    img = _open(compose_key_image(_appearance(background="#000000"), _BLACK_SVG, ""))
+    assert_that(img.getpixel((72, 72))).is_equal_to((255, 255, 255))
+
+
+def test_explicit_icon_colour_beats_white_default() -> None:
+    img = _open(compose_key_image(_appearance(background="#000000"), _BLACK_SVG, "", plugin_image_color="#ff0000"))
+    assert_that(img.getpixel((72, 72))).is_equal_to((255, 0, 0))
+
+
+def test_styled_svg_icon_keeps_its_colour() -> None:
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#00ff00" d="M0 0h24v24H0z"/></svg>'
+    img = _open(compose_key_image(_appearance(background="#000000"), svg, ""))
+    assert_that(img.getpixel((72, 72))).is_equal_to((0, 255, 0))
+
+
+def test_png_icon_is_not_whitened() -> None:
+    img = _open(compose_key_image(_appearance(background="#000000"), _png("#ff0000"), ""))
+    assert_that(img.getpixel((72, 72))).is_equal_to((255, 0, 0))
