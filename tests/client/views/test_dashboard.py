@@ -954,8 +954,8 @@ class TestPages:  # pylint: disable=protected-access
 
         view._page_tabs.page_move_requested.emit("p2", 0)
 
+        assert_that([c[0] for c in cm.mock_calls]).is_equal_to(["call", "request_layout_refresh"])
         cm.call.assert_called_once_with("page_move", "dev1", "p2", 0)
-        cm.request_device_refresh.assert_called_once()
 
     def test_failed_move_still_refreshes(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view, cm = self._view(tmp_path)
@@ -963,7 +963,7 @@ class TestPages:  # pylint: disable=protected-access
 
         view._on_move_page("p2", 0)
 
-        cm.request_device_refresh.assert_called_once()
+        cm.request_layout_refresh.assert_called_once()
 
     def test_page_calls_need_device_and_connection(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view, cm = self._view(tmp_path)
