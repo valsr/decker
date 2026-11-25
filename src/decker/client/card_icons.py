@@ -37,17 +37,23 @@ def asset_pixmap(name: str, size: int, tint: str | None = None) -> QPixmap:
     return pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
 
+def icon_tint() -> str:
+    """The ``#rrggbb`` colour icons are tinted with: the theme's icon colour, else the palette text colour."""
+    app = QApplication.instance()
+    value = app.property("iconColor") if app is not None else None
+    return value if isinstance(value, str) and value else QApplication.palette().text().color().name()
+
+
 def builtin_pixmap(ref: Any) -> QPixmap | None:
-    """A bundled Font Awesome icon (``fas:image``) tinted with the palette text colour; None if unknown."""
+    """A bundled Font Awesome icon (``fas:image``) tinted with ``icon_tint()``; None if unknown."""
     raw = read_builtin_ref(ref)
     if raw is None:
         return None
-    tint = QApplication.palette().text().color().name()
-    return decode_icon(base64.b64encode(raw).decode("ascii"), tint)
+    return decode_icon(base64.b64encode(raw).decode("ascii"), icon_tint())
 
 
 def tab_icon(ref: str, size: int = 16) -> QIcon:
-    """A bundled Font Awesome icon (``fas:image``) tinted with the palette text colour; empty if unknown."""
+    """A bundled Font Awesome icon (``fas:image``) tinted with ``icon_tint()``; empty if unknown."""
     pixmap = builtin_pixmap(ref)
     if pixmap is None:
         return QIcon()
