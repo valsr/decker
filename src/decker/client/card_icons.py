@@ -6,8 +6,10 @@ import zlib
 from pathlib import Path
 
 from PyQt6.QtCore import QByteArray, QRectF, Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication
 
+from decker.asset.builtinicons import read_builtin_ref
 from decker.client.widgets.color_tool_button import hex_to_qcolor
 
 # Muted tile colours that keep white text readable (WCAG AA); chosen per card so tiles stay stable.
@@ -32,6 +34,20 @@ def asset_pixmap(name: str, size: int, tint: str | None = None) -> QPixmap:
     if pixmap is None:
         return placeholder_pixmap(name, size)
     return pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+
+def tab_icon(ref: str, size: int = 16) -> QIcon:
+    """A bundled Font Awesome icon (``fas:image``) tinted with the palette's text colour; empty if ``ref`` is unknown."""
+    raw = read_builtin_ref(ref)
+    if raw is None:
+        return QIcon()
+    tint = QApplication.palette().text().color().name()
+    pixmap = decode_icon(base64.b64encode(raw).decode("ascii"), tint)
+    if pixmap is None:
+        return QIcon()
+    return QIcon(
+        pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    )
 
 
 def decode_icon(icon_b64: str, tint: str | None = None) -> QPixmap | None:

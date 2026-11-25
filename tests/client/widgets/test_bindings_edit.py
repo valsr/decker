@@ -4,12 +4,13 @@ from typing import Any
 import pytest
 from assertpy import assert_that
 from PyQt6.QtGui import QStandardItemModel
-from PyQt6.QtWidgets import QGroupBox, QLabel, QToolButton
+from PyQt6.QtWidgets import QLabel, QToolButton, QWidget
 
 from decker.client.context import AppContext
 from decker.client.widgets import dynamic_choice_edit, schema_form
 from decker.client.widgets.action_edit import ActionEdit
 from decker.client.widgets.bindings_edit import (
+    GESTURES,
     RESET_TOOLTIP,
     BindingsEdit,
     BindingsSpec,
@@ -67,8 +68,19 @@ def _edit(defaults: dict[str, Any] | None = None, stored: dict[str, Any] | None 
     return edit
 
 
+def _rows(edit: BindingsEdit) -> list[QWidget]:
+    return [edit.row_widget(gesture) for gesture, _title in GESTURES]
+
+
+def _all(edit: BindingsEdit, kind: type) -> list[Any]:
+    found: list[Any] = []
+    for row in _rows(edit):
+        found.extend(row.findChildren(kind))
+    return found
+
+
 def _combos(edit: BindingsEdit) -> list[ActionEdit]:
-    return edit.findChildren(ActionEdit)
+    return _all(edit, ActionEdit)
 
 
 def _choose(combo: ActionEdit, action_id: str) -> None:
@@ -83,11 +95,11 @@ def _texts(combo: ActionEdit) -> list[str]:
 
 
 def _reset_buttons(edit: BindingsEdit) -> list[QToolButton]:
-    return [b for b in edit.findChildren(QToolButton) if b.toolTip() == RESET_TOOLTIP]
+    return [b for b in _all(edit, QToolButton) if b.toolTip() == RESET_TOOLTIP]
 
 
 def _visible_texts(edit: BindingsEdit) -> list[str]:
-    return [label.text() for label in edit.findChildren(QLabel) if label.text() and not label.isHidden()]
+    return [label.text() for label in _all(edit, QLabel) if label.text() and not label.isHidden()]
 
 
 class TestBindingsEdit:  # pylint: disable=protected-access
@@ -105,15 +117,25 @@ class TestBindingsEdit:  # pylint: disable=protected-access
             ["(choose an action)", "", "Global", "com.a", "Shared", "com.b", "Say", "Web"]
         )
 
-    def test_each_gesture_is_a_titled_group_with_an_action_label_and_reset(self) -> None:
+    def test_gestures_are_press_double_press_long_press(self) -> None:
+        assert_that(GESTURES).is_equal_to(
+            (("press", "Press"), ("double_press", "Double Press"), ("long_press", "Long Press"))
+        )
+
+    def test_each_gesture_row_has_an_action_label_and_reset(self) -> None:
         edit = _edit()
 
-        groups = edit.findChildren(QGroupBox)
-
-        assert_that([g.title() for g in groups]).is_equal_to(["Press", "Double press", "Long press"])
-        for group in groups:
-            assert_that([label.text() for label in group.findChildren(QLabel)]).contains("Action:")
+        for row in _rows(edit):
+            assert_that([label.text() for label in row.findChildren(QLabel)]).contains("Action:")
         assert_that(_reset_buttons(edit)).is_length(3)
+
+    def test_is_modified_follows_the_manifest_default(self) -> None:
+        edit = _edit(defaults={"press": _OWN})
+        assert_that([edit.is_modified(g) for g, _t in GESTURES]).is_equal_to([False, False, False])
+
+        _choose(_combos(edit)[0], "com.a.shared")
+
+        assert_that([edit.is_modified(g) for g, _t in GESTURES]).is_equal_to([True, False, False])
 
     def test_plugin_headers_and_separators_cannot_be_chosen(self) -> None:
         edit = _edit()
@@ -238,7 +260,7 @@ class TestBindingsEdit:  # pylint: disable=protected-access
 
         edit = _edit(stored={"press": {"action": "com.b.say", "args": {}}})
 
-        field = edit.findChildren(DynamicChoiceEdit)[0]
+        field = _all(edit, DynamicChoiceEdit)[0]
         assert_that(field._plugin_id).is_equal_to("com.b")
 
 

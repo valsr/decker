@@ -12,13 +12,13 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QTabWidget,
+    QToolButton,
 )
 
 import decker.client.widgets.card_config_panel as panel_module
 from decker.client.widgets import dynamic_choice_edit
-from decker.client.widgets.bindings_edit import BindingsSpec
+from decker.client.widgets.bindings_edit import RESET_TOOLTIP, BindingsSpec
 from decker.client.widgets.card_config_panel import (
-    ACTIONS_TAB,
     CARD_TAB,
     CardConfigPanel,
     SaveOutcome,
@@ -625,11 +625,14 @@ class TestFrozenTop:  # pylint: disable=protected-access
         widgets = [item.widget() for item in items if item is not None and item.widget() is not None]
         tabs = widgets[-1]
         assert isinstance(tabs, QTabWidget)
-        assert_that([tabs.tabText(i) for i in range(tabs.count())]).is_equal_to([CARD_TAB, ACTIONS_TAB])
-        card, actions = tabs.widget(0), tabs.widget(1)
-        assert isinstance(card, QScrollArea) and isinstance(actions, QScrollArea)
+        assert_that([tabs.tabText(i) for i in range(tabs.count())]).is_equal_to(
+            [CARD_TAB, "Press", "Double Press", "Long Press"]
+        )
+        pages = [tabs.widget(i) for i in range(tabs.count())]
+        assert all(isinstance(page, QScrollArea) for page in pages)
+        card = pages[0]
+        assert isinstance(card, QScrollArea)
         assert_that(panel._settings_form.parent()).is_same_as(card.widget())
-        assert_that(panel._bindings_edit.parent()).is_same_as(actions.widget())
 
     def test_the_actions_tab_hides_without_bindings_and_an_empty_card_says_so(
         self, qapp
@@ -638,6 +641,7 @@ class TestFrozenTop:  # pylint: disable=protected-access
         panel.show_card_config([], {}, {}, {}, lambda *_a: SaveOutcome(True))
 
         assert_that(panel._tabs.isTabVisible(1)).is_false()
+        assert_that(panel._tabs.isTabVisible(0)).is_true()
         assert_that(panel._no_settings.isHidden()).is_false()
 
         panel.show_card_config(
@@ -805,8 +809,9 @@ class TestPanelBindings:  # pylint: disable=protected-access
 
     def _choose(self, panel: CardConfigPanel, gesture_index: int, action_id: str) -> None:
         from decker.client.widgets.action_edit import ActionEdit
+        from decker.client.widgets.bindings_edit import GESTURES
 
-        combo = panel._bindings_edit.findChildren(ActionEdit)[gesture_index]
+        combo = panel._bindings_edit.row_widget(GESTURES[gesture_index][0]).findChildren(ActionEdit)[0]
         index = combo.findData(action_id)
         combo.setCurrentIndex(index)
         combo.activated.emit(index)
@@ -858,6 +863,121 @@ class TestPanelBindings:  # pylint: disable=protected-access
 
         _save_button(panel).click()
 
-        shown = [lb.text() for lb in panel._bindings_edit.findChildren(QLabel) if not lb.isHidden() and lb.text()]
+        shown = [lb.text() for lb in panel.findChildren(QLabel) if not lb.isHidden() and lb.text()]
         assert_that(shown).contains("not allowed", "bad url")
         assert_that(_save_button(panel).isEnabled()).is_false()
+
+
+class TestTabs:  # pylint: disable=protected-access
+    _ACTIONS = TestPanelBindings._ACTIONS
+    setup_method = TestPanelBindings.setup_method
+    teardown_method = TestPanelBindings.teardown_method
+    _DEFAULT_BINDINGS = {"press": {"action": "com.p.stop", "args": {}}}
+
+    def _show(
+        self,
+        panel: CardConfigPanel,
+        schema: list[dict[str, Any]] | None = None,
+        bindings: BindingsSpec | None = None,
+        save: Any = None,
+    ) -> None:
+        spec = BindingsSpec(self._DEFAULT_BINDINGS, {}) if bindings is None else bindings
+        panel.show_card_config(
+            _COUNTER_SCHEMA if schema is None else schema,
+            {},
+            dict(_DEFAULTS),
+            dict(_DEFAULTS),
+            save or (lambda s, a, b: SaveOutcome(True)),
+            plugin_id="com.p",
+            bindings=spec,
+        )
+
+    @staticmethod
+    def _texts(panel: CardConfigPanel) -> list[str]:
+        return [panel._tabs.tabText(i) for i in range(panel._tabs.count())]
+
+    @staticmethod
+    def _choose(panel: CardConfigPanel, gesture: str, action_id: str) -> None:
+        from decker.client.widgets.action_edit import ActionEdit
+
+        combo = panel._bindings_edit.row_widget(gesture).findChildren(ActionEdit)[0]
+        index = combo.findData(action_id)
+        combo.setCurrentIndex(index)
+        combo.activated.emit(index)
+
+    def test_tabs_are_card_press_double_press_long_press(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._show(panel)
+
+        assert_that(self._texts(panel)).is_equal_to(["Card", "Press", "Double Press", "Long Press"])
+        assert_that([panel._tabs.tabIcon(i).isNull() for i in range(4)]).is_equal_to([False] * 4)
+
+    def test_card_tab_marked_when_a_setting_differs_from_default(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._show(panel)
+        assert_that(self._texts(panel)[0]).is_equal_to("Card")
+
+        panel._settings_form._fields["step"].set(5)
+        panel._on_edited()
+        assert_that(self._texts(panel)[0]).is_equal_to("Card *")
+
+        panel._settings_form._fields["step"].set(1)
+        panel._on_edited()
+        assert_that(self._texts(panel)[0]).is_equal_to("Card")
+
+    def test_gesture_tab_marked_when_binding_differs_from_manifest_default(
+        self, qapp
+    ):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._show(panel)
+
+        self._choose(panel, "press", "com.p.go")
+        assert_that(self._texts(panel)).is_equal_to(["Card", "Press *", "Double Press", "Long Press"])
+
+        reset = [
+            b
+            for b in panel._bindings_edit.row_widget("press").findChildren(QToolButton)
+            if b.toolTip() == RESET_TOOLTIP
+        ]
+        reset[0].click()
+        assert_that(self._texts(panel)).is_equal_to(["Card", "Press", "Double Press", "Long Press"])
+
+    def test_marks_clear_after_a_saving_round_trip(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        stored = {"press": {"action": "com.p.go", "args": {"url": "x"}}}
+        self._show(panel, bindings=BindingsSpec(self._DEFAULT_BINDINGS, stored))
+        assert_that(self._texts(panel)[1]).is_equal_to("Press *")
+
+        self._show(panel, bindings=BindingsSpec(self._DEFAULT_BINDINGS, {"press": {"action": "com.p.stop"}}))
+
+        assert_that(self._texts(panel)[1]).is_equal_to("Press")
+
+    def test_card_tab_hidden_without_settings(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._show(panel, schema=[])
+
+        assert_that(panel._tabs.isTabVisible(0)).is_false()
+        assert_that(panel._tabs.currentIndex()).is_equal_to(1)
+
+    def test_gesture_tabs_hidden_without_bindings(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        panel.show_card_config(_COUNTER_SCHEMA, {}, dict(_DEFAULTS), dict(_DEFAULTS), lambda *_a: SaveOutcome(True))
+
+        assert_that([panel._tabs.isTabVisible(i) for i in range(4)]).is_equal_to([True, False, False, False])
+
+    def test_no_settings_and_no_bindings_shows_hint(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        panel.show_card_config([], {}, dict(_DEFAULTS), dict(_DEFAULTS), lambda *_a: SaveOutcome(True))
+
+        assert_that(panel._tabs.isTabVisible(0)).is_true()
+        card_page = panel._tabs.widget(0)
+        assert card_page is not None
+        shown = [lb.text() for lb in card_page.findChildren(QLabel) if not lb.isHidden()]
+        assert_that(shown).contains("This card has no settings")
+
+    def test_missing_stored_action_marks_its_tab(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        stored = {"press": {"action": "com.gone.thing"}}
+        self._show(panel, bindings=BindingsSpec(self._DEFAULT_BINDINGS, stored))
+
+        assert_that(self._texts(panel)[1]).is_equal_to("Press *")

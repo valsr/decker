@@ -19,7 +19,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from decker.client.widgets.bindings_edit import BindingsEdit, BindingsSpec
+from decker.client.card_icons import tab_icon
+from decker.client.widgets.bindings_edit import GESTURES, BindingsEdit, BindingsSpec
 from decker.client.widgets.key_preview import KeyPreview
 from decker.client.widgets.schema_form import AppearanceForm, SchemaForm
 from decker.common.appearance_schema import APPEARANCE_SCHEMA
@@ -30,10 +31,17 @@ _PAGE_PLACEHOLDER = 0
 _PAGE_FORM = 1
 _PREVIEW_DEBOUNCE_MS = 150
 CARD_TAB = "Card"
-ACTIONS_TAB = "Actions"
+_CARD_ICON = "fas:sliders"
+_GESTURE_ICONS = {"press": "fas:hand-pointer", "double_press": "fas:clone", "long_press": "fas:hourglass-half"}
 _NO_CARD_SETTINGS = "This card has no settings"
 
 _TOP = Qt.AlignmentFlag.AlignTop
+
+
+def tab_text(name: str, modified: bool) -> str:
+    """A tab's title, with a trailing ``*`` while its contents differ from the defaults."""
+    return f"{name} *" if modified else name
+
 
 PreviewProvider = Callable[[dict[str, Any]], str | None]
 
@@ -66,7 +74,7 @@ def _run_in_thread(job: Callable[[], str | None], done: Callable[[str | None], N
 
 
 class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attributes
-    """Stacked config panel: page 0 = placeholder, page 1 = preview, appearance, Save and the Card/Actions tabs."""
+    """Stacked config panel: page 0 = placeholder, page 1 = preview, appearance, Save and the Card, Press, Double Press and Long Press tabs."""
 
     _preview_ready = pyqtSignal(int, object)
 
@@ -177,12 +185,27 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._appearance_form.set_schema(APPEARANCE_SCHEMA, appearance)
         self._settings_form.set_schema(settings_schema, settings, plugin_id)
         self._bindings_edit.set_bindings(spec, plugin_id)
-        self._no_settings.setVisible(not settings_schema)
-        self._tabs.setTabVisible(1, bindings is not None)
+        self._show_tabs(bool(settings_schema), bindings is not None)
         self.setCurrentIndex(_PAGE_FORM)
         self._baseline = self._current_values()
         self._refresh_state()
         self._request_preview()
+
+    def _show_tabs(self, has_settings: bool, has_bindings: bool) -> None:
+        """Show the tabs that apply; an empty card keeps its Card tab so it can say there is nothing to set."""
+        self._no_settings.setVisible(not has_settings)
+        self._tabs.setTabVisible(0, has_settings or not has_bindings)
+        for index in range(1, self._tabs.count()):
+            self._tabs.setTabVisible(index, has_bindings)
+        first = 0 if self._tabs.isTabVisible(0) else 1
+        self._tabs.setCurrentIndex(first)
+
+    def _refresh_tab_marks(self) -> None:
+        modified = [self._settings_form.values() != self._settings_form.defaults()]
+        modified += [self._bindings_edit.is_modified(gesture) for gesture, _title in GESTURES]
+        names = [CARD_TAB] + [title for _gesture, title in GESTURES]
+        for index, (name, mark) in enumerate(zip(names, modified)):
+            self._tabs.setTabText(index, tab_text(name, mark))
 
     def _build_form_page(self) -> QWidget:
         page = QWidget()
@@ -205,8 +228,10 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._preview.clear_icon_requested.connect(self._clear_icon)
 
         self._tabs.setDocumentMode(True)  # tabs on a rule across the panel, no frame round the pages
-        self._tabs.addTab(_scrolling(self._no_settings, self._settings_form), CARD_TAB)
-        self._tabs.addTab(_scrolling(self._bindings_edit), ACTIONS_TAB)
+        self._tabs.addTab(_scrolling(self._no_settings, self._settings_form), tab_icon(_CARD_ICON), CARD_TAB)
+        for gesture, title in GESTURES:
+            scroll = _scrolling(self._bindings_edit.row_widget(gesture))
+            self._tabs.addTab(scroll, tab_icon(_GESTURE_ICONS[gesture]), title)
         layout.addWidget(self._tabs, 1)
         return page
 
@@ -235,6 +260,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
             if (style := self._save_btn.style()) is not None:
                 style.unpolish(self._save_btn)
                 style.polish(self._save_btn)
+        self._refresh_tab_marks()
         self._save_btn.setEnabled(not (self._settings_form.has_errors() or self._bindings_edit.has_errors()))
         icon = self._appearance_form.values().get("icon")
         self._preview.set_has_icon(isinstance(icon, dict) and bool(icon.get("ref")))
