@@ -30,6 +30,7 @@ _ICON_SIZE = 16
 _CORE_PLUGIN_ID = "com.decker.core"
 _BUILT_IN = "Built-in"
 _GLOBAL = "Global"
+_CARD = "Card actions"
 
 
 def _app_rpc() -> RpcCaller | None:
@@ -82,8 +83,9 @@ def _sort_key(action: dict[str, Any]) -> tuple[str, str, str, str]:
 class ActionEdit(QComboBox):
     """Pick an action; ``value()`` is its id.
 
-    With an ``owner``: Do Nothing, then the owner's actions, Built-in (Core) and Global (other plugins' global
-    actions, one sub-header per plugin). Without one the card section is left out. Empty sections have no header.
+    With an ``owner``: Do Nothing, then Card actions (the owner's plugin-scoped actions), Built-in (Core) and Global
+    (every plugin's global actions, the owner's included, one sub-header per plugin). Without an owner the card section
+    is left out. Empty sections have no header.
     """
 
     value_changed = pyqtSignal()
@@ -126,14 +128,15 @@ class ActionEdit(QComboBox):
 
     def _sections(self) -> list[tuple[str, list[dict[str, Any]]]]:
         usable = [a for a in self._actions if a.get("action_uuid") != NOTHING_ACTION_ID]
-        card = [a for a in usable if self._owner is not None and a.get("plugin_uuid") == self._owner]
+        card = [
+            a
+            for a in usable
+            if self._owner is not None and a.get("plugin_uuid") == self._owner and a.get("scope") != "global"
+        ]
         built_in = [a for a in usable if a.get("plugin_uuid") == _CORE_PLUGIN_ID and a not in card]
         rest = [a for a in usable if a not in card and a not in built_in and a.get("scope") == "global"]
-        sections = [(self._owner_label(card), card), (_BUILT_IN, built_in), (_GLOBAL, rest)]
+        sections = [(_CARD, card), (_BUILT_IN, built_in), (_GLOBAL, rest)]
         return [(title, sorted(actions, key=_sort_key)) for title, actions in sections if actions]
-
-    def _owner_label(self, card: list[dict[str, Any]]) -> str:
-        return _plugin_label(card[0]) if card else str(self._owner or "")
 
     def _rebuild(self) -> None:
         self.blockSignals(True)

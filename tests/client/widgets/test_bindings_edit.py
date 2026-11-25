@@ -103,11 +103,11 @@ def _visible_texts(edit: BindingsEdit) -> list[str]:
 
 
 class TestBindingsEdit:  # pylint: disable=protected-access
-    def test_dropdown_lists_nothing_own_actions_and_globals_only(self) -> None:
+    def test_dropdown_lists_nothing_card_actions_and_globals_only(self) -> None:
         edit = _edit()
 
         assert_that(_texts(_combos(edit)[0])).is_equal_to(
-            ["Do Nothing", "", "com.a", "Own", "Shared", "", "Global", "com.b", "Say", "Web"]
+            ["Do Nothing", "", "Card actions", "Own", "", "Global", "com.a", "Shared", "com.b", "Say", "Web"]
         )
 
     def test_generic_action_field_lists_only_globals(self) -> None:
@@ -282,7 +282,7 @@ class TestBindingRowFixes:  # pylint: disable=protected-access
 
         combo = _combos(edit)[0]
         assert_that(_texts(combo)).is_equal_to(
-            ["Do Nothing", "", "com.a", "Own", "Shared", "", "Global", "com.b", "Say", "Web"]
+            ["Do Nothing", "", "Card actions", "Own", "", "Global", "com.a", "Shared", "com.b", "Say", "Web"]
         )
         assert_that(combo.value()).is_equal_to("com.a.shared")
         assert_that(combo.currentText()).is_equal_to("Shared")
