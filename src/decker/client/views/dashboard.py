@@ -20,7 +20,6 @@ from PyQt6.QtWidgets import (
 from decker.client.call_bridge import CallBridge
 from decker.client.context import AppContext
 from decker.client.events import (
-    ActionListUpdatedEvent,
     AppEvent,
     AppRulesUpdatedEvent,
     CardListUpdatedEvent,
@@ -28,6 +27,7 @@ from decker.client.events import (
     DeviceListUpdatedEvent,
     KeyDisplayStatesUpdatedEvent,
     PagesUpdatedEvent,
+    PresetListUpdatedEvent,
     ProfilesUpdatedEvent,
     WindowFocusedEvent,
     WindowPickedEvent,
@@ -94,6 +94,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         self._selected_key: int | None = None
         self._key_images: dict[int, str] = {}  # last composed image per key, to seed the editor preview
         self._key_slots: dict[int, dict[str, Any]] = {}  # key_index → assignment metadata
+        self._press_tab_after_refresh = False  # a dropped preset still needs bindings: open its Press tab
         self._select_after_refresh: int | None = None  # the key to open once its data arrives after a move or copy
         self._active_device_id: str | None = None
         self._cards: list[dict[str, Any]] = []  # card list from the server (with settings schemas)
@@ -155,8 +156,8 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             self._cards = event.cards
             self._sidebar.set_cards(event.cards)
             self._refresh_config_panel()
-        elif isinstance(event, ActionListUpdatedEvent):
-            self._sidebar.set_actions(event.actions)
+        elif isinstance(event, PresetListUpdatedEvent):
+            self._sidebar.set_presets(event.presets)
         elif isinstance(event, KeyDisplayStatesUpdatedEvent):
             self._on_display_states_updated(event.device_id, event.states)
         elif isinstance(event, PagesUpdatedEvent):
@@ -623,7 +624,29 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         if cm is not None:
             self._bridge.submit(lambda: cm.call("key_simulate_long_press", device_id, index), lambda _result: None)
 
+    def _on_preset_dropped(self, key_index: int, preset_data: Any) -> None:
+        device_id = AppContext.get().active_device_id
+        page_id = self._active_page_id
+        cm = AppContext.get().connection_manager
+        plugin_uuid = str(preset_data.get("plugin_uuid", ""))
+        preset_uuid = str(preset_data.get("preset_uuid", ""))
+        if not device_id or not page_id or cm is None or not plugin_uuid or not preset_uuid:
+            return
+        context_id = uuid.uuid4().hex
+        result = cm.call("key_assign_preset", device_id, page_id, key_index, plugin_uuid, preset_uuid, context_id)
+        if isinstance(result, str):
+            result = json.loads(result)
+        if not isinstance(result, dict) or not result.get("ok"):
+            return
+        self._key_slots.pop(key_index, None)  # the editor opens once the server's data for the key arrives
+        self._select_after_refresh = key_index
+        self._press_tab_after_refresh = bool(result.get("errors"))
+        cm.request_device_refresh()
+
     def _on_card_dropped(self, key_index: int, card_data: Any) -> None:
+        if card_data.get("preset_uuid"):
+            self._on_preset_dropped(key_index, card_data)
+            return
         device_id = AppContext.get().active_device_id
         page_id = self._active_page_id
         if not device_id or not page_id:
@@ -634,8 +657,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             return
         context_id = uuid.uuid4().hex
         settings: dict[str, Any] = {}
-        preset = str(card_data.get("preset_action", ""))
-        bindings: dict[str, Any] = {"press": {"action": preset, "args": {}}} if preset else {}
+        bindings: dict[str, Any] = {}
         cm = AppContext.get().connection_manager
         if cm is None:
             return
@@ -688,6 +710,9 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         if pending is not None and pending in self._key_slots:
             self._select_after_refresh = None
             self._on_key_edit_requested(pending)
+            if self._press_tab_after_refresh:
+                self._press_tab_after_refresh = False
+                self._config_panel.show_gesture_tab("press")
         self._refresh_panel_timer.start()
 
     def _refresh_config_panel(self) -> None:

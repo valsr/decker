@@ -77,6 +77,13 @@ class ActionListUpdatedEvent:
 
 
 @dataclass(frozen=True)
+class PresetListUpdatedEvent:
+    """The set of plugin presets known to the server has changed."""
+
+    presets: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
 class CardListUpdatedEvent:
     """The set of plugin cards known to the server has changed."""
 
@@ -219,6 +226,7 @@ AppEvent = (
     | OpenUrlRequestedEvent
     | CardListUpdatedEvent
     | ActionListUpdatedEvent
+    | PresetListUpdatedEvent
     | KeyDisplayStatesUpdatedEvent
     | PagesUpdatedEvent
     | ProfilesUpdatedEvent

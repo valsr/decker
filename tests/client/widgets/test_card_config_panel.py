@@ -656,6 +656,15 @@ class TestFrozenTop:  # pylint: disable=protected-access
         assert_that(panel._tabs.isTabVisible(1)).is_true()
         assert_that(panel._no_settings.isHidden()).is_true()
 
+    def test_show_gesture_tab_switches_to_a_visible_gesture_tab(self, qapp):  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        panel.show_card_config([], {}, {}, {}, lambda *_a: SaveOutcome(True), bindings=BindingsSpec({}, {}))
+
+        panel.show_gesture_tab("press")
+        panel.show_gesture_tab("nonsense")
+
+        assert_that(panel._tabs.currentIndex()).is_equal_to(panel._gesture_index["press"])
+
     def test_the_appearance_rows_are_title_background_icon(self, qapp):  # pylint: disable=unused-argument
         panel = CardConfigPanel()
         _show(panel)
