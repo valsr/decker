@@ -26,7 +26,7 @@ define an icon colour, defaulting to the text colour, and every UI icon should u
 ## Design
 - `themes.py`: `ThemeColors.icon: str = ""` (last field, defaulted) and a property `icon_color -> str` returning `icon`
   or `text`. `apply_theme(app, stylesheet, colors)` stores the resolved colour on the application
-  (`app.setProperty("iconColor", colors.icon_color)`), and clears it (`None`) for a custom stylesheet. `icon` is not a
+  (`app.setProperty("iconColor", colors.icon_color)`), and clears it (sets an empty value) for a custom stylesheet; `icon_tint()` treats empty and unset alike. `icon` is not a
   stylesheet token, so the "every palette colour is used" test excludes it with a one-line reason.
 - Helper `icon_tint() -> str` in `client/card_icons.py`: the application's `iconColor` property if set, else
   `QApplication.palette().text().color().name()`.

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from assertpy import assert_that
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 
 from decker.client.card_icons import (
     card_pixmap,
@@ -132,11 +133,18 @@ class TestIconTint:
 
     def test_icon_tint_falls_back_to_palette_text(self, qapp):
         qapp.setProperty("iconColor", "")
+        try:
+            assert_that(icon_tint()).is_equal_to(qapp.palette().text().color().name())
+        finally:
+            qapp.setProperty("iconColor", None)
+
+    def test_icon_tint_falls_back_when_the_property_is_unset(self, qapp):
+        qapp.setProperty("iconColor", None)
 
         assert_that(icon_tint()).is_equal_to(qapp.palette().text().color().name())
 
 
-def _opaque_pixels(pixmap) -> set[tuple[int, int, int]]:
+def _opaque_pixels(pixmap: QPixmap) -> set[tuple[int, int, int]]:
     image = pixmap.toImage()
     colours = (image.pixelColor(x, y) for x in range(image.width()) for y in range(image.height()))
     return {(c.red(), c.green(), c.blue()) for c in colours if c.alpha() == 255}
