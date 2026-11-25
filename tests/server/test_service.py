@@ -719,39 +719,61 @@ class TestKeyGetStates:
         assert_that(states[0]["bindings"]).is_equal_to(bindings)
         assert_that(states[1]["bindings"]).is_equal_to({})
 
-    def _states_with(self, service, store, num_keys: int = 2) -> list[dict]:
-        service._context.device_manager.open_device.return_value = self._make_mock_device(
-            num_keys=num_keys
-        )  # pylint: disable=protected-access
-        service._context.device_manager.get_device_state.return_value = (
-            self._make_mock_device_state()
-        )  # pylint: disable=protected-access
+    def _states_with(self, service, num_keys: int = 2) -> list[dict]:
+        dm = service._context.device_manager  # pylint: disable=protected-access
+        dm.open_device.return_value = self._make_mock_device(num_keys=num_keys)
+        dm.get_device_state.return_value = self._make_mock_device_state()
         return json.loads(service.key_get_states("dev1"))
 
     @pytest.mark.parametrize("failing", ["complete_settings", "appearance_for"])
-    def test_key_states_survive_a_broken_card(self, service, manager, store, failing) -> None:
-        store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {"a": 1})
+    def test_key_states_fall_back_when_the_manager_raises(self, service, manager, store, failing) -> None:
+        store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {"a": 1}, None, {"t": 1})
         store.assign("dev1", P1, 1, _make_target(key_index=1, ctx="ctx2"), {"b": 2})
         getattr(manager, failing).side_effect = ValueError("broken card")
 
-        states = self._states_with(service, store)
+        states = self._states_with(service)
 
-        assert_that(states).is_length(2)
         assert_that([s["plugin_uuid"] for s in states]).is_equal_to(["com.gone", "com.p"])
         assert_that([s["card_uuid"] for s in states]).is_equal_to(["com.gone.x", "com.p.a"])
         assert_that([s["context_id"] for s in states]).is_equal_to(["ctx1", "ctx2"])
-        assert_that(states[0]["settings"]).is_equal_to({"a": 1})
+        assert_that([s["settings"] for s in states]).is_equal_to([{"a": 1}, {"b": 2}])
+        assert_that(states[0]["appearance"]).is_equal_to({"t": 1})
+        assert_that(states[1]["appearance"]).is_equal_to({})
         assert_that(states[0]["appearance_defaults"]).is_equal_to({})
 
-    def test_key_states_for_a_card_its_plugin_does_not_declare(self, store, tmp_path) -> None:
+    @pytest.fixture()
+    def real_service(self, store, tmp_path):
         real = PluginManager(tmp_path / "plugins", settings_store=PluginSettingsStore(tmp_path / "plugins.db"))
         DeckerService.configure_context(_make_context(real, store))
+        return DeckerService()
+
+    def test_key_states_for_a_card_its_plugin_does_not_declare(self, real_service, store) -> None:
         store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {"a": 1})
 
-        states = self._states_with(DeckerService(), store, num_keys=1)
+        states = self._states_with(real_service, num_keys=1)
 
         assert_that(states[0]["plugin_uuid"]).is_equal_to("com.gone")
         assert_that(states[0]["settings"]).is_equal_to({"a": 1})
+
+    @pytest.mark.parametrize("column", ["settings", "appearance"])
+    @pytest.mark.parametrize("raw", ["null", "[1]", '"x"', "5"])
+    def test_key_states_survive_a_malformed_stored_row(self, real_service, store, column, raw) -> None:
+        store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {"a": 1}, None, {"t": 1})
+        store.assign("dev1", P1, 1, _make_target(key_index=1, ctx="ctx2"), {"b": 2})
+        with store._lock:  # pylint: disable=protected-access
+            store._db.execute(
+                f"UPDATE key_assignments SET {column} = ? WHERE key_index = 0", (raw,)
+            )  # pylint: disable=protected-access
+            store._db.commit()  # pylint: disable=protected-access
+
+        states = self._states_with(real_service)
+
+        assert_that(states).is_length(2)
+        assert_that(states[0]["plugin_uuid"]).is_equal_to("com.gone")
+        assert_that(states[0]["card_uuid"]).is_equal_to("com.gone.x")
+        assert_that(states[0]["context_id"]).is_equal_to("ctx1")
+        assert_that(states[0][column]).is_equal_to({})
+        assert_that(states[1]["plugin_uuid"]).is_equal_to("com.p")
 
     def test_returns_key_image_as_base64(self, service, store):
         import base64  # pylint: disable=import-outside-toplevel
@@ -1595,9 +1617,10 @@ class TestServerSettingsRpcs:
 
 
 class TestKeyUnassignWithoutLiveCard:
-    def test_unassign_removes_a_key_whose_plugin_is_missing(self, service, manager, store) -> None:
+    def test_unassign_removes_a_key_whose_plugin_is_missing(self, store, tmp_path) -> None:
+        real = PluginManager(tmp_path / "plugins", settings_store=PluginSettingsStore(tmp_path / "plugins.db"))
+        DeckerService.configure_context(_make_context(real, store))
         store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {})
-        manager.deactivate_card.side_effect = lambda _target: None
 
-        assert_that(service.key_unassign("dev1", P1, 0)).is_true()
+        assert_that(DeckerService().key_unassign("dev1", P1, 0)).is_true()
         assert_that(store.get("dev1", P1, 0)).is_none()

@@ -1152,7 +1152,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         return result
 
     def _resolved_key(self, assignment: KeyAssignment) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-        """Return (settings, appearance, appearance defaults), falling back to the stored values if the card is broken."""
+        """Return (settings, appearance, appearance defaults); stored values stand in when the card is broken."""
         assert self._context is not None
         manager = self._context.plugin_manager
         try:
@@ -1160,7 +1160,12 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
             appearance, defaults = manager.appearance_for(assignment.target, assignment.appearance)
         except Exception:  # pylint: disable=broad-exception-caught
             logging.warning("Cannot resolve key state for %s", assignment.target, exc_info=True)
-            return dict(assignment.settings), dict(assignment.appearance), {}
+            stored_settings, stored_appearance = assignment.settings, assignment.appearance
+            return (
+                dict(stored_settings) if isinstance(stored_settings, dict) else {},
+                dict(stored_appearance) if isinstance(stored_appearance, dict) else {},
+                {},
+            )
         return settings, appearance, defaults
 
     @exposed
