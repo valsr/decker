@@ -36,6 +36,12 @@ class ThemeColors:  # pylint: disable=too-many-instance-attributes
     key_text: str
     toast_bg: str
     toast_text: str
+    icon: str = ""  # icon tint; empty means the text colour (not a stylesheet token)
+
+    @property
+    def icon_color(self) -> str:
+        """The colour icons are tinted with: ``icon`` if set, else ``text``."""
+        return self.icon or self.text
 
 
 DARK = ThemeColors(
@@ -134,4 +140,5 @@ def apply_theme(app: QApplication, stylesheet: str, colors: ThemeColors | None) 
         app.setPalette(build_palette(colors))
     elif style is not None:
         app.setPalette(style.standardPalette())
+    app.setProperty("iconColor", colors.icon_color if colors is not None else "")
     app.setStyleSheet(stylesheet)

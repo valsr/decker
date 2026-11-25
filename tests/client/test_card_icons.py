@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt
 from decker.client.card_icons import (
     card_pixmap,
     decode_icon,
+    icon_tint,
     placeholder_pixmap,
     tab_icon,
 )
@@ -119,3 +120,17 @@ class TestTabIcon:
 
     def test_an_unknown_reference_gives_an_empty_icon(self, qapp):  # pylint: disable=unused-argument
         assert_that(tab_icon("fas:nope").isNull()).is_true()
+
+
+class TestIconTint:
+    def test_icon_tint_uses_the_theme_colour(self, qapp):
+        qapp.setProperty("iconColor", "#123456")
+        try:
+            assert_that(icon_tint()).is_equal_to("#123456")
+        finally:
+            qapp.setProperty("iconColor", None)
+
+    def test_icon_tint_falls_back_to_palette_text(self, qapp):
+        qapp.setProperty("iconColor", "")
+
+        assert_that(icon_tint()).is_equal_to(qapp.palette().text().color().name())

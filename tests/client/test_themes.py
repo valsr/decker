@@ -2,6 +2,7 @@
 
 import dataclasses
 import re
+from dataclasses import replace
 
 import pytest
 from assertpy import assert_that
@@ -77,10 +78,17 @@ class TestRenderStylesheet:
         assert_that(sheet).contains(colors.window).contains(colors.text)
 
     def test_every_palette_colour_is_used(self):
-        sheet = render_stylesheet(ThemeColors(**{name: f"#{i:06x}" for i, name in enumerate(_fields())}))
+        names = [name for name in _fields() if name != "icon"]  # icon is not a stylesheet token
+        sheet = render_stylesheet(ThemeColors(**{name: f"#{i:06x}" for i, name in enumerate(names)}))
 
-        for i, name in enumerate(_fields()):
+        for i, name in enumerate(names):
             assert_that(sheet).described_as(name).contains(f"#{i:06x}")
+
+    def test_icon_colour_defaults_to_text(self):
+        assert_that(DARK.icon_color).is_equal_to(DARK.text)
+
+    def test_explicit_icon_colour_wins(self):
+        assert_that(replace(DARK, icon="#ff0000").icon_color).is_equal_to("#ff0000")
 
     def test_dark_and_light_differ(self):
         assert_that(render_stylesheet(DARK)).is_not_equal_to(render_stylesheet(LIGHT))
@@ -109,6 +117,31 @@ class TestPalette:
         finally:
             qapp.setStyleSheet(original[0])
             qapp.setPalette(original[1])
+
+
+def test_apply_theme_publishes_the_icon_colour(qapp):
+    original = (qapp.styleSheet(), qapp.palette(), qapp.property("iconColor"))
+    try:
+        apply_theme(qapp, "", replace(DARK, icon="#ff0000"))
+
+        assert_that(qapp.property("iconColor")).is_equal_to("#ff0000")
+    finally:
+        qapp.setStyleSheet(original[0])
+        qapp.setPalette(original[1])
+        qapp.setProperty("iconColor", original[2])
+
+
+def test_apply_theme_custom_sheet_clears_the_icon_colour(qapp):
+    original = (qapp.styleSheet(), qapp.palette(), qapp.property("iconColor"))
+    try:
+        apply_theme(qapp, "", replace(DARK, icon="#ff0000"))
+        apply_theme(qapp, "", None)
+
+        assert_that(qapp.property("iconColor")).is_false()
+    finally:
+        qapp.setStyleSheet(original[0])
+        qapp.setPalette(original[1])
+        qapp.setProperty("iconColor", original[2])
 
 
 def _fields() -> list[str]:
