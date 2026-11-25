@@ -4,7 +4,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from assertpy import assert_that
@@ -232,6 +232,7 @@ class TestKeyAssignPreset:
     @staticmethod
     def _drop(service, manager, preset: PresetSpec | None, page: str = P1) -> dict:
         manager.preset.return_value = preset
+        manager.preset_usable.return_value = True
         return json.loads(service.key_assign_preset("dev1", page, 0, "com.p", "com.p.go", "ctx1"))
 
     def test_assigns_blank_with_bindings_and_appearance(self, service, manager, store) -> None:
@@ -246,6 +247,29 @@ class TestKeyAssignPreset:
         assert_that(assignment.appearance["background"]).is_equal_to("#123456")
         assert_that(assignment.settings).is_equal_to({})
         manager.activate_card.assert_called_once()
+
+    def test_unusable_preset_returns_not_ok_and_writes_nothing(self, service, manager, store) -> None:
+        manager.preset.return_value = _preset()
+        manager.preset_usable.return_value = False
+
+        result = json.loads(service.key_assign_preset("dev1", P1, 0, "com.p", "com.p.go", "ctx1"))
+
+        assert_that(result).is_equal_to({"ok": False, "errors": {}})
+        assert_that(store.get("dev1", P1, 0)).is_none()
+        manager.activate_card.assert_not_called()
+
+    def test_stores_appearance_before_activating_with_it(self, service, manager, store) -> None:
+        calls: list[str] = []
+        manager.set_appearance.side_effect = lambda *_: calls.append("set_appearance")
+        manager.activate_card.side_effect = lambda *_: calls.append(
+            f"activate:{store.get('dev1', P1, 0).appearance['title']['text']}"
+        )
+
+        self._drop(service, manager, _preset({"background": "#123456"}))
+
+        expected = {"background": "#123456", "title": {"text": "Go"}}
+        manager.activate_card.assert_called_once_with(ANY, expected)
+        assert_that(calls).is_equal_to(["set_appearance", "activate:Go"])
 
     def test_keeps_a_title_text_the_preset_gives_and_other_title_fields(self, service, manager, store) -> None:
         self._drop(service, manager, _preset({"title": {"text": "Own", "position": "top"}}))

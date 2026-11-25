@@ -604,7 +604,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
             return {"ok": False, "errors": {}}
         pm = self._context.plugin_manager
         preset = pm.preset(plugin_uuid, preset_id)
-        if preset is None:
+        if preset is None or not pm.preset_usable(preset):
             return {"ok": False, "errors": {}}
         appearance = copy.deepcopy(preset.appearance)
         title = appearance.get("title")
@@ -625,7 +625,12 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         return {"ok": True, "errors": pm.validate_bindings(target, bindings)}
 
     def _place_card(
-        self, target: CardTarget, page_id: str, settings: dict[str, Any], bindings: dict[str, Any], appearance: dict
+        self,
+        target: CardTarget,
+        page_id: str,
+        settings: dict[str, Any],
+        bindings: dict[str, Any],
+        appearance: dict[str, Any],
     ) -> None:
         """Replace the key's card: deactivate the old one, store the new, and activate it if the page is live."""
         assert self._context is not None

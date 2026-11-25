@@ -636,6 +636,14 @@ def test_preset_parses_name_icon_appearance_and_bindings() -> None:
     assert_that(preset.appearance["title"]["text"]).is_equal_to("Next")
 
 
+def test_preset_bound_to_own_plugin_scoped_action_is_refused() -> None:
+    data = _preset_manifest()
+    data["contributes"]["actions"][0]["scope"] = "plugin"
+
+    with pytest.raises(ManifestValidationError, match="com.x.next.*press.*com.x.go.*global"):
+        PluginManifest.from_dict(data)
+
+
 def test_presets_alone_need_no_runtime() -> None:
     data = _preset_manifest({"bindings": {"press": {"action": "com.decker.core.delay"}}}, actions=False)
 

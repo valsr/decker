@@ -202,6 +202,7 @@ class PluginManifest:  # pylint: disable=too-many-instance-attributes
         presets = _parse_presets(contributes.get("presets", []), plugin_id)
         _check_own_bindings(cards, actions, plugin_id, "card")
         _check_own_bindings(presets, actions, plugin_id, "preset")
+        _check_preset_action_scopes(presets, actions)
         variables = _parse_variables(contributes.get("variables", []))
         if variables:
             _require_variable_prerequisites(runtime, data.get("decker"))
@@ -465,6 +466,17 @@ def _check_own_bindings(
             if binding.action.startswith(plugin_id + ".") and binding.action not in own:
                 raise ManifestValidationError(
                     f"{noun} {owner.id} binds {gesture} to {binding.action!r}, which this plugin does not declare"
+                )
+
+
+def _check_preset_action_scopes(presets: tuple[PresetSpec, ...], actions: tuple[ActionSpec, ...]) -> None:
+    plugin_scoped = {a.id for a in actions if a.scope != "global"}
+    for preset in presets:
+        for gesture, binding in preset.bindings.items():
+            if binding.action in plugin_scoped:
+                raise ManifestValidationError(
+                    f"preset {preset.id} binds {gesture} to {binding.action!r}, a plugin-scoped action; "
+                    "a preset may bind only global actions"
                 )
 
 

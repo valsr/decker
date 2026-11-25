@@ -8,6 +8,7 @@ from assertpy import assert_that
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import PluginManifest
 from decker.plugin.settings_store import PluginSettingsStore
+from decker.plugin.target import CardTarget
 from decker.server.plugins import PluginManager
 
 _PNG = base64.b64decode(
@@ -121,3 +122,21 @@ def test_preset_without_bindings_is_listed_and_looked_up(manager, tmp_path) -> N
     assert_that(manager.preset("com.t.p", "com.t.p.a")).is_not_none()
     assert_that(manager.preset("com.t.p", "com.t.p.nope")).is_none()
     assert_that(manager.preset("com.t.none", "com.t.p.a")).is_none()
+
+
+def test_preset_bound_to_own_global_action_is_listed_and_valid_on_a_blank_key(manager, tmp_path) -> None:
+    own = _make(
+        tmp_path,
+        "com.t.own",
+        {
+            "actions": [{"id": "com.t.own.go", "name": "Go", "scope": "global"}],
+            "presets": [{"id": "com.t.own.p", "name": "P", "bindings": {"press": {"action": "com.t.own.go"}}}],
+        },
+    )
+    manager.add_plugin(own)
+
+    (entry,) = manager.list_presets()
+
+    target = CardTarget("com.decker.blank", "com.decker.blank.blank", "ctx", "dev", 0)
+    assert_that(manager.validate_bindings(target, entry["bindings"])).is_empty()
+    assert_that(manager.preset_usable(manager.preset("com.t.own", "com.t.own.p"))).is_true()
