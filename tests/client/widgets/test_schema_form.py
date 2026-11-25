@@ -736,3 +736,15 @@ class TestSchemaFormValidation:  # pylint: disable=protected-access
         edit.setText("http://z")
         assert_that(_error_texts(form)).is_empty()
         assert_that(form.has_errors()).is_false()
+
+
+class TestDefaults:
+    def test_defaults_ignore_the_entered_values(self, qapp):  # pylint: disable=unused-argument
+        schema: list[dict[str, Any]] = [
+            {"key": "t", "type": "text", "label": "T", "default": "a"},
+            {"key": "b", "type": "bool", "label": "B", "default": False},
+        ]
+        form = _form(schema, {"t": "other", "b": True})
+
+        assert_that(form.values()).is_equal_to({"t": "other", "b": True})
+        assert_that(form.defaults()).is_equal_to({"t": "a", "b": False})

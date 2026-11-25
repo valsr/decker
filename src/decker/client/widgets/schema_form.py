@@ -286,6 +286,7 @@ class SchemaForm(QWidget):
         self._error_labels: dict[str, QLabel] = {}
         self._server_errors: dict[str, str] = {}
         self._parsed: tuple[SettingEntry, ...] = ()
+        self._schema: list[dict[str, Any]] = []
 
     def set_schema(self, schema: list[dict[str, Any]], values: dict[str, Any], plugin_id: str = "") -> None:
         """Rebuild the form for ``schema`` and fill it from ``values`` (missing keys use schema defaults)."""
@@ -295,6 +296,7 @@ class SchemaForm(QWidget):
         self._error_labels = {}
         self._server_errors = {}
         self._parsed = _parse(schema)
+        self._schema = schema
         for entry in schema:
             if "section" in entry:
                 self._layout.addRow(_section(str(entry["section"])))
@@ -384,6 +386,16 @@ class SchemaForm(QWidget):
     def values(self) -> dict[str, Any]:
         """The values currently entered, keyed by schema key."""
         return {key: field.get() for key, field in self._fields.items()}
+
+    def defaults(self) -> dict[str, Any]:
+        """What ``values()`` returns for the current schema when nothing has been entered."""
+        result: dict[str, Any] = {}
+        for entry in self._schema:
+            field = _build_field(entry, {}) if "key" in entry else None
+            if field is not None:
+                result[entry["key"]] = field.get()
+                field.widget.deleteLater()
+        return result
 
 
 class ActionParamsEdit(QWidget):

@@ -4,9 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import (
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QToolButton,
@@ -18,10 +17,10 @@ from decker.client.widgets.action_edit import ActionEdit
 from decker.client.widgets.schema_form import ActionParamsEdit
 from decker.plugin.bindings import NOTHING_ACTION_ID
 
-_GESTURES: tuple[tuple[str, str], ...] = (
+GESTURES: tuple[tuple[str, str], ...] = (
     ("press", "Press"),
-    ("double_press", "Double press"),
-    ("long_press", "Long press"),
+    ("double_press", "Double Press"),
+    ("long_press", "Long Press"),
 )
 RESET_TOOLTIP = "Reset to default"
 _RESET_GLYPH = "↺"
@@ -42,13 +41,13 @@ def _split(binding: Mapping[str, Any] | None) -> tuple[str, dict[str, Any]]:
     return (action if isinstance(action, str) else NOTHING_ACTION_ID), (dict(args) if isinstance(args, dict) else {})
 
 
-class _BindingRow(QGroupBox):
+class _BindingRow(QWidget):
     # pylint: disable=missing-function-docstring
 
     changed = pyqtSignal()
 
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(title, parent)
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
         self._default: tuple[str, dict[str, Any]] = (NOTHING_ACTION_ID, {})
         self._shown_action = NOTHING_ACTION_ID
         self._action_edit = ActionEdit(owner="")
@@ -66,6 +65,7 @@ class _BindingRow(QGroupBox):
         header.addWidget(self._action_edit, 1)
         header.addWidget(self._reset)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(header)
         layout.addWidget(self._params)
         layout.addWidget(self._error)
@@ -132,21 +132,29 @@ class _BindingRow(QGroupBox):
         self.changed.emit()
 
 
-class BindingsEdit(QWidget):
-    """Three titled groups (press, double press, long press); ``value()`` holds only what differs from the manifest."""
+class BindingsEdit(QObject):
+    """The press, double press and long press rows; ``value()`` holds only what differs from the manifest.
+
+    The rows are plain widgets handed out by ``row_widget`` for the caller to place (and own once placed).
+    """
 
     changed = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
         self._rows: dict[str, _BindingRow] = {}
-        for gesture, title in _GESTURES:
-            row = _BindingRow(title)
+        for gesture, _title in GESTURES:
+            row = _BindingRow()
             row.changed.connect(self.changed.emit)
             self._rows[gesture] = row
-            layout.addWidget(row)
+
+    def row_widget(self, gesture: str) -> QWidget:
+        """The editor row of one gesture."""
+        return self._rows[gesture]
+
+    def is_modified(self, gesture: str) -> bool:
+        """Whether the gesture's binding differs from the manifest default."""
+        return not self._rows[gesture].is_default()
 
     def set_bindings(self, spec: BindingsSpec, plugin_id: str) -> None:
         """Show the stored bindings (the manifest default where a gesture has none). Emits nothing."""

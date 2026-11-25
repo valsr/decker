@@ -6,7 +6,12 @@ from pathlib import Path
 from assertpy import assert_that
 from PyQt6.QtCore import Qt
 
-from decker.client.card_icons import card_pixmap, decode_icon, placeholder_pixmap
+from decker.client.card_icons import (
+    card_pixmap,
+    decode_icon,
+    placeholder_pixmap,
+    tab_icon,
+)
 
 _COUNTER_PNG = Path(__file__).parents[1] / "fixtures" / "plugins" / "com.decker.testfixture" / "icons" / "counter.png"
 
@@ -106,3 +111,11 @@ class TestDecodeIconTint:
         pixmap = decode_icon(_b64(_CURRENT_SVG), "not a colour")
         assert pixmap is not None
         assert_that(_centre(pixmap)).is_equal_to((0, 0, 0, 255))
+
+
+class TestTabIcon:
+    def test_a_bundled_reference_gives_an_icon(self, qapp):  # pylint: disable=unused-argument
+        assert_that(tab_icon("fas:image").isNull()).is_false()
+
+    def test_an_unknown_reference_gives_an_empty_icon(self, qapp):  # pylint: disable=unused-argument
+        assert_that(tab_icon("fas:nope").isNull()).is_true()
