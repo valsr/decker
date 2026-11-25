@@ -137,7 +137,7 @@ to an [action](#actions), and a card keeps the raw `key_down`/`key_up` events fo
 key picker lists.
 
 A card is worth shipping only if it draws something a Blank card cannot, or owns state or refresh logic. A "Blank card
-plus an action" is just an action: declare it as a `global` action, which the Actions tab of the key picker offers. In
+plus an action" is just an action: declare it as a `global` action and, if it makes a sensible key, a [preset](#presets) for it. In
 the card editor a card's settings appear on the Card tab (hidden when it has none) and its gestures on the Press,
 Double Press and Long Press tabs, where the Action dropdown lists Do Nothing, the card's own plugin's actions (either scope), the built-in actions, then other plugins' global actions.
 
@@ -181,8 +181,6 @@ one is refused).
   each binding arrive resolved against the action's `settings`, the same as card `settings`: a `page` argument is the page
   object (`page_id`, `name`, `index`, `profile_id`), a `profile` argument the profile object, and the server re-sends
   `settings_changed` when a rename changes them. Do Nothing and an action that is not installed keep their args as stored.
-- The Actions tab of the key picker lists the `global` actions other than Do Nothing. Dragging one onto a key drops a **Blank** card whose
-  press is bound to it; while the user has set no title or icon the key shows the action's name and icon.
 
 ### `actions[]`
 
@@ -194,7 +192,7 @@ them with `call_action`.
 |-------|-------|
 | `id` | Must start with `<plugin id>.`. |
 | `name`, `tooltip`, `icon` | Display data. |
-| `scope` | `"global"` (any plugin's cards and code may use it, and it is listed in the Actions tab) or `"plugin"` (only this plugin's cards and code). Default `"plugin"`, so nothing is public by accident. Any other value is a manifest error. |
+| `scope` | `"global"` (any plugin's cards and code may use it, and users reach it through card bindings and presets) or `"plugin"` (only this plugin's cards and code). Default `"plugin"`, so nothing is public by accident. Any other value is a manifest error. |
 | `settings` | [Settings schema](settings-schema.md) for the action's arguments, including the validation rules `required`, `pattern`, `min_length` and `max_length`. |
 | `returns` | Optional text describing the return value. Documentation only: it is shown to users and never checked. |
 | `timeout` | Optional whole seconds, 1 to 300: how long a run may take before the server gives up. Default 30. A caller's own `timeout` wins, and a nested call never outlives the action that made it. |
@@ -218,6 +216,39 @@ Decker 0.7 accepts only `"format": 3`. Compared with format 2:
 - Actions gain `scope` and `returns`, take their arguments as `ctx.args`, and may return a value.
 - Protocol 4 replaces the gesture events with `run_action`/`action_result` carrying the call details, and adds
   `call_action`/`call_result` and `get_image`/`image_result`.
+
+### `presets[]`
+
+A preset is a ready-made key: dropping one from the Cards list onto a key assigns a **Blank** card with the preset's
+bindings and appearance. The result is a plain Blank key; nothing links it to the preset, so a later plugin update
+does not change keys already placed.
+
+```json
+{
+  "id": "com.example.pages.next",
+  "name": "Next page",
+  "tooltip": "Go to the next page",
+  "icon": "fas:forward",
+  "appearance": { "title": { "text": "Next" }, "icon": { "ref": "fas:forward", "color": "#ffffff" } },
+  "bindings": { "press": { "action": "com.example.pages.next", "args": { "wrap": true } } }
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `id` | Required; starts with `<plugin id>.`; unique among the plugin's presets, cards and actions. |
+| `name`, `tooltip` | Display data for the picker. |
+| `icon` | The picker thumbnail: a plugin file or a built-in ref. Not copied to the key. |
+| `appearance` | Same shape as a card's `appearance`, copied to the key. `appearance.icon.ref` must be a ref (`pack:`, `fas:`, `far:` or `fab:`), not a file path. Without `appearance.title.text` the key's title is the preset `name`; without `appearance.icon` the key shows the press action's icon. |
+| `bindings` | Same shape as a card's [bindings](#bindings). Arguments may be incomplete; the user fills them in the editor. A preset may have no bindings. |
+
+- A preset may bind only `global` actions (of any plugin) or Do Nothing, because the dropped key is a Blank card and
+  cannot run its plugin's `plugin`-scoped actions. Binding the plugin's own `plugin`-scoped action is a manifest
+  error; a foreign `plugin`-scoped action is not offered. A preset whose actions are not all installed is hidden.
+- A preset may not declare `settings`, `states`, `static` or `gestures`; if it needs code, make it a card.
+- The plugin needs no `runtime` for presets alone, but must declare a `decker` constraint that guarantees the Decker
+  version adding them (`">=0.8"`).
+- Unstyled SVG key icons draw white, so a preset icon needs no explicit colour on a dark key.
 
 ### `variables[]`
 
@@ -249,5 +280,5 @@ need no `runtime`. Packs are served to clients over RPC and appear in the client
 
 ## Where plugins come from
 
-Decker ships two built-in plugins. **Blank** (`com.decker.blank`) is static: a key with only a background and a title, which is also what an action dropped from the Actions tab becomes. **Core** (`com.decker.core`) holds the Do Nothing, HTTP Request, Delay and Sequence actions and runs as a normal plugin process on Decker's own interpreter (see [`runtime`](#runtime)). Built-in plugins cannot be uninstalled or replaced (a package or repository plugin with a built-in id is refused). Other plugins are installed from a `.deckerplugin` package or from a plugin repository
+Decker ships two built-in plugins. **Blank** (`com.decker.blank`) is static: a key with only a background and a title, and its only card. **Core** (`com.decker.core`) holds the Do Nothing, HTTP Request, Delay and Sequence actions, presets for the last three, and runs as a normal plugin process on Decker's own interpreter (see [`runtime`](#runtime)). Built-in plugins cannot be uninstalled or replaced (a package or repository plugin with a built-in id is refused). Other plugins are installed from a `.deckerplugin` package or from a plugin repository
 (see [repositories](repositories.md)); the default repository publishes the Counter, Pages and Profiles plugins.

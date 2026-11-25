@@ -26,6 +26,7 @@ Plugins run with your user's permissions and are not sandboxed. Only install plu
 |------|------------|-----------------|
 | `cards` | What a key shows: they appear in the card list (the key picker). Each binds its gestures to actions. A card that is not static runs as a separate process | for code-backed cards (not `static`) |
 | `actions` | Headless things to do (a function with settings, e.g. an HTTP request). `scope` says who may use them: `global` (any card, any plugin's code) or `plugin` (only this plugin). Cards run them through their bindings | yes |
+| `presets` | Ready-made keys in the card list: a Blank card with a name, icon, appearance and bindings to global actions | no (and a `decker` constraint) |
 | `icon_packs` | A folder of images browsable from the image library | no |
 | `variables` | Global text values other text can use as `{name}`; the plugin starts with the server and keeps running | yes (and a `decker` constraint) |
 
