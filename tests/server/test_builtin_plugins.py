@@ -150,7 +150,7 @@ def test_core_ships_presets_for_httprequest_delay_and_sequence(env) -> None:
         spec = specs[preset_id]
         assert_that(spec.name).is_equal_to(name)
         assert_that(spec.icon).is_equal_to(actions[action_id].icon)
-        assert_that(spec.appearance).is_empty()
+        assert_that(spec.appearance["icon"]["ref"]).is_equal_to(spec.icon)
         assert_that(spec.bindings["press"].action).is_equal_to(action_id)
         assert_that(spec.bindings["press"].args).is_empty()
         assert_that(actions[action_id].scope).is_equal_to("global")

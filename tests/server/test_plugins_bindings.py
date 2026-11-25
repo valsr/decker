@@ -262,7 +262,7 @@ class TestBlankFace:
         icon = read_icon(env.plugins_dir / _COUNTER, "icons/counter")
         assert_that(env.image(3)).is_not_equal_to(compose_key_image(resolve_appearance({}, {}), icon, "Bump"))
 
-    def test_blank_with_its_own_icon_shows_it_whether_or_not_an_action_is_bound(self, env) -> None:
+    def test_blank_bound_to_an_action_keeps_its_own_icon(self, env) -> None:
         look = {"icon": {"ref": "fas:star", "color": ""}}
         icon = env.manager.icon_packs.read_ref("fas:star")
         assert_that(icon).is_not_none()
