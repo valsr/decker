@@ -2,7 +2,7 @@
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -10,6 +10,7 @@ from typing import Any, Literal, cast
 from packaging.requirements import InvalidRequirement, Requirement
 
 from decker.common.appearance_schema import APPEARANCE_KEYS
+from decker.common.icon_ref import parse_icon_ref
 from decker.common.platforms import PlatformSpec, parse_platform_spec
 from decker.common.variables import (
     CORE_VARIABLE_NAMES,
@@ -27,7 +28,7 @@ from decker.plugin.settings_schema import (
 
 _SEMVER = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?")
 SUPPORTED_FORMATS = (3,)
-KNOWN_CONTRIBUTION_KINDS = frozenset({"cards", "actions", "icon_packs", "variables"})
+KNOWN_CONTRIBUTION_KINDS = frozenset({"cards", "actions", "icon_packs", "variables", "presets"})
 _RUNTIME_TYPES = ("python", "executable")
 MAX_ACTION_TIMEOUT_S = 300
 _UUID_PATTERN = re.compile(r"[a-z0-9]+(\.[a-z0-9-]+)+")
@@ -83,6 +84,18 @@ class CardSpec:
     def headless(self) -> bool:
         """Whether the card has no process of its own: a static preset."""
         return self.static
+
+
+@dataclass(frozen=True)
+class PresetSpec:
+    """A ready-made Blank card a plugin offers: a name, icon, appearance and bindings, nothing else."""
+
+    id: str
+    name: str
+    tooltip: str = ""
+    icon: str | None = None
+    appearance: dict[str, Any] = field(default_factory=dict, hash=False)
+    bindings: Mapping[str, Binding] = field(default_factory=dict, hash=False)
 
 
 @dataclass(frozen=True)
@@ -145,6 +158,7 @@ class PluginManifest:  # pylint: disable=too-many-instance-attributes
     icon_packs: tuple[IconPackSpec, ...]
     platforms: PlatformSpec | None = None
     variables: tuple[VariableSpec, ...] = ()
+    presets: tuple[PresetSpec, ...] = ()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PluginManifest":
@@ -185,12 +199,16 @@ class PluginManifest:  # pylint: disable=too-many-instance-attributes
             )
         if actions and runtime is None:
             raise ManifestValidationError("manifest contributes actions but declares no runtime")
-        _check_own_bindings(cards, actions, plugin_id)
+        presets = _parse_presets(contributes.get("presets", []), plugin_id)
+        _check_own_bindings(cards, actions, plugin_id, "card")
+        _check_own_bindings(presets, actions, plugin_id, "preset")
         variables = _parse_variables(contributes.get("variables", []))
         if variables:
             _require_variable_prerequisites(runtime, data.get("decker"))
-        if not cards and not actions and not packs and not variables:
-            raise ManifestValidationError("manifest contributes no cards, actions, icon packs or variables")
+        if presets:
+            _require_decker_constraint(data.get("decker"), "contributes presets")
+        if not cards and not actions and not packs and not variables and not presets:
+            raise ManifestValidationError("manifest contributes no cards, actions, icon packs, variables or presets")
         global_settings = _parse_global_settings(data.get("global_settings", []))
         if declared_options_sources(global_settings, cards, actions):
             _require_options_prerequisites(runtime, data.get("decker"))
@@ -214,6 +232,7 @@ class PluginManifest:  # pylint: disable=too-many-instance-attributes
             icon_packs=packs,
             platforms=_parse_platforms(data),
             variables=variables,
+            presets=presets,
         )
 
     @classmethod
@@ -309,12 +328,7 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
     card_id = _parse_contribution_id(entry["id"], plugin_id, "card id")
     _reject_retired_card_keys(entry, card_id)
     static = _parse_static(entry, card_id)
-    appearance = entry.get("appearance", {})
-    if not isinstance(appearance, dict):
-        raise ManifestValidationError(f"card {card_id} appearance must be an object")
-    for key in appearance:
-        if key not in APPEARANCE_KEYS:
-            raise ManifestValidationError(f"card {card_id} has unknown appearance key {key!r}")
+    appearance = _parse_appearance(entry, f"card {card_id}")
     states = tuple(_parse_state(s, card_id) for s in _as_list(entry.get("states", []), "states"))
     return CardSpec(
         id=card_id,
@@ -323,10 +337,67 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
         icon=_optional_str(entry.get("icon")),
         states=states,
         settings=_parse_settings(entry.get("settings", []), f"card {card_id} settings"),
-        appearance=dict(appearance),
+        appearance=appearance,
         static=static,
         bindings=_parse_card_bindings(entry, card_id),
     )
+
+
+def _parse_appearance(entry: dict[str, Any], owner: str) -> dict[str, Any]:
+    appearance = entry.get("appearance", {})
+    if not isinstance(appearance, dict):
+        raise ManifestValidationError(f"{owner} appearance must be an object")
+    for key in appearance:
+        if key not in APPEARANCE_KEYS:
+            raise ManifestValidationError(f"{owner} has unknown appearance key {key!r}")
+    return dict(appearance)
+
+
+_PRESET_KEYS = frozenset({"id", "name", "tooltip", "icon", "appearance", "bindings"})
+_PRESET_ICON_PREFIXES = ("pack:", "fas:", "far:", "fab:")
+
+
+def _parse_presets(value: Any, plugin_id: str) -> tuple[PresetSpec, ...]:
+    presets = tuple(_parse_preset(e, plugin_id) for e in _as_list(value, "presets"))
+    ids = [preset.id for preset in presets]
+    for preset_id in ids:
+        if ids.count(preset_id) > 1:
+            raise ManifestValidationError(f"duplicate preset id {preset_id!r}")
+    return presets
+
+
+def _parse_preset(entry: Any, plugin_id: str) -> PresetSpec:
+    if not isinstance(entry, dict) or "id" not in entry or "name" not in entry:
+        raise ManifestValidationError(f"invalid preset entry: {entry!r}")
+    preset_id = _parse_contribution_id(entry["id"], plugin_id, "preset id")
+    unknown = sorted(str(key) for key in set(entry) - _PRESET_KEYS)
+    if unknown:
+        raise ManifestValidationError(f"preset {preset_id} has unknown key(s) {', '.join(unknown)}")
+    appearance = _parse_appearance(entry, f"preset {preset_id}")
+    _check_preset_icon_ref(appearance, preset_id)
+    try:
+        bindings = parse_manifest_bindings(entry.get("bindings", {}), f"preset {preset_id} bindings")
+    except ValueError as exc:
+        raise ManifestValidationError(str(exc)) from exc
+    return PresetSpec(
+        id=preset_id,
+        name=str(entry["name"]),
+        tooltip=str(entry.get("tooltip") or ""),
+        icon=_optional_str(entry.get("icon")),
+        appearance=appearance,
+        bindings=bindings,
+    )
+
+
+def _check_preset_icon_ref(appearance: dict[str, Any], preset_id: str) -> None:
+    icon = appearance.get("icon")
+    if icon is None:
+        return
+    ref = icon.get("ref") if isinstance(icon, dict) else None
+    if not (isinstance(ref, str) and ref.startswith(_PRESET_ICON_PREFIXES) and parse_icon_ref(ref) is not None):
+        raise ManifestValidationError(
+            f"preset {preset_id} appearance icon ref {ref!r} must be a pack:, fas:, far: or fab: reference"
+        )
 
 
 def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
@@ -385,13 +456,15 @@ def _parse_card_bindings(entry: dict[str, Any], card_id: str) -> dict[str, Bindi
         raise ManifestValidationError(str(exc)) from exc
 
 
-def _check_own_bindings(cards: tuple[CardSpec, ...], actions: tuple[ActionSpec, ...], plugin_id: str) -> None:
+def _check_own_bindings(
+    owners: Sequence[CardSpec | PresetSpec], actions: tuple[ActionSpec, ...], plugin_id: str, noun: str
+) -> None:
     own = {a.id for a in actions}
-    for card in cards:
-        for gesture, binding in card.bindings.items():
+    for owner in owners:
+        for gesture, binding in owner.bindings.items():
             if binding.action.startswith(plugin_id + ".") and binding.action not in own:
                 raise ManifestValidationError(
-                    f"card {card.id} binds {gesture} to {binding.action!r}, which this plugin does not declare"
+                    f"{noun} {owner.id} binds {gesture} to {binding.action!r}, which this plugin does not declare"
                 )
 
 
@@ -437,10 +510,12 @@ def _parse_variable(entry: Any) -> VariableSpec:
 def _require_variable_prerequisites(runtime: RuntimeSpec | None, decker: Any) -> None:
     if runtime is None:
         raise ManifestValidationError("manifest contributes variables but declares no runtime")
+    _require_decker_constraint(decker, "contributes variables")
+
+
+def _require_decker_constraint(decker: Any, what: str) -> None:
     if not _is_nonempty_str(decker):
-        raise ManifestValidationError(
-            'manifest contributes variables, so it must declare a "decker" version constraint'
-        )
+        raise ManifestValidationError(f'manifest {what}, so it must declare a "decker" version constraint')
 
 
 def declared_options_sources(

@@ -58,7 +58,7 @@ def _pack_dir(tmp_path: Path) -> None:
 
 def test_registry_dispatches_by_kind(tmp_path):
     cards, actions, packs = _Recorder("cards"), _Recorder("actions"), _Recorder("icon_packs")
-    registry = ContributionRegistry([cards, actions, packs, _Recorder("variables")])
+    registry = ContributionRegistry([cards, actions, packs, _Recorder("variables"), _Recorder("presets")])
 
     registry.add(_plugin(tmp_path, _PACK))
     registry.remove("com.t.p")
@@ -75,7 +75,9 @@ def test_registry_requires_every_known_kind():
 
 def test_handler_failure_rolls_back(tmp_path):
     actions, packs = _Recorder("cards"), _Recorder("icon_packs", fail=True)
-    registry = ContributionRegistry([actions, _Recorder("actions"), packs, _Recorder("variables")])
+    registry = ContributionRegistry(
+        [actions, _Recorder("actions"), packs, _Recorder("variables"), _Recorder("presets")]
+    )
     plugin = _plugin(tmp_path, {"cards": [_ACTION], **_PACK}, runtime=True)
 
     with pytest.raises(RuntimeError):
@@ -90,9 +92,18 @@ def test_contributed_kinds_includes_variables(tmp_path):
     assert_that(contributed_kinds(plugin)).is_equal_to(frozenset({"variables"}))
 
 
+def test_contributed_kinds_includes_presets(tmp_path):
+    preset = {"id": "com.t.p.next", "name": "Next", "bindings": {"press": {"action": "com.decker.core.delay"}}}
+    plugin = _plugin(tmp_path, {"presets": [preset]}, decker=True)
+
+    assert_that(contributed_kinds(plugin)).is_equal_to(frozenset({"presets"}))
+
+
 def test_registry_dispatches_variables_only_to_the_variables_handler(tmp_path):
     cards, variables = _Recorder("cards"), _Recorder("variables")
-    registry = ContributionRegistry([cards, _Recorder("actions"), _Recorder("icon_packs"), variables])
+    registry = ContributionRegistry(
+        [cards, _Recorder("actions"), _Recorder("icon_packs"), variables, _Recorder("presets")]
+    )
 
     registry.add(_plugin(tmp_path, {"variables": [{"name": "media_volume"}]}, runtime=True, decker=True))
 

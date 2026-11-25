@@ -149,6 +149,18 @@ class _VariablesHandler:
         self._manager.unregister_variables(plugin_id)
 
 
+class _PresetsHandler:
+    """The "presets" contribution handler: presets are read from manifests, so there is nothing to register."""
+
+    kind = "presets"
+
+    def register(self, plugin: InstalledPlugin) -> None:
+        pass
+
+    def unregister(self, plugin_id: str) -> None:
+        pass
+
+
 @dataclass
 class _Live:  # pylint: disable=too-many-instance-attributes
     """One active card instance: where it is, what it declared and how its gestures are recognised."""
@@ -232,7 +244,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         )
         self._options_runner = OptionsRunner(self._supervisor)
         self._contributions = ContributionRegistry(
-            [_CardsHandler(self), _ActionsHandler(self), self.icon_packs, _VariablesHandler(self)]
+            [_CardsHandler(self), _ActionsHandler(self), self.icon_packs, _VariablesHandler(self), _PresetsHandler()]
         )
 
     def create(self, context: "ServerContext") -> None:
