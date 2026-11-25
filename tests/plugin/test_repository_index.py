@@ -176,3 +176,17 @@ def test_invalid_platform_data_skips_only_that_version() -> None:
     assert_that([v.version for v in index.plugins[0].versions]).is_equal_to(["1.0.0"])
     assert_that(index.warnings).is_length(1)
     assert_that(index.warnings[0]).contains("com.decker.counter").contains("invalid platform data")
+
+
+def test_index_icon_may_be_a_builtin_ref() -> None:
+    index = parse_index(_index([_plugin(icon="fas:toolbox")]), INDEX_URL)
+    plugin = index.plugins[0]
+    assert_that(plugin.icon_ref).is_equal_to("fas:toolbox")
+    assert_that(plugin.icon_url).is_none()
+    assert_that(index.warnings).is_empty()
+
+
+def test_index_png_icon_still_gives_url() -> None:
+    plugin = parse_index(_index([_plugin()]), INDEX_URL).plugins[0]
+    assert_that(plugin.icon_url).is_not_none()
+    assert_that(plugin.icon_ref).is_none()

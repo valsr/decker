@@ -1,5 +1,6 @@
 """Get More Plugins dialog: browse the plugin repositories' catalog and install or update plugins."""
 
+import base64
 import logging
 import threading
 from collections import deque
@@ -9,7 +10,9 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -24,6 +27,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from decker.asset.builtinicons import read_builtin_ref
 from decker.client.card_icons import decode_icon, placeholder_pixmap
 from decker.client.connection_manager import to_plain
 from decker.client.context import AppContext
@@ -100,6 +104,14 @@ def _matches(plugin: dict[str, Any], needle: str) -> bool:
     return any(needle in str(field or "").lower() for field in fields)
 
 
+def _builtin_pixmap(ref: Any) -> QPixmap | None:
+    raw = read_builtin_ref(ref)
+    if raw is None:
+        return None
+    tint = QApplication.palette().text().color().name()
+    return decode_icon(base64.b64encode(raw).decode("ascii"), tint)
+
+
 class _PluginRow(QWidget):
     install_clicked = pyqtSignal(str)
 
@@ -114,7 +126,13 @@ class _PluginRow(QWidget):
         self.actionable: bool = enabled
         self.button.clicked.connect(lambda: self.install_clicked.emit(self.plugin_id))
         self.icon_label.setFixedSize(_THUMB_SIZE, _THUMB_SIZE)
-        self.set_pixmap(placeholder_pixmap(str(plugin.get("name") or self.plugin_id), _THUMB_SIZE))
+        self.has_local_icon: bool = False
+        local = _builtin_pixmap(plugin.get("icon_ref"))
+        if local is not None:
+            self.has_local_icon = True
+            self.set_pixmap(local)
+        else:
+            self.set_pixmap(placeholder_pixmap(str(plugin.get("name") or self.plugin_id), _THUMB_SIZE))
 
         name = escape(_text(plugin, "name") or self.plugin_id)
         title = QLabel(f"<b>{name}</b> {escape(version_text(plugin))}")
@@ -297,7 +315,9 @@ class GetMorePluginsDialog(QDialog):  # pylint: disable=too-many-instance-attrib
         self._list.addItem(item)
         self._list.setItemWidget(item, row)
         self._rows[plugin_id] = row
-        if plugin_id in self._icons:
+        if row.has_local_icon:
+            self._icons[plugin_id] = row.icon_label.pixmap()
+        elif plugin_id in self._icons:
             if self._icons[plugin_id] is not None:
                 row.set_pixmap(self._icons[plugin_id])
         else:
