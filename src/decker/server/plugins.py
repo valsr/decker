@@ -454,7 +454,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._recompose_icon_users()
 
     def _recompose_icon_users(self) -> None:
-        """Redraw the keys showing a pack icon or a bound action's icon, since what is installed just changed."""
+        """Redraw the keys showing a pack icon or a bound action's name, since what is installed just changed."""
         with self._lock:
             users = [live for live in self._live.values() if _uses_pack_icon(live) or self._shows_action(live)]
         for live in users:
@@ -866,10 +866,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         if image is None and state is not None and state.image:
             image = read_icon(plugin.plugin_dir, state.image) if plugin is not None else None
         title = plugin_title or (state.title if state is not None and state.title else "")
-        face = self._face_action(live)
-        if face is not None:
-            action, icon = face
-            image = image if image is not None else icon
+        action = self._face_action(live)
+        if action is not None:
             title = title or action.name
         return compose_key_face(
             self._expanded_appearance(live.target.device_id, appearance),
@@ -885,7 +883,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         press = live.bindings.get("press")
         return live.card.id == BLANK_CARD_ID and press is not None and not press.is_nothing
 
-    def _face_action(self, live: _Live) -> tuple[ActionSpec, bytes | None] | None:
+    def _face_action(self, live: _Live) -> ActionSpec | None:
         press = live.bindings.get("press")
         if not self._shows_action(live) or press is None or not self._allowed(live, press):
             return None
@@ -893,9 +891,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         action = self._action_runner.spec(press.action)
         with self._lock:
             plugin = self._plugins.get(found[0]) if found is not None else None
-        if action is None or plugin is None:
-            return None
-        return action, read_icon(plugin.plugin_dir, action.icon or plugin.manifest.icon)
+        return action if plugin is not None else None
 
     def _background_bytes(self, appearance: dict[str, Any]) -> bytes | None:
         background = appearance["background"]

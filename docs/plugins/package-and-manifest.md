@@ -240,7 +240,7 @@ does not change keys already placed.
 | `id` | Required; starts with `<plugin id>.`; unique among the plugin's presets, cards and actions. |
 | `name`, `tooltip` | Display data for the picker. |
 | `icon` | The picker thumbnail: a plugin file or a built-in ref. Not copied to the key. |
-| `appearance` | Same shape as a card's `appearance`, copied to the key. `appearance.icon.ref` must be a ref (`pack:`, `fas:`, `far:` or `fab:`), not a file path. Without `appearance.title.text` the key's title is the preset `name`; without `appearance.icon` the key shows the press action's icon. |
+| `appearance` | Same shape as a card's `appearance`, copied to the key. `appearance.icon.ref` must be a ref (`pack:`, `fas:`, `far:` or `fab:`), not a file path. Without `appearance.title.text` the key's title is the preset `name`; without `appearance.icon` the key shows no icon (a bound action's icon is not used). |
 | `bindings` | Same shape as a card's [bindings](#bindings). Arguments may be incomplete; the user fills them in the editor. A preset may have no bindings. |
 
 - A preset may bind only `global` actions (of any plugin) or Do Nothing, because the dropped key is a Blank card and

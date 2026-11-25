@@ -15,7 +15,11 @@ from decker.plugin.protocol import Message
 from decker.plugin.target import CardTarget
 from decker.server.action_calls import ActionCall
 from decker.server.actions import ActionRunner, _Pending
-from decker.server.appearance import compose_key_image, resolve_appearance
+from decker.server.appearance import (
+    PACK_ICON_SCALE,
+    compose_key_image,
+    resolve_appearance,
+)
 from tests.server.test_plugins import (
     _COUNTER,
     COUNTER_TARGET,
@@ -246,15 +250,26 @@ class TestBindingChanges:
 
 
 class TestBlankFace:
-    def test_blank_shows_press_action_icon_and_name(self, env) -> None:
+    def test_blank_shows_press_action_name_but_not_its_icon(self, env) -> None:
         env.manager.activate_card(_BLANK_TARGET)
         plain = env.image(3)
         assert_that(plain).is_equal_to(compose_key_image(resolve_appearance({}, {}), None, ""))
 
         env.manager.set_bindings(_BLANK_TARGET, {"press": {"action": _BUMP}})
 
+        expected = compose_key_image(resolve_appearance({}, {}), None, "Bump")
+        assert _wait_for(lambda: env.image(3) == expected)
         icon = read_icon(env.plugins_dir / _COUNTER, "icons/counter")
-        expected = compose_key_image(resolve_appearance({}, {}), icon, "Bump")
+        assert_that(env.image(3)).is_not_equal_to(compose_key_image(resolve_appearance({}, {}), icon, "Bump"))
+
+    def test_blank_with_its_own_icon_shows_it_whether_or_not_an_action_is_bound(self, env) -> None:
+        look = {"icon": {"ref": "fas:star", "color": ""}}
+        icon = env.manager.icon_packs.read_ref("fas:star")
+        assert_that(icon).is_not_none()
+        env.manager.set_bindings(_BLANK_TARGET, {"press": {"action": _BUMP}})
+        env.manager.activate_card(_BLANK_TARGET, look)
+
+        expected = compose_key_image(resolve_appearance({}, look), icon, "Bump", plugin_image_scale=PACK_ICON_SCALE)
         assert _wait_for(lambda: env.image(3) == expected)
 
     def test_blank_bound_to_do_nothing_keeps_the_plain_face(self, env) -> None:
