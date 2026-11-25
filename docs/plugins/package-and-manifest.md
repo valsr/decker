@@ -80,7 +80,7 @@ with a message naming the format, and there is no compatibility layer: a plugin 
 | `version` | yes | Semantic version `x.y.z` (pre-release/build suffixes allowed). |
 | `description`, `homepage`, `category` | no | Strings. |
 | `icon` | no | Path inside the package; the extension is optional (looked up as `.svg`, `@2x.png`, `.png`). A built-in Font Awesome short reference such as `fas:play` (see [Images](protocol.md#images)) names a bundled icon instead of a file. Values starting with `pack:` are reserved. |
-| `decker` | no (yes for `variables` and `options_source`) | Version specifier for Decker, e.g. `>=0.7` (format 3 needs Decker 0.7). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker refuses a field without `options`, and on one with `options` it ignores `options_source`, so the field becomes a plain static choice that replaces an unlisted saved value. |
+| `decker` | no (yes for `variables`, `options_source` and `presets`) | Version specifier for Decker, e.g. `>=0.7` (format 3 needs Decker 0.7). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker refuses a field without `options`, and on one with `options` it ignores `options_source`, so the field becomes a plain static choice that replaces an unlisted saved value. |
 | `runtime` | for `actions` (every action runs in its plugin's process), for `variables`, for `options_source` fields and for `cards` that are not `static` | See below. |
 | `global_settings` | no | [Settings schema](settings-schema.md) for plugin-wide settings, shown in Settings, Plugins. |
 | `permissions` | no | Reserved, ignored in v1. |
@@ -244,7 +244,7 @@ does not change keys already placed.
 
 - A preset may bind only `global` actions (of any plugin) or Do Nothing, because the dropped key is a Blank card and
   cannot run its plugin's `plugin`-scoped actions. Binding the plugin's own `plugin`-scoped action is a manifest
-  error; a foreign `plugin`-scoped action is not offered. A preset whose actions are not all installed is hidden.
+  error; a foreign `plugin`-scoped action is not offered. A preset whose actions are not all currently usable by its plugin (action missing, plugin not loaded) is hidden.
 - A preset may not declare `settings`, `states`, `static` or `gestures`; if it needs code, make it a card.
 - The plugin needs no `runtime` for presets alone, but must declare a `decker` constraint that guarantees the Decker
   version adding them (`">=0.8"`).
