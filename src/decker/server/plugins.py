@@ -565,7 +565,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
                     "bindings": {g: b.to_json() for g, b in spec.bindings.items()},
                 }
                 for spec in manifest.presets
-                if self._preset_usable(manifest.id, spec)
+                if self.preset_usable(spec)
             )
         return presets
 
@@ -577,12 +577,13 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             return None
         return next((p for p in plugin.manifest.presets if p.id == preset_id), None)
 
-    def _preset_usable(self, plugin_id: str, spec: PresetSpec) -> bool:
+    def preset_usable(self, spec: PresetSpec) -> bool:
+        """True when every non-Nothing binding of the preset is an installed global action."""
         for binding in spec.bindings.values():
             if binding.is_nothing:
                 continue
             found = self._action_runner.scope_of(binding.action)
-            if found is None or (found[1] != "global" and found[0] != plugin_id):
+            if found is None or found[1] != "global":
                 return False
         return True
 
