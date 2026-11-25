@@ -1021,3 +1021,47 @@ class TestKeyButtonAnimation:
         assert_that(button._movie).is_none()  # pylint: disable=protected-access
         grid.set_key_animation(9, None)  # unknown keys are ignored
         grid.deleteLater()
+
+
+class TestContextMenu:
+    def test_context_menu_lists_gestures_and_delete(self, qapp):  # pylint: disable=unused-argument
+        button = _key()
+        button.set_draggable(True)
+
+        menu = button._build_context_menu()  # pylint: disable=protected-access
+
+        assert menu is not None
+        actions = menu.actions()
+        texts = [a.text() for a in actions if not a.isSeparator()]
+        assert_that(texts).is_equal_to(["Press", "Double Press", "Long Press", "Delete Card"])
+        assert_that([a.isSeparator() for a in actions]).is_equal_to([False, False, False, True, False])
+
+    def test_context_menu_actions_emit(self, qapp):  # pylint: disable=unused-argument
+        button = _key(7)
+        button.set_draggable(True)
+        gestures: list[tuple[int, str]] = []
+        deleted: list[int] = []
+        button.gesture_edit_requested.connect(lambda i, g: gestures.append((i, g)))
+        button.delete_clicked.connect(deleted.append)
+        menu = button._build_context_menu()  # pylint: disable=protected-access
+        assert menu is not None
+        by_text = {a.text(): a for a in menu.actions()}
+
+        by_text["Long Press"].trigger()
+        by_text["Delete Card"].trigger()
+
+        assert_that(gestures).is_equal_to([(7, "long_press")])
+        assert_that(deleted).is_equal_to([7])
+
+    def test_empty_key_has_no_context_menu(self, qapp):  # pylint: disable=unused-argument
+        assert_that(_key()._build_context_menu()).is_none()  # pylint: disable=protected-access
+
+    def test_grid_forwards_gesture_edit_requests(self, qapp):  # pylint: disable=unused-argument
+        grid = ButtonGridWidget()
+        grid.build(_make_keys(6))
+        seen: list[tuple[int, str]] = []
+        grid.key_gesture_edit_requested.connect(lambda i, g: seen.append((i, g)))
+
+        grid._buttons[2].gesture_edit_requested.emit(2, "press")  # pylint: disable=protected-access
+
+        assert_that(seen).is_equal_to([(2, "press")])

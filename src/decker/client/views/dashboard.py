@@ -206,6 +206,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         self._grid.key_pressed.connect(self._on_key_pressed)
         self._grid.key_edit_requested.connect(self._on_key_edit_requested)
         self._grid.key_delete_requested.connect(self._on_key_delete_requested)
+        self._grid.key_gesture_edit_requested.connect(self._on_key_gesture_edit_requested)
         self._grid.key_long_pressed.connect(self._on_key_long_pressed)
         self._grid.card_dropped.connect(self._on_card_dropped)
 
@@ -569,6 +570,11 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             self._config_panel.set_preview_image(self._key_images.get(index))
         self._selected_key = index
         self._refresh_config_panel()
+
+    def _on_key_gesture_edit_requested(self, index: int, gesture: str) -> None:
+        """Open a key's editor straight on one gesture's tab (from the key's right-click menu)."""
+        self._on_key_edit_requested(index)
+        self._config_panel.show_gesture_tab(gesture)
 
     def _sync_draggable(self) -> None:
         """Only keys with a card can be dragged, and drags are tagged with the device and page they start on."""

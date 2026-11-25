@@ -23,6 +23,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QBrush,
     QColor,
+    QContextMenuEvent,
     QDrag,
     QEnterEvent,
     QFocusEvent,
@@ -41,6 +42,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QGridLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QToolButton,
     QVBoxLayout,
@@ -158,6 +160,7 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
     edit_clicked = pyqtSignal(int)
     run_clicked = pyqtSignal(int)
     delete_clicked = pyqtSignal(int)
+    gesture_edit_requested = pyqtSignal(int, str)  # key index, gesture name
     key_dropped = pyqtSignal(int, int, bool)  # from index, to index (this key), copy
 
     def __init__(self, index: int, key_info: KeyInfo) -> None:
@@ -228,6 +231,24 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
 
     def _delete_position(self) -> QPoint:
         return QPoint(self.width() - _RUN_SIZE - _RUN_MARGIN, self.height() - _RUN_SIZE - _RUN_MARGIN)
+
+    def _build_context_menu(self) -> QMenu | None:
+        """The right-click menu of a key with a card (gesture tabs, Delete Card); an empty key has none."""
+        if not self._draggable:
+            return None
+        menu = QMenu(self)
+        for title, gesture in (("Press", "press"), ("Double Press", "double_press"), ("Long Press", "long_press")):
+            menu.addAction(title, lambda g=gesture: self.gesture_edit_requested.emit(self.index, g))
+        menu.addSeparator()
+        menu.addAction("Delete Card", lambda: self.delete_clicked.emit(self.index))
+        return menu
+
+    def contextMenuEvent(self, event: QContextMenuEvent | None) -> None:  # noqa: N802
+        menu = self._build_context_menu()
+        if menu is None or event is None:
+            return
+        menu.exec(event.globalPos())
+        event.accept()
 
     def _show_hover_buttons(self) -> None:
         self._run_button.show()
@@ -517,6 +538,7 @@ class ButtonGridWidget(QWidget):
     key_pressed = pyqtSignal(int)
     key_edit_requested = pyqtSignal(int)
     key_delete_requested = pyqtSignal(int)
+    key_gesture_edit_requested = pyqtSignal(int, str)
     key_long_pressed = pyqtSignal(int)
     card_dropped = pyqtSignal(int, object)
     key_moved = pyqtSignal(int, int, bool)  # from index, to index, copy
@@ -555,6 +577,7 @@ class ButtonGridWidget(QWidget):
             button.run_clicked.connect(self.key_pressed.emit)
             button.edit_clicked.connect(self.key_edit_requested.emit)
             button.delete_clicked.connect(self.key_delete_requested.emit)
+            button.gesture_edit_requested.connect(self.key_gesture_edit_requested.emit)
             button.long_pressed.connect(self.key_long_pressed.emit)
             button.card_dropped.connect(self.card_dropped.emit)
             button.key_dropped.connect(self.key_moved.emit)
