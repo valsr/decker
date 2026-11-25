@@ -749,5 +749,5 @@ def test_card_actions_duplicate_rejected() -> None:
 
 
 def test_preset_cannot_declare_actions() -> None:
-    with pytest.raises(ManifestValidationError, match="actions"):
+    with pytest.raises(ManifestValidationError, match="unknown key.*actions"):
         PluginManifest.from_dict(_preset_manifest({"actions": ["com.x.go"]}))

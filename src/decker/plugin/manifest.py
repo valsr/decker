@@ -368,7 +368,9 @@ def _check_card_actions(cards: tuple[CardSpec, ...], actions: tuple[ActionSpec, 
             if action_id not in scopes:
                 raise ManifestValidationError(f"card {card.id} lists unknown action {action_id!r}")
             if scopes[action_id] != "plugin":
-                raise ManifestValidationError(f"card {card.id} lists global action {action_id!r}; only plugin-scoped")
+                raise ManifestValidationError(
+                    f"card {card.id} lists global action {action_id!r}; a card may list only plugin-scoped actions"
+                )
 
 
 def _parse_appearance(entry: dict[str, Any], owner: str) -> dict[str, Any]:
