@@ -12,8 +12,9 @@ dialog, Delay and Sequence actions, plugin access to deck brightness, and a fix 
 
 - Decker 0.7.2: About dialog; Core **Delay** and **Sequence** actions; SDK/protocol access to deck brightness; the
   Counter negative-input crash fixed; version bumped to 0.7.2.
-- `com.decker.utilities` 1.0.0: global actions Sleep, Lock screen, Brightness, Deck brightness; cards Brightness Level/Up/Down,
-  Deck Brightness Level/Up/Down, Sleep, Timer, Stopwatch, Counter, Page, Profile; variables for the brightness levels.
+- `com.decker.utilities` 1.0.0: global actions Sleep, Lock screen, Brightness, Deck brightness; cards Brightness Level,
+  Deck Brightness Level, Sleep, Timer, Stopwatch, Counter (the Page, Profile and Up/Down presets are global actions
+  only, reached from the Actions tab); variables for the brightness levels.
 - All five platform tiers targeted; gaps declared in the manifest and the README platform table.
 
 ## Non-goals
@@ -187,19 +188,13 @@ at the level: 100 % → `#ffffff`, 0 % → `#000000`, linear, no minimum.
 | Card | Icon | Press | Double press | Long press | Card settings | Display |
 |---|---|---|---|---|---|---|
 | Brightness Level | `fas:sun`, level tint | brightness +10 | brightness −10 | brightness set 75 | `monitor` (as above, default all) | icon tinted by the chosen monitor's level ("all": average); title fallback `NN%` |
-| Brightness Up | `fas:sun` | +10 | +5 | set 75 | — | static icon |
-| Brightness Down | `fas:sun` | −10 | −5 | set 25 | — | static icon |
 | Deck Brightness Level | `decker:logo`, level tint | deck +10 | deck −10 | deck set 75 | — | icon tinted by the key's deck level, live via `deck_brightness_changed`; title fallback `NN%` |
-| Deck Brightness Up | `decker:logo` | +10 | +5 | set 75 | — | static |
-| Deck Brightness Down | `decker:logo` | −10 | −5 | set 25 | — | static |
 | Sleep | `fas:moon` | `sleep_press` (plugin action) | `sleep_after` 1 min | `sleep_after` 10 min | — | idle: icon; counting: icon plus remaining `m:ss` |
 | Timer | `fas:stopwatch` | `timer_toggle` | `timer_reset` | `timer_reset` | see below | see below |
 | Stopwatch | `fas:stopwatch` | `stopwatch_toggle` | `stopwatch_reset` | `stopwatch_reset` | — | elapsed `m:ss`, `h:mm:ss` past an hour |
 | Counter | as today's Counter | increment 1 | decrement 1 | reset | `max` | as today's Counter |
-| Page | `fas:file` | `page` action, mode next | (none) | (none) | `color` | arrow or target page name by press mode |
-| Profile | `fas:layer-group` | `profile` action, mode next | (none) | (none) | `color` | target profile's icon when press mode is "profile", arrow otherwise |
 
-Brightness Up/Down cards bind to the global `brightness`/`deck_brightness` actions with `monitor` "all".
+The `brightness`/`deck_brightness` actions are global and reached from the Actions tab (no Up/Down cards).
 
 **Sleep card.** Plugin-scoped actions:
 - `sleep_press`: if this key has a countdown running, cancel it (key shows a brief OK); otherwise sleep now.
@@ -217,8 +212,7 @@ the bottom edge. Behaviour: starts idle at the full duration; press starts, paus
 flashes (show_alert) and stays finished; press when finished restarts; double/long press reset to idle. Changing the
 duration while running resets it.
 
-**Page and Profile cards** ("one card to rule them all"). Each gesture binds to the global action and its own args, so
-press/double/long can each target something different. Plugin keeps global actions:
+**Page and Profile actions** (no cards; reached from the Actions tab, bound to a Blank card). Plugin keeps global actions:
 - `page {mode: page|next|previous, profile: profile, page: page (profile_field: profile), wrap: bool}`; `page`/`profile`
   are used only in mode `page`, `wrap` only in next/previous.
 - `profile {mode: profile|next|previous, profile: profile, wrap: bool}`.
