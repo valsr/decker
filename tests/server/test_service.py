@@ -4,6 +4,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -18,6 +19,7 @@ from decker.plugin.bindings import parse_manifest_bindings
 from decker.plugin.events import PluginLoadFailedEvent
 from decker.plugin.manifest import PresetSpec, VariableSpec
 from decker.plugin.repository_index import IndexPlugin, IndexVersion
+from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
 from decker.server.appearance import resolve_appearance
 from decker.server.key_assignments import KeyAssignmentStore
@@ -25,6 +27,7 @@ from decker.server.options_runner import OptionsResult
 from decker.server.page_controller import PageController
 from decker.server.pages import PageStore, initial_page_id
 from decker.server.plugin_installer import PluginInstallError
+from decker.server.plugins import PluginManager
 from decker.server.repositories import CatalogEntry, RepositoryError, RepositoryInfo
 from decker.server.server_context import ServerContext
 from decker.server.service import DeckerService
@@ -39,7 +42,7 @@ def _make_target(device_id="dev1", key_index=0, plugin="com.p", action="com.p.a"
 _PAGE_STORES: list[PageStore] = []
 
 
-def _make_context(plugin_manager: MagicMock, store: KeyAssignmentStore, device_manager=None) -> ServerContext:
+def _make_context(plugin_manager: Any, store: KeyAssignmentStore, device_manager=None) -> ServerContext:
     """A context with real page and key stores (sharing one database) and mocked hardware/plugins."""
     page_store = PageStore(db_path=store._db_path)  # pylint: disable=protected-access
     _PAGE_STORES.append(page_store)
@@ -715,6 +718,40 @@ class TestKeyGetStates:
 
         assert_that(states[0]["bindings"]).is_equal_to(bindings)
         assert_that(states[1]["bindings"]).is_equal_to({})
+
+    def _states_with(self, service, store, num_keys: int = 2) -> list[dict]:
+        service._context.device_manager.open_device.return_value = self._make_mock_device(
+            num_keys=num_keys
+        )  # pylint: disable=protected-access
+        service._context.device_manager.get_device_state.return_value = (
+            self._make_mock_device_state()
+        )  # pylint: disable=protected-access
+        return json.loads(service.key_get_states("dev1"))
+
+    @pytest.mark.parametrize("failing", ["complete_settings", "appearance_for"])
+    def test_key_states_survive_a_broken_card(self, service, manager, store, failing) -> None:
+        store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {"a": 1})
+        store.assign("dev1", P1, 1, _make_target(key_index=1, ctx="ctx2"), {"b": 2})
+        getattr(manager, failing).side_effect = ValueError("broken card")
+
+        states = self._states_with(service, store)
+
+        assert_that(states).is_length(2)
+        assert_that([s["plugin_uuid"] for s in states]).is_equal_to(["com.gone", "com.p"])
+        assert_that([s["card_uuid"] for s in states]).is_equal_to(["com.gone.x", "com.p.a"])
+        assert_that([s["context_id"] for s in states]).is_equal_to(["ctx1", "ctx2"])
+        assert_that(states[0]["settings"]).is_equal_to({"a": 1})
+        assert_that(states[0]["appearance_defaults"]).is_equal_to({})
+
+    def test_key_states_for_a_card_its_plugin_does_not_declare(self, store, tmp_path) -> None:
+        real = PluginManager(tmp_path / "plugins", settings_store=PluginSettingsStore(tmp_path / "plugins.db"))
+        DeckerService.configure_context(_make_context(real, store))
+        store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {"a": 1})
+
+        states = self._states_with(DeckerService(), store, num_keys=1)
+
+        assert_that(states[0]["plugin_uuid"]).is_equal_to("com.gone")
+        assert_that(states[0]["settings"]).is_equal_to({"a": 1})
 
     def test_returns_key_image_as_base64(self, service, store):
         import base64  # pylint: disable=import-outside-toplevel
@@ -1555,3 +1592,12 @@ class TestServerSettingsRpcs:
         svc.server_settings_set(json.dumps({"stop_when_last_client_leaves": True}))
 
         assert_that(json.loads(svc.server_settings())["last_apply_error"]).is_none()
+
+
+class TestKeyUnassignWithoutLiveCard:
+    def test_unassign_removes_a_key_whose_plugin_is_missing(self, service, manager, store) -> None:
+        store.assign("dev1", P1, 0, _make_target(plugin="com.gone", action="com.gone.x"), {})
+        manager.deactivate_card.side_effect = lambda _target: None
+
+        assert_that(service.key_unassign("dev1", P1, 0)).is_true()
+        assert_that(store.get("dev1", P1, 0)).is_none()

@@ -1607,6 +1607,22 @@ class TestKeyClear:  # pylint: disable=protected-access
         cm.call.assert_not_called()
         assert_that(view._key_slots).contains_key(4)
 
+    def test_a_key_of_an_unknown_card_is_listed_selectable_and_deletable(
+        self, qapp, tmp_path
+    ):  # pylint: disable=unused-argument
+        view, cm = self._view(tmp_path)
+        view._key_slots.clear()
+        state = {"key_index": 6, "label": "", "plugin_uuid": "com.gone", "card_uuid": "com.gone.x", "context_id": "c6"}
+        view.handle_event(KeyDisplayStatesUpdatedEvent(device_id="dev1", states=[state]))
+        view._selected_key = 6
+
+        view._refresh_config_panel()  # an unknown card still opens the editor (empty schema)
+        with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+            view._grid.key_delete_requested.emit(6)
+
+        assert_that(view._key_slots).does_not_contain_key(6)
+        cm.call.assert_any_call("key_unassign", "dev1", "p1", 6)
+
     def test_an_empty_key_is_not_cleared(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view, cm = self._view(tmp_path)
 
