@@ -79,7 +79,7 @@ with a message naming the format, and there is no compatibility layer: a plugin 
 | `name`, `author` | yes | Non-empty strings. |
 | `version` | yes | Semantic version `x.y.z` (pre-release/build suffixes allowed). |
 | `description`, `homepage`, `category` | no | Strings. |
-| `icon` | no | Path inside the package; the extension is optional (looked up as `.svg`, `@2x.png`, `.png`). A built-in Font Awesome short reference such as `fas:play` (see [Images](protocol.md#images)) names a bundled icon instead of a file. Values starting with `pack:` are reserved. |
+| `icon` | no | Path inside the package; the extension is optional (looked up as `.svg`, `@2x.png`, `.png`). A built-in Font Awesome short reference (`fas:`, `far:` or `fab:`, such as `fas:play`; see [Images](protocol.md#images)) names a bundled icon instead of a file, and is the usual choice for plugin and card icons. Values starting with `pack:` are reserved. |
 | `decker` | no (yes for `variables`, `options_source` and `presets`) | Version specifier for Decker, e.g. `>=0.7` (format 3 needs Decker 0.7). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker refuses a field without `options`, and on one with `options` it ignores `options_source`, so the field becomes a plain static choice that replaces an unlisted saved value. |
 | `runtime` | for `actions` (every action runs in its plugin's process), for `variables`, for `options_source` fields and for `cards` that are not `static` | See below. |
 | `global_settings` | no | [Settings schema](settings-schema.md) for plugin-wide settings, shown in Settings, Plugins. |
@@ -144,7 +144,7 @@ Double Press and Long Press tabs, where the Action dropdown lists Do Nothing, th
 | Field | Notes |
 |-------|-------|
 | `id` | Must start with `<plugin id>.` (same pattern as plugin ids). |
-| `name`, `tooltip`, `icon` | Display data. |
+| `name`, `tooltip`, `icon` | Display data (`icon` may be a `fas:`/`far:`/`fab:` ref). |
 | `bindings` | Default gesture bindings, see [Bindings](#bindings). |
 | `actions` | Optional list of full ids of this plugin's own plugin-scoped actions (`contributes.actions`, `scope` `"plugin"`) that belong to this card: no duplicates, no global or unknown ids (a manifest error). In the card editor's "Card actions" group, a card shows the actions it lists; a plugin-scoped action that no card of the plugin lists stays visible on every card of that plugin. Requires `decker >=0.8.1`; an older Decker (0.8.0) ignores the field and shows all of the plugin's plugin-scoped actions. Presets cannot declare it. |
 | `states` | Optional list of `{image, title}`; selected by `set_state` (index into the list). |
@@ -281,5 +281,5 @@ need no `runtime`. Packs are served to clients over RPC and appear in the client
 
 ## Where plugins come from
 
-Decker ships two built-in plugins. **Blank** (`com.decker.blank`) is static: a key with only a background and a title, and its only card. **Core** (`com.decker.core`) holds the Do Nothing, HTTP Request, Delay and Sequence actions, presets for the last three, and runs as a normal plugin process on Decker's own interpreter (see [`runtime`](#runtime)). Built-in plugins cannot be uninstalled or replaced (a package or repository plugin with a built-in id is refused). Other plugins are installed from a `.deckerplugin` package or from a plugin repository
+Decker ships one built-in plugin. **Core** (`com.decker.core`) holds the static Blank card (`com.decker.core.blank`: a key with only a background and a title; the legacy ids `com.decker.blank` and `com.decker.blank.blank` still resolve to it in stored keys), the Do Nothing, HTTP Request, Delay and Sequence actions, presets for the last three, and runs as a normal plugin process on Decker's own interpreter (see [`runtime`](#runtime)). Built-in plugins cannot be uninstalled or replaced (a package or repository plugin with a built-in id is refused). Other plugins are installed from a `.deckerplugin` package or from a plugin repository
 (see [repositories](repositories.md)); the default repository publishes the Counter, Pages and Profiles plugins.
