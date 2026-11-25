@@ -1131,11 +1131,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
             per_key = device_state.get_key_state(key_index) if device_state is not None else None
             raw_image = per_key.image if per_key is not None else None
             image_b64 = base64.b64encode(raw_image).decode("ascii") if raw_image else None
-            appearance, defaults = (
-                self._context.plugin_manager.appearance_for(assignment.target, assignment.appearance)
-                if assignment
-                else ({}, {})
-            )
+            settings, appearance, defaults = self._resolved_key(assignment) if assignment else ({}, {}, {})
             result.append(
                 KeyState(
                     key_index=key_index,
@@ -1147,17 +1143,25 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
                     plugin_uuid=assignment.target.plugin_uuid if assignment else None,
                     card_uuid=assignment.target.card_uuid if assignment else None,
                     context_id=assignment.target.context_id if assignment else None,
-                    settings=(
-                        self._context.plugin_manager.complete_settings(assignment.target, assignment.settings)
-                        if assignment
-                        else {}
-                    ),
+                    settings=settings,
                     appearance=appearance,
                     appearance_defaults=defaults,
                     bindings=assignment.bindings if assignment else {},
                 )
             )
         return result
+
+    def _resolved_key(self, assignment: KeyAssignment) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Return (settings, appearance, appearance defaults), falling back to the stored values if the card is broken."""
+        assert self._context is not None
+        manager = self._context.plugin_manager
+        try:
+            settings = manager.complete_settings(assignment.target, assignment.settings)
+            appearance, defaults = manager.appearance_for(assignment.target, assignment.appearance)
+        except Exception:  # pylint: disable=broad-exception-caught
+            logging.warning("Cannot resolve key state for %s", assignment.target, exc_info=True)
+            return dict(assignment.settings), dict(assignment.appearance), {}
+        return settings, appearance, defaults
 
     @exposed
     def key_simulate_press(self, device_id: str, key_index: int) -> bool:
