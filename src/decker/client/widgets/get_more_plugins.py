@@ -24,7 +24,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from decker.client.card_icons import builtin_pixmap, decode_icon, icon_tint, placeholder_pixmap
+from decker.client.card_icons import (
+    builtin_pixmap,
+    decode_icon,
+    icon_tint,
+    placeholder_pixmap,
+)
 from decker.client.connection_manager import to_plain
 from decker.client.context import AppContext
 from decker.client.events import (
