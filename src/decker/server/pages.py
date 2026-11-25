@@ -282,7 +282,8 @@ class PageStore(Manager):
             ids = [row[0] for row in rows]
             ids.remove(page_id)
             ids.insert(max(0, min(new_index, len(ids))), page_id)
-            # Reuse the profile's own position slots so other profiles' rows keep their relative order.
+            # Hand the profile's existing position slots to the pages in their new order; only this profile's
+            # rows are rewritten, so other profiles' rows are untouched (no renumbering to 0..n-1).
             slots = [row[1] for row in rows]
             self._db.executemany(
                 "UPDATE pages SET position = ? WHERE device_id = ? AND page_id = ?",

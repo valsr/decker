@@ -464,10 +464,50 @@ class TestMovableTabs:
         end_x = tabs.tabRect(3).right() - 2
         _drag_to(tabs, tabs.tabRect(0).center(), end_x)
 
-        bar.set_pages(model.pages, None, model.default_page_id)  # a server push arrives mid-drag
+        bar.set_pages(model.pages, None, model.default_page_id)  # an old-order push arrives mid-drag
         QTest.mouseRelease(tabs, Qt.MouseButton.LeftButton, pos=QPoint(end_x, tabs.tabRect(3).center().y()))  # type: ignore[call-overload]
 
         assert_that(moves).is_equal_to([("id1", 3)])
+        assert_that(_names(bar)).is_equal_to(["Page 2", "Page 3", "Page 4", "Page 1"])  # not snapped back
+
+    def test_a_list_held_back_during_a_plain_click_is_applied_on_release(self, bar, model) -> None:
+        tabs = bar.tab_bar
+        pos = tabs.tabRect(0).center()
+        QTest.mousePress(tabs, Qt.MouseButton.LeftButton, pos=pos)  # type: ignore[call-overload]
+        bar.set_pages([PageInfo(page_id="x1", name="New")], None, "x1")
+        assert_that(_names(bar)).is_equal_to(["Page 1", "Page 2"])
+
+        QTest.mouseRelease(tabs, Qt.MouseButton.LeftButton, pos=pos)  # type: ignore[call-overload]
+
+        assert_that(_names(bar)).is_equal_to(["New"])
+
+    def test_releasing_another_button_does_not_end_the_drag(self, bar, model) -> None:
+        for _ in range(2):
+            model.add_page()
+        bar.set_pages(model.pages, None, model.default_page_id)
+        bar.show()
+        moves = _record(bar.page_move_requested)
+        tabs = bar.tab_bar
+        end_x = tabs.tabRect(3).right() - 2
+        _drag_to(tabs, tabs.tabRect(0).center(), end_x)
+        point = QPoint(end_x, tabs.tabRect(3).center().y())
+
+        QTest.mouseRelease(tabs, Qt.MouseButton.RightButton, pos=point)  # type: ignore[call-overload]
+        assert_that(moves).is_empty()
+        QTest.mouseRelease(tabs, Qt.MouseButton.LeftButton, pos=point)  # type: ignore[call-overload]
+
+        assert_that(moves).is_equal_to([("id1", 3)])
+
+    def test_a_list_held_back_by_a_drag_that_never_released_is_dropped_on_the_next_press(self, bar, model) -> None:
+        tabs = bar.tab_bar
+        pos = tabs.tabRect(0).center()
+        QTest.mousePress(tabs, Qt.MouseButton.LeftButton, pos=pos)  # type: ignore[call-overload]
+        bar.set_pages([PageInfo(page_id="x1", name="Other profile")], None, "x1")  # held back, release is lost
+
+        QTest.mousePress(tabs, Qt.MouseButton.LeftButton, pos=pos)  # type: ignore[call-overload]
+        QTest.mouseRelease(tabs, Qt.MouseButton.LeftButton, pos=pos)  # type: ignore[call-overload]
+
+        assert_that(_names(bar)).is_equal_to(["Page 1", "Page 2"])
 
     def test_a_move_during_a_rebuild_is_not_reported(self, bar, model) -> None:
         moves = _record(bar.page_move_requested)

@@ -64,9 +64,9 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
     set_default_page_requested = pyqtSignal(str)
     page_move_requested = pyqtSignal(str, int)  # page_id, new index
 
-    _drag_page_id: str | None = None  # page under the mouse while a left button is held on the tabs
-    _drag_moved: bool = False
-    _deferred_pages: tuple[list[PageInfo], str | None, str | None] | None = None
+    _drag_page_id: str | None  # page under the mouse while a left button is held on the tabs
+    _drag_moved: bool
+    _deferred_pages: tuple[list[PageInfo], str | None, str | None] | None  # list held back during a drag
 
     def __init__(self) -> None:
         super().__init__()
@@ -76,6 +76,7 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
         self._rename_page_id: str | None = None
         self._rename_edit: RenameEdit | None = None
         self._updating: bool = False
+        self._drag_page_id, self._drag_moved, self._deferred_pages = None, False, None
 
         self._menu = QMenu(self)
         self._menu.aboutToShow.connect(lambda: self.menu_about_to_show.emit(self._menu))
@@ -223,17 +224,19 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
         return super().eventFilter(a0, a1)
 
     def _track_drag(self, event: QEvent) -> None:
-        """Remember which page a left-button press grabbed; on release emit one move for the whole drag."""
-        if event.type() == QEvent.Type.MouseButtonPress and isinstance(event, QMouseEvent):
-            if event.button() == Qt.MouseButton.LeftButton:
-                self._drag_page_id = self._page_id_at(self._tabs.tabAt(event.position().toPoint()))
-                self._drag_moved = False
+        if not isinstance(event, QMouseEvent) or event.button() != Qt.MouseButton.LeftButton:
+            return
+        if event.type() == QEvent.Type.MouseButtonPress:
+            # A list held back by a drag whose release never arrived is stale by now: drop it.
+            self._deferred_pages = None
+            self._drag_page_id = self._page_id_at(self._tabs.tabAt(event.position().toPoint()))
+            self._drag_moved = False
         elif event.type() == QEvent.Type.MouseButtonRelease and self._drag_page_id is not None:
             page_id, moved, deferred = self._drag_page_id, self._drag_moved, self._deferred_pages
             self._drag_page_id, self._drag_moved, self._deferred_pages = None, False, None
-            if moved:
+            if moved:  # the refresh the move triggers replaces any held-back list
                 self.page_move_requested.emit(page_id, self._index_of(page_id))
-            if deferred is not None:
+            elif deferred is not None:
                 self.set_pages(*deferred)
 
     def _is_outside_editor(self, receiver: QObject | None) -> bool:
