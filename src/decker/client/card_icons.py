@@ -37,7 +37,7 @@ def asset_pixmap(name: str, size: int, tint: str | None = None) -> QPixmap:
 
 
 def tab_icon(ref: str, size: int = 16) -> QIcon:
-    """A bundled Font Awesome icon (``fas:image``) tinted with the palette's text colour; empty if ``ref`` is unknown."""
+    """A bundled Font Awesome icon (``fas:image``) tinted with the palette text colour; empty if unknown."""
     raw = read_builtin_ref(ref)
     if raw is None:
         return QIcon()
