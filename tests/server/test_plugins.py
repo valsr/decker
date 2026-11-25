@@ -393,9 +393,7 @@ class TestListing:
     def test_installed_plugins_are_loaded(self, env):
         plugins = {p.manifest.id for p in env.manager.plugins()}
 
-        assert_that(plugins).is_equal_to(
-            {_COUNTER, "com.decker.rec", "com.t.static", "com.t.mixed", "com.decker.blank", "com.decker.core"}
-        )
+        assert_that(plugins).is_equal_to({_COUNTER, "com.decker.rec", "com.t.static", "com.t.mixed", "com.decker.core"})
         assert_that(env.manager.load_failures()).is_empty()
 
     def test_key_for_missing_plugin_keeps_assignment_and_label(self, env):
@@ -1253,7 +1251,7 @@ def test_duplicate_plugin_id_is_rejected(tmp_path):
     manager.create(SimpleNamespace(device_manager=FakeDeviceManager(), event_bus=FakeBus()))  # type: ignore[arg-type]
     try:
         assert_that(manager.load_failures()).extracting("error").contains("duplicate plugin id")
-        assert_that(manager.plugins()).is_length(3)  # the fixture plugin and the built-in Blank and Core
+        assert_that(manager.plugins()).is_length(2)  # the fixture plugin and the built-in Core
     finally:
         manager.destroy()
 

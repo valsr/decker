@@ -19,14 +19,16 @@ from decker.server.pages import initial_page_id
 if TYPE_CHECKING:
     from decker.server.server_context import ServerContext
 
-BLANK_PLUGIN_ID = "com.decker.blank"
-BLANK_CARD_ID = "com.decker.blank.blank"
+BLANK_PLUGIN_ID = "com.decker.core"
+BLANK_CARD_ID = "com.decker.core.blank"
+LEGACY_BLANK_PLUGIN_ID = "com.decker.blank"
+LEGACY_BLANK_CARD_ID = "com.decker.blank.blank"
 RETIRED_CARDS: frozenset[tuple[str, str]] = frozenset(
     {
         ("com.decker.core", "com.decker.core.runaction"),
         ("com.decker.core", "com.decker.core.switch"),
-        (BLANK_PLUGIN_ID, "com.decker.blank.pagename"),
-        (BLANK_PLUGIN_ID, "com.decker.blank.pagecount"),
+        (LEGACY_BLANK_PLUGIN_ID, "com.decker.blank.pagename"),
+        (LEGACY_BLANK_PLUGIN_ID, "com.decker.blank.pagecount"),
     }
 )
 _TABLE = "key_assignments"
@@ -206,9 +208,9 @@ class KeyAssignmentStore(Manager):
         """Return every assignment of a plugin's cards as (device_id, page_id, key_index, assignment)."""
         with self._lock:
             rows = self._db.execute(
-                f"SELECT device_id, page_id, {_COLUMNS} FROM {_TABLE} WHERE plugin_uuid = ? "
+                f"SELECT device_id, page_id, {_COLUMNS} FROM {_TABLE} WHERE plugin_uuid IN (?, ?) "
                 "ORDER BY device_id, page_id, key_index",
-                (plugin_id,),
+                (plugin_id, LEGACY_BLANK_PLUGIN_ID if plugin_id == BLANK_PLUGIN_ID else plugin_id),
             ).fetchall()
         return [
             (row[0], row[1], *_to_assignment(row[0], row[2:]))
@@ -220,7 +222,7 @@ class KeyAssignmentStore(Manager):
         """Return the ids of every plugin referenced by at least one assignment."""
         with self._lock:
             rows = self._db.execute(f"SELECT DISTINCT plugin_uuid FROM {_TABLE}").fetchall()
-        return {row[0] for row in rows}
+        return {BLANK_PLUGIN_ID if row[0] == LEGACY_BLANK_PLUGIN_ID else row[0] for row in rows}
 
     def delete_page(self, device_id: str, page_id: str) -> None:
         """Remove every assignment on a page."""
@@ -386,8 +388,16 @@ def _is_retired(device_id: str, page_id: str, row: tuple[Any, ...]) -> bool:
     return True
 
 
+def _canonical(plugin_uuid: str, card_uuid: str) -> tuple[str, str]:
+    """Map the legacy Blank plugin and card ids to Core's; leave every other pair alone."""
+    if (plugin_uuid, card_uuid) == (LEGACY_BLANK_PLUGIN_ID, LEGACY_BLANK_CARD_ID):
+        return BLANK_PLUGIN_ID, BLANK_CARD_ID
+    return plugin_uuid, card_uuid
+
+
 def _to_assignment(device_id: str, row: tuple[Any, ...]) -> tuple[int, KeyAssignment]:
     key_index, plugin_uuid, card_uuid, context_id, settings_json, appearance_json, bindings_json = row
+    plugin_uuid, card_uuid = _canonical(plugin_uuid, card_uuid)
     target = CardTarget(
         device_id=device_id,
         key_index=key_index,

@@ -91,6 +91,18 @@ class TestSections:  # pylint: disable=protected-access
 
         assert_that(sidebar.sections).is_equal_to([("Built in", ["Blank"]), ("Alpha", ["Ax", "Ay"]), ("Zed", ["Za"])])
 
+    def test_core_entries_collapse_into_one_built_in_section(self, qapp):  # pylint: disable=unused-argument
+        core = {"plugin_uuid": "com.decker.core", "plugin_name": "Core", "plugin_builtin": True}
+        sidebar = SidebarWidget()
+        sidebar.set_cards(
+            [
+                {**core, "card_uuid": "com.decker.core.blank", "card_name": "Blank"},
+                {**core, "card_uuid": "com.decker.core.preset-delay", "card_name": "Delay"},
+            ]
+        )
+
+        assert_that(sidebar.sections).is_equal_to([("Built in", ["Blank", "Delay"])])
+
     def test_search_drops_sections_without_matches(self, qapp):  # pylint: disable=unused-argument
         sidebar = SidebarWidget()
         sidebar.set_cards(self._ACTIONS)

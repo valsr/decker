@@ -46,7 +46,7 @@ _HTTP = "com.decker.core.httprequest"
 _POLICY = SupervisorPolicy(idle_grace_s=30.0, backoff_s=(0.3,), max_crashes=5, ping_interval_s=30.0)
 _DEADLINE = 15.0
 _TILE = CardTarget(_PLUGIN, "com.decker.acttest.tile", "ctx-tile", "dev-1", 0)
-_BLANK = CardTarget("com.decker.blank", "com.decker.blank.blank", "ctx-blank", "dev-1", 1)
+_BLANK = CardTarget("com.decker.core", "com.decker.core.blank", "ctx-blank", "dev-1", 1)
 
 
 def _wait(predicate: Callable[[], bool], timeout: float = _DEADLINE) -> bool:

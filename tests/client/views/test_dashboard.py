@@ -551,7 +551,7 @@ class TestKeyInteractions:
         view, _cm = self._preset_view(tmp_path, json.dumps({"ok": True, "errors": {"press.url": "required"}}))
 
         view._on_preset_dropped(2, self._PRESET)  # pylint: disable=protected-access
-        view._key_slots[2] = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        view._key_slots[2] = {"plugin_uuid": "com.decker.core", "card_uuid": "com.decker.core.blank"}
         view._on_display_states_updated("dev1", [{"key_index": 2}])  # pylint: disable=protected-access
 
         view._config_panel.show_gesture_tab.assert_called_once_with("press")  # pylint: disable=protected-access
@@ -562,7 +562,7 @@ class TestKeyInteractions:
         view, _cm = self._preset_view(tmp_path, {"ok": True, "errors": {}})
 
         view._on_preset_dropped(2, self._PRESET)  # pylint: disable=protected-access
-        view._key_slots[2] = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        view._key_slots[2] = {"plugin_uuid": "com.decker.core", "card_uuid": "com.decker.core.blank"}
         view._on_display_states_updated("dev1", [{"key_index": 2}])  # pylint: disable=protected-access
 
         view._config_panel.show_gesture_tab.assert_not_called()  # pylint: disable=protected-access
@@ -574,14 +574,14 @@ class TestKeyInteractions:
         view._on_preset_dropped(2, self._PRESET)  # pylint: disable=protected-access
 
         view._on_key_moved(2, 5, False)  # pylint: disable=protected-access
-        view._key_slots[5] = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        view._key_slots[5] = {"plugin_uuid": "com.decker.core", "card_uuid": "com.decker.core.blank"}
         view._on_display_states_updated("dev1", [{"key_index": 5}])  # pylint: disable=protected-access
 
         view._config_panel.show_gesture_tab.assert_not_called()  # pylint: disable=protected-access
 
     def test_failed_preset_drop_changes_nothing(self, qapp, tmp_path) -> None:  # pylint: disable=unused-argument
         view, cm = self._preset_view(tmp_path, {"ok": False, "errors": {}})
-        slot = {"plugin_uuid": "com.decker.blank", "card_uuid": "com.decker.blank.blank"}
+        slot = {"plugin_uuid": "com.decker.core", "card_uuid": "com.decker.core.blank"}
         view._key_slots[2] = slot  # pylint: disable=protected-access
 
         view._on_card_dropped(2, self._PRESET)  # pylint: disable=protected-access

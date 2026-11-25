@@ -29,7 +29,7 @@ from tests.server.test_plugins import (
 _INCREMENT = "com.decker.testfixture.increment"
 _RESET = "com.decker.testfixture.reset"
 _BUMP = "com.decker.testfixture.bump"
-_BLANK_TARGET = _target("com.decker.blank", "com.decker.blank.blank", "ctx-blank", 3)
+_BLANK_TARGET = _target("com.decker.core", "com.decker.core.blank", "ctx-blank", 3)
 _NOTHING = {"action": NOTHING_ACTION_ID}
 
 
@@ -161,7 +161,7 @@ class TestDispatch:
         payload = _counter_log(env, "run_action")[0]["payload"]
         assert_that(payload["action"]).is_equal_to(_BUMP)
         assert_that(payload["card"]["context"]).is_equal_to("ctx-blank")
-        assert_that(payload["card"]["plugin"]).is_equal_to("com.decker.blank")
+        assert_that(payload["card"]["plugin"]).is_equal_to("com.decker.core")
 
     def test_foreign_plugin_scoped_binding_is_not_registered(self, env) -> None:
         env.manager.set_bindings(REC_TARGET, {"press": {"action": _INCREMENT}})
