@@ -867,6 +867,29 @@ class TestPanelBindings:  # pylint: disable=protected-access
         assert_that(shown).contains("not allowed", "bad url")
         assert_that(_save_button(panel).isEnabled()).is_false()
 
+    def _refuse_with(self, panel: CardConfigPanel, errors: dict[str, str], current: int) -> None:
+        stored = {"long_press": {"action": "com.p.go", "args": {"url": "x"}}}
+        self._show(panel, lambda s, a, b: SaveOutcome(False, errors), stored=stored)
+        self._choose(panel, 0, "com.p.go")
+        panel._bindings_edit._rows["press"]._params._form._fields["url"].set("http://ok")
+        panel._tabs.setCurrentIndex(current)
+        _save_button(panel).click()
+
+    def test_refused_save_shows_the_long_press_tab_with_errors(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._refuse_with(panel, {"bindings.long_press.url": "bad"}, 1)
+        assert_that(panel._tabs.currentIndex()).is_equal_to(panel._gesture_index["long_press"])
+
+    def test_refused_save_shows_the_card_tab_for_setting_errors(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._refuse_with(panel, {"settings.step": "bad"}, 1)
+        assert_that(panel._tabs.currentIndex()).is_equal_to(panel._card_index)
+
+    def test_refused_save_without_field_errors_keeps_the_tab(self, qapp) -> None:  # pylint: disable=unused-argument
+        panel = CardConfigPanel()
+        self._refuse_with(panel, {}, 1)
+        assert_that(panel._tabs.currentIndex()).is_equal_to(1)
+
 
 class TestTabs:  # pylint: disable=protected-access
     _ACTIONS = TestPanelBindings._ACTIONS

@@ -99,7 +99,7 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._header.setProperty("role", "title")
         self._preview = KeyPreview()
         self._appearance_form = AppearanceForm()
-        self._settings_form = SchemaForm()
+        self._settings_form = SchemaForm(track_defaults=True)
         self._bindings_edit = BindingsEdit()
         self._no_settings = QLabel(_NO_CARD_SETTINGS)
         self._no_settings.setProperty("role", "muted")
@@ -304,6 +304,17 @@ class CardConfigPanel(QStackedWidget):  # pylint: disable=too-many-instance-attr
         self._bindings_edit.set_errors(
             {key.removeprefix(_BINDINGS_PREFIX): msg for key, msg in errors.items() if key.startswith(_BINDINGS_PREFIX)}
         )
+        self._show_first_error_tab()
+
+    def _show_first_error_tab(self) -> None:
+        """Switch to the first visible tab that has errors; leave the current tab alone when none does."""
+        candidates = [(self._card_index, self._settings_form.has_errors())]
+        with_errors = set(self._bindings_edit.gestures_with_errors())
+        candidates += [(self._gesture_index[g], g in with_errors) for g, _title in GESTURES]
+        for index, has_errors in candidates:
+            if has_errors and self._tabs.isTabVisible(index):
+                self._tabs.setCurrentIndex(index)
+                return
 
     def _on_save(self) -> None:
         if self._save_cb is None:

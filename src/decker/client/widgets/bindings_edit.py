@@ -175,6 +175,10 @@ class BindingsEdit(QObject):
         """Whether any row currently shows an error."""
         return any(row.has_errors() for row in self._rows.values())
 
+    def gestures_with_errors(self) -> list[str]:
+        """The gestures whose row currently shows an error, in tab order."""
+        return [gesture for gesture, row in self._rows.items() if row.has_errors()]
+
     def set_errors(self, errors: Mapping[str, str]) -> None:
         """Show server errors (``<gesture>.<key>``, or ``<gesture>`` for the whole row) until the row is edited."""
         for gesture, row in self._rows.items():
