@@ -514,6 +514,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         self._key_images = {}
         self._selected_key = None
         self._select_after_refresh = None
+        self._press_tab_after_refresh = False
         self._sync_draggable()
         self._grid.set_selected(None)
         self._config_panel.show_placeholder()

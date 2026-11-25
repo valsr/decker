@@ -17,7 +17,6 @@ from decker.client.connection_manager import (
 from decker.client.context import AppContext
 from decker.client.events import (
     ActionFailedEvent,
-    ActionListUpdatedEvent,
     AppRulesUpdatedEvent,
     CardListUpdatedEvent,
     DetectionStatusEvent,
@@ -212,7 +211,7 @@ class TestConnectionManager:
 
         assert_that(EventManager.get().drain()).is_empty()
 
-    def test_refresh_does_not_push_unchanged_device_and_action_lists(self):
+    def test_refresh_does_not_push_unchanged_device_and_card_lists(self):
         conn = _healthy_conn()
         conn.root.devices_list.return_value = json.dumps([{"id": "abc123"}])
         self.manager._conn = conn  # pylint: disable=protected-access
@@ -304,7 +303,7 @@ class TestConnectionManager:
         assert_that(events).is_length(1)
 
     @patch("decker.client.connection_manager.rpyc.utils.factory.connect")
-    def test_try_connect_pushes_action_list_updated_event(self, mock_connect: MagicMock):
+    def test_try_connect_pushes_card_list_updated_event(self, mock_connect: MagicMock):
         mock_conn = MagicMock()
         mock_conn.root.devices_list.return_value = json.dumps([])
         mock_conn.root.plugins_load_failures.return_value = json.dumps([])
@@ -321,7 +320,7 @@ class TestConnectionManager:
             [{"plugin_uuid": "p", "plugin_name": "P", "card_uuid": "p.a", "card_name": "A"}]
         )
 
-    def test_check_heartbeat_success_refreshes_actions(self):
+    def test_check_heartbeat_success_refreshes_cards(self):
         mock_conn = MagicMock()
         mock_conn.root.heartbeat.return_value = _heartbeat_payload(DeckerStatusEnum.HEALTHY)
         mock_conn.root.devices_list.return_value = json.dumps([])
@@ -337,18 +336,6 @@ class TestConnectionManager:
         events = [e for e in EventManager.get().drain() if isinstance(e, CardListUpdatedEvent)]
         assert_that(events).is_length(1)
 
-    def test_actions_are_fetched_and_pushed_once_until_they_change(self):
-        actions = [{"action_uuid": "p.a", "action_name": "Do"}]
-        mock_conn = MagicMock()
-        mock_conn.root.plugins_actions_list.return_value = json.dumps(actions)
-        self.manager._conn = mock_conn  # pylint: disable=protected-access
-
-        self.manager._refresh_actions()  # pylint: disable=protected-access
-        self.manager._refresh_actions()  # pylint: disable=protected-access
-
-        events = [e for e in EventManager.get().drain() if isinstance(e, ActionListUpdatedEvent)]
-        assert_that([e.actions for e in events]).is_equal_to([actions])
-
     def test_presets_refresh_pushes_event_once_per_change(self):
         presets = [{"preset_uuid": "p.a", "preset_name": "Do"}]
         mock_conn = MagicMock()
@@ -357,11 +344,14 @@ class TestConnectionManager:
 
         self.manager._refresh_presets()  # pylint: disable=protected-access
         self.manager._refresh_presets()  # pylint: disable=protected-access
+        changed = [*presets, {"preset_uuid": "p.b", "preset_name": "Other"}]
+        mock_conn.root.plugins_presets_list.return_value = json.dumps(changed)
+        self.manager._refresh_presets()  # pylint: disable=protected-access
 
         events = [e for e in EventManager.get().drain() if isinstance(e, PresetListUpdatedEvent)]
-        assert_that([e.presets for e in events]).is_equal_to([presets])
+        assert_that([e.presets for e in events]).is_equal_to([presets, changed])
 
-    def test_refresh_actions_failure_does_not_raise(self):
+    def test_refresh_cards_failure_does_not_raise(self):
         mock_conn = MagicMock()
         mock_conn.root.plugins_cards_list.side_effect = RuntimeError("boom")
         self.manager._conn = mock_conn  # pylint: disable=protected-access
@@ -539,7 +529,7 @@ class TestOnServerEvent:
         assert_that(finished.ok).is_true()
         assert_that(finished.previous_version).is_equal_to("")
 
-    def test_plugins_changed_refreshes_action_list(self):
+    def test_plugins_changed_refreshes_card_list(self):
         self.manager._on_server_event("plugins_changed", "{}")  # pylint: disable=protected-access
         assert_that([type(e) for e in EventManager.get().drain()]).is_equal_to([PluginsChangedEvent])
         assert_that(self.manager._cards_refresh_requested.is_set()).is_true()  # pylint: disable=protected-access

@@ -22,7 +22,6 @@ from decker.client.connection_manager import ConnectionManager
 from decker.client.context import AppContext
 from decker.client.events import (
     ActionFailedEvent,
-    ActionListUpdatedEvent,
     AppEvent,
     CardListUpdatedEvent,
     DeviceListUpdatedEvent,
@@ -75,7 +74,6 @@ _ACTION_TOAST_DURATION_MS = 20000
 ACTIVE_VIEW_EVENTS: tuple[type, ...] = (
     DeviceListUpdatedEvent,
     CardListUpdatedEvent,
-    ActionListUpdatedEvent,
     PresetListUpdatedEvent,
     KeyDisplayStatesUpdatedEvent,
     KeyEvent,
