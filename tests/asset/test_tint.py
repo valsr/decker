@@ -5,7 +5,7 @@ from assertpy import assert_that
 from PIL import Image
 
 from decker.asset.renderer import AssetRenderer
-from decker.asset.tint import tint_svg
+from decker.asset.tint import is_unstyled_svg, tint_svg
 
 _FA = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><!--! comment --><path fill="currentColor" d="M0 0h10v10H0z"/></svg>'
 _PLAIN = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10H0z"/></svg>'
@@ -108,3 +108,41 @@ def test_png_ignores_colour() -> None:
     buf = io.BytesIO()
     Image.new("RGBA", (4, 4), "#336699").save(buf, format="PNG")
     assert_that(_centre(buf.getvalue(), "#ff0000")).is_equal_to((0x33, 0x66, 0x99, 255))
+
+
+def _svg(body: str, root: str = "") -> bytes:
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"{root}>{body}</svg>'.encode()
+
+
+def test_unstyled_when_no_colour_anywhere() -> None:
+    assert_that(is_unstyled_svg(_PLAIN)).is_true()
+
+
+def test_currentcolor_and_fill_none_count_as_unstyled() -> None:
+    assert_that(is_unstyled_svg(_FA)).is_true()
+    assert_that(is_unstyled_svg(_svg('<path fill="none" d="M0 0h1v1z"/>', ' fill="currentColor"'))).is_true()
+
+
+def test_child_fill_makes_it_styled() -> None:
+    assert_that(is_unstyled_svg(_svg('<path fill="#00ff00" d="M0 0h1v1z"/>'))).is_false()
+
+
+def test_stroke_attribute_makes_it_styled() -> None:
+    assert_that(is_unstyled_svg(_svg("<path stroke='red' d='M0 0h1v1z'/>"))).is_false()
+
+
+def test_style_attribute_colour_makes_it_styled() -> None:
+    assert_that(is_unstyled_svg(_svg('<path style="fill:#f00" d="M0 0h1v1z"/>'))).is_false()
+
+
+def test_style_element_makes_it_styled() -> None:
+    assert_that(is_unstyled_svg(_svg("<style>path{fill:red}</style><path d='M0 0h1v1z'/>"))).is_false()
+
+
+def test_png_is_not_unstyled() -> None:
+    assert_that(is_unstyled_svg(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20)).is_false()
+
+
+def test_garbage_bytes_are_not_unstyled() -> None:
+    assert_that(is_unstyled_svg(b"\xff\xfe not an svg")).is_false()
+    assert_that(is_unstyled_svg(b"")).is_false()

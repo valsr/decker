@@ -805,12 +805,12 @@ class TestSetImageIcon:
 
         assert_that(_pixel(env.image(), 5, 5)).is_equal_to((255, 0, 0))
 
-    def test_icon_without_colour_renders_untinted(self, env, tmp_path):
+    def test_icon_without_colour_draws_white(self, env, tmp_path):
         _icon_env(env, tmp_path)
 
         _send_set_image(env, {"icon": _DOT_REF})
 
-        assert_that(_pixel(env.image(), 72, 72)).is_equal_to((0, 0, 0))
+        assert_that(_pixel(env.image(), 72, 72)).is_equal_to((255, 255, 255))
 
     def test_unknown_reference_clears_the_image(self, env, tmp_path):
         _icon_env(env, tmp_path)
@@ -842,12 +842,12 @@ class TestSetImageIcon:
 
         assert_that(env.image()).is_equal_to(_BARE_COUNTER)
 
-    def test_invalid_colour_is_untinted_and_logged(self, env, tmp_path, caplog):
+    def test_invalid_colour_is_ignored_and_logged(self, env, tmp_path, caplog):
         _icon_env(env, tmp_path)
 
         _send_set_image(env, {"icon": _DOT_REF, "color": "red"})
 
-        assert_that(_pixel(env.image(), 72, 72)).is_equal_to((0, 0, 0))
+        assert_that(_pixel(env.image(), 72, 72)).is_equal_to((255, 255, 255))
         assert_that(caplog.text).contains("color")
 
     def test_payload_with_both_image_and_icon_is_dropped(self, env, tmp_path):
