@@ -15,8 +15,8 @@ with arguments (or to the built-in Do Nothing), plugin code can call actions wit
 with a double-buffered Pillow canvas. Manifest format 3 and protocol 4 (Decker 0.7; protocol 5 in 0.7.2 added action timeouts, device hotplug and deck brightness) replaced the Run Action and Switch
 cards, card presets, `gestures`, `set_gestures` and the `slots` setting type; formats 1 and 2 are refused. `{page_name}`-style
 templates, `page` settings and `switch_page` are described in the manifest, settings-schema and protocol pages above.
-Decker ships two built-in plugins: Blank (static cards, including Page Name and Page Count) and Core (the Do Nothing
-action, and the HTTP Request, Delay and Sequence actions, which run in a Core plugin process).
+Decker ships two built-in plugins: Blank (one static card) and Core (the Do Nothing
+action, the HTTP Request, Delay and Sequence actions, which run in a Core plugin process, and presets for the last three).
 
 Plugins run with your user's permissions and are not sandboxed. Only install plugins from authors you trust.
 
