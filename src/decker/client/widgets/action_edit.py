@@ -17,7 +17,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QComboBox, QWidget
 
-from decker.client.card_icons import decode_icon
+from decker.client.card_icons import decode_icon, icon_tint
 from decker.client.context import AppContext
 from decker.client.icon_picker import RpcCaller
 from decker.plugin.bindings import NOTHING_ACTION_ID
@@ -63,7 +63,7 @@ def _nothing_icon() -> QIcon:
 
 
 def _action_icon(action: dict[str, Any]) -> QIcon:
-    pixmap = decode_icon(str(action.get("icon_b64") or ""))
+    pixmap = decode_icon(str(action.get("icon_b64") or ""), icon_tint())
     return QIcon(pixmap) if pixmap is not None else QIcon()
 
 

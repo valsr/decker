@@ -8,6 +8,7 @@ from PyQt6.QtCore import QPoint, QSize, Qt
 from PyQt6.QtWidgets import QListView, QVBoxLayout
 
 from decker.client.card_icons import card_pixmap
+from decker.client.themes import DARK, apply_theme
 from decker.client.widgets.sidebar import (
     DRAG_ICON_SIZE,
     ICON_SIZE,
@@ -313,3 +314,35 @@ class TestPresets:  # pylint: disable=protected-access
                 "preset_name": "HTTP Request",
             }
         )
+
+
+def test_sidebar_tile_for_a_black_svg_is_visible_on_dark(qapp):
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+        b'<path fill="currentColor" d="M0 0h10v10H0z"/></svg>'
+    )
+    original = (qapp.styleSheet(), qapp.palette(), qapp.property("iconColor"))
+    apply_theme(qapp, "", DARK)
+    try:
+        sidebar = SidebarWidget()
+        sidebar.set_presets(
+            [
+                {
+                    "plugin_uuid": "com.t.audio",
+                    "plugin_name": "Audio",
+                    "preset_uuid": "com.t.audio.svg",
+                    "preset_name": "Svg",
+                    "icon_b64": base64.b64encode(svg).decode("ascii"),
+                }
+            ]
+        )
+        item = _first_list(sidebar).item(0)
+        assert item is not None
+
+        colour = item.icon().pixmap(ICON_SIZE, ICON_SIZE).toImage().pixelColor(ICON_SIZE // 2, ICON_SIZE // 2)
+
+        assert_that(colour.name()).is_equal_to(DARK.icon_color)
+    finally:
+        qapp.setStyleSheet(original[0])
+        qapp.setPalette(original[1])
+        qapp.setProperty("iconColor", original[2])

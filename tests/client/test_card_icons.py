@@ -134,3 +134,25 @@ class TestIconTint:
         qapp.setProperty("iconColor", "")
 
         assert_that(icon_tint()).is_equal_to(qapp.palette().text().color().name())
+
+
+def _opaque_pixels(pixmap) -> set[tuple[int, int, int]]:
+    image = pixmap.toImage()
+    colours = (image.pixelColor(x, y) for x in range(image.width()) for y in range(image.height()))
+    return {(c.red(), c.green(), c.blue()) for c in colours if c.alpha() == 255}
+
+
+def test_card_pixmap_tints_currentcolor_svgs(qapp):
+    fixed = _CURRENT_SVG.replace(b"currentColor", b"#00ff00")
+    qapp.setProperty("iconColor", "#ff0000")
+    try:
+        tinted = card_pixmap({"icon_b64": _b64(_CURRENT_SVG), "card_name": "A"}, 16)
+        kept = card_pixmap({"icon_b64": _b64(fixed), "card_name": "A"}, 16)
+        png = card_pixmap({"icon_b64": _b64(_COUNTER_PNG.read_bytes()), "card_name": "A"}, 16)
+    finally:
+        qapp.setProperty("iconColor", None)
+    plain_png = card_pixmap({"icon_b64": _b64(_COUNTER_PNG.read_bytes()), "card_name": "A"}, 16)
+
+    assert_that(_opaque_pixels(tinted)).is_equal_to({(255, 0, 0)})
+    assert_that(_opaque_pixels(kept)).is_equal_to({(0, 255, 0)})
+    assert_that(png.toImage()).is_equal_to(plain_png.toImage())

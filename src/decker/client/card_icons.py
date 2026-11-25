@@ -19,7 +19,7 @@ _PLACEHOLDER_COLORS = ("#3b6ea8", "#7a4fa0", "#2f7d68", "#a8532f", "#8a6d1f", "#
 
 def card_pixmap(card: dict[str, str], size: int) -> QPixmap:
     """Return the card's icon scaled to size×size, or a letter tile if it has no usable icon."""
-    pixmap = decode_icon(card.get("icon_b64", ""))
+    pixmap = decode_icon(card.get("icon_b64", ""), icon_tint())
     if pixmap is None:
         return placeholder_pixmap(card.get("card_name", ""), size)
     return pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)

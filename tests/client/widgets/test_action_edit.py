@@ -1,3 +1,4 @@
+import base64
 import json
 from typing import Any
 
@@ -6,7 +7,10 @@ from assertpy import assert_that
 from PyQt6.QtGui import QStandardItemModel
 
 from decker.client.context import AppContext
-from decker.client.widgets.action_edit import ActionEdit
+from decker.client.widgets.action_edit import (  # pylint: disable=protected-access
+    ActionEdit,
+    _action_icon,
+)
 from decker.plugin.bindings import NOTHING_ACTION_ID
 
 _CORE = "com.decker.core"
@@ -173,3 +177,18 @@ class TestCardFilter:
         combo = ActionEdit(owner=_OWNER)
         combo.set_owner(_OWNER, f"{_OWNER}.nope")
         assert_that(_card_actions(combo)).is_equal_to(["Own Thing"])
+
+
+def test_action_icon_is_tinted(qapp) -> None:
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">'
+        b'<path fill="currentColor" d="M0 0h10v10H0z"/></svg>'
+    )
+    qapp.setProperty("iconColor", "#ff0000")
+    try:
+        icon = _action_icon({"icon_b64": base64.b64encode(svg).decode("ascii")})
+    finally:
+        qapp.setProperty("iconColor", None)
+
+    colour = icon.pixmap(16, 16).toImage().pixelColor(8, 8)
+    assert_that((colour.red(), colour.green(), colour.blue(), colour.alpha())).is_equal_to((255, 0, 0, 255))

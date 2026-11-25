@@ -46,7 +46,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from decker.client.card_icons import decode_icon, placeholder_pixmap
+from decker.client.card_icons import decode_icon, icon_tint, placeholder_pixmap
 from decker.client.icon_cache import IconThumbnailCache, icon_cache
 from decker.client.icon_import_dialog import IconImportDialog
 from decker.common.icon_ref import USER_PACK_ID, icon_display_name
@@ -226,7 +226,7 @@ class IconBrowserDialog(QDialog):  # pylint: disable=too-few-public-methods,too-
         self.setWindowTitle("Choose image")
         self.resize(820, 520)
         self._cm = connection_manager
-        self._tint: str | None = self.palette().text().color().name() if tint is None else (tint or None)
+        self._tint: str | None = icon_tint() if tint is None else (tint or None)
         self._cache = cache if cache is not None else icon_cache()
         self._packs: list[dict[str, Any]] = []
         self._names: dict[str, list[str]] = {}

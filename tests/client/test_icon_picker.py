@@ -975,3 +975,15 @@ class TestUserImages:
         assert_that(dialog._is_user_entry(dialog._model.index(0, 0))).is_true()
         _select(dialog, 2, 0)
         assert_that(dialog._is_user_entry(dialog._model.index(0, 0))).is_false()
+
+
+def test_icon_picker_default_tint_follows_the_icon_colour(qapp):
+    qapp.setProperty("iconColor", "#ff0000")
+    try:
+        default = IconBrowserDialog(None, _manager())
+        disabled = IconBrowserDialog(None, _manager(), tint=NO_TINT)
+
+        assert_that(default._tint).is_equal_to("#ff0000")  # pylint: disable=protected-access
+        assert_that(disabled._tint).is_none()  # pylint: disable=protected-access
+    finally:
+        qapp.setProperty("iconColor", None)
