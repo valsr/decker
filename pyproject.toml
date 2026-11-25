@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "decker"
-version = "0.7.2"
+version = "0.8.0"
 description = "A server to handle Elgato's StreamDeck hardware"
 authors = ["valsr <valsr@valsr.com>"]
 license = "MIT"
