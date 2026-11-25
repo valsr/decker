@@ -197,6 +197,43 @@ class TestProtocol4:
         assert_that(runner.scope_of("nope")).is_none()
 
 
+def _carded_plugin(actions: list[dict[str, Any]], cards: list[dict[str, Any]]) -> InstalledPlugin:
+    data: dict[str, Any] = {
+        "format": 3,
+        "id": "com.t.act",
+        "name": "Act",
+        "version": "1.0.0",
+        "author": "T",
+        "runtime": {"type": "executable", "entry": "x"},
+        "contributes": {"actions": actions, "cards": cards},
+    }
+    return InstalledPlugin(manifest=PluginManifest.from_dict(data), plugin_dir=Path("."))
+
+
+class TestListingCards:
+    _SHARED = {"id": "com.t.act.shared", "name": "Shared"}
+    _SOLO = {"id": "com.t.act.solo", "name": "Solo"}
+    _GLOBAL_ACTION = {"id": "com.t.act.open", "name": "Open", "scope": "global"}
+    _CARDS = [
+        {"id": "com.t.act.first", "name": "First", "actions": ["com.t.act.shared"]},
+        {"id": "com.t.act.second", "name": "Second", "actions": ["com.t.act.shared"]},
+    ]
+
+    def _cards_by_action(self) -> dict[str, list[str]]:
+        runner, _ = _runner()
+        runner.register(_carded_plugin([self._SHARED, self._SOLO, self._GLOBAL_ACTION], self._CARDS))
+        return {item["action_uuid"]: item["cards"] for item in runner.listing(lambda _p, _s: "")}
+
+    def test_listing_cards_empty_when_unlisted(self):
+        assert_that(self._cards_by_action()["com.t.act.solo"]).is_empty()
+
+    def test_listing_cards_for_shared_action(self):
+        assert_that(self._cards_by_action()["com.t.act.shared"]).is_equal_to(["com.t.act.first", "com.t.act.second"])
+
+    def test_listing_cards_global_action_is_empty(self):
+        assert_that(self._cards_by_action()["com.t.act.open"]).is_empty()
+
+
 _GLOBAL = {"id": "com.t.act.shared", "name": "Shared", "scope": "global"}
 _OTHER_PRIVATE = {"id": "com.t.other.secret", "name": "Secret"}
 _OTHER_GLOBAL = {"id": "com.t.other.open", "name": "Open", "scope": "global"}
