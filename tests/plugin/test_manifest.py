@@ -713,3 +713,41 @@ def test_duplicate_preset_id_is_refused() -> None:
 
     with pytest.raises(ManifestValidationError, match="duplicate"):
         PluginManifest.from_dict(data)
+
+
+_GLOBAL_ACT: dict[str, Any] = {"id": "com.acme.demo.glob", "name": "Glob", "scope": "global"}
+
+
+def test_card_actions_default_empty() -> None:
+    manifest = PluginManifest.from_dict(_with_actions(_ACT))
+
+    assert_that(manifest.cards[0].actions).is_equal_to(())
+
+
+def test_card_actions_are_parsed() -> None:
+    second = {"id": "com.acme.demo.act2", "name": "Act2"}
+    manifest = PluginManifest.from_dict(
+        _with_actions(_ACT, second, actions=["com.acme.demo.act2", "com.acme.demo.act"])
+    )
+
+    assert_that(manifest.cards[0].actions).is_equal_to(("com.acme.demo.act2", "com.acme.demo.act"))
+
+
+def test_card_actions_unknown_id_rejected() -> None:
+    with pytest.raises(ManifestValidationError, match="com.acme.demo.card.*com.acme.demo.missing"):
+        PluginManifest.from_dict(_with_actions(_ACT, actions=["com.acme.demo.missing"]))
+
+
+def test_card_actions_global_action_rejected() -> None:
+    with pytest.raises(ManifestValidationError, match="com.acme.demo.card.*com.acme.demo.glob"):
+        PluginManifest.from_dict(_with_actions(_ACT, _GLOBAL_ACT, actions=["com.acme.demo.glob"]))
+
+
+def test_card_actions_duplicate_rejected() -> None:
+    with pytest.raises(ManifestValidationError, match="com.acme.demo.card.*com.acme.demo.act"):
+        PluginManifest.from_dict(_with_actions(_ACT, actions=["com.acme.demo.act", "com.acme.demo.act"]))
+
+
+def test_preset_cannot_declare_actions() -> None:
+    with pytest.raises(ManifestValidationError, match="actions"):
+        PluginManifest.from_dict(_preset_manifest({"actions": ["com.x.go"]}))
