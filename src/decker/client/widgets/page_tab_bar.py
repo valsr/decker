@@ -3,6 +3,7 @@
 from typing import Any
 
 from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -50,8 +51,8 @@ class _TabViewport(QScrollArea):
 class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
     """Browser-style page tabs.
 
-    Drag a tab to reorder pages. Double-click a tab to rename it in place, ✕ deletes the page, + adds one, and right-click opens
-    Rename / Delete / Set as Default. Arrows appear at the sides when the tabs overflow.
+    Drag a tab to reorder pages. Double-click a tab to rename it in place, ✕ deletes the page, + adds one,
+    and right-click opens Rename / Delete / Set as Default. Arrows appear at the sides when the tabs overflow.
     The ⚙ button at the far right opens a menu that the owner fills via menu_about_to_show.
     """
 
@@ -62,6 +63,10 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
     rename_page_requested = pyqtSignal(str, str)  # page_id, new name
     set_default_page_requested = pyqtSignal(str)
     page_move_requested = pyqtSignal(str, int)  # page_id, new index
+
+    _drag_page_id: str | None = None  # page under the mouse while a left button is held on the tabs
+    _drag_moved: bool = False
+    _deferred_pages: tuple[list[PageInfo], str | None, str | None] | None = None
 
     def __init__(self) -> None:
         super().__init__()
@@ -96,6 +101,7 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
 
         self._viewport = _TabViewport(self._tabs)
         self._viewport.installEventFilter(self)
+        self._tabs.installEventFilter(self)
         scroll_bar = self._viewport.horizontalScrollBar()
         if scroll_bar is not None:
             scroll_bar.valueChanged.connect(self._update_scroll_buttons)
@@ -143,7 +149,14 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
     def set_pages(
         self, pages: list[PageInfo], current_page_id: str | None = None, default_page_id: str | None = None
     ) -> None:
-        """Replace all tabs. Selects current_page_id, else the default page, else the first page."""
+        """Replace all tabs. Selects current_page_id, else the default page, else the first page.
+
+        While a tab is being dragged the rebuild is deferred until the mouse is released, so a server push
+        cannot cancel the drag.
+        """
+        if self._drag_page_id is not None:
+            self._deferred_pages = (pages, current_page_id, default_page_id)
+            return
         self._finish_rename(commit=False)
         self._updating = True
         try:
@@ -200,12 +213,28 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
         return menu
 
     def eventFilter(self, a0: QObject | None, a1: QEvent | None) -> bool:  # pylint: disable=invalid-name
-        """Re-evaluate the overflow arrows when the viewport resizes; commit a rename when something else is clicked."""
+        """Re-evaluate the overflow arrows on resize, track tab drags, commit a rename on an outside click."""
+        if a0 is self._tabs and a1 is not None:
+            self._track_drag(a1)
         if a0 is self._viewport and a1 is not None and a1.type() == QEvent.Type.Resize:
             self._update_scroll_buttons()
         elif a1 is not None and a1.type() == QEvent.Type.MouseButtonPress and self._is_outside_editor(a0):
             self._finish_rename(commit=True)
         return super().eventFilter(a0, a1)
+
+    def _track_drag(self, event: QEvent) -> None:
+        """Remember which page a left-button press grabbed; on release emit one move for the whole drag."""
+        if event.type() == QEvent.Type.MouseButtonPress and isinstance(event, QMouseEvent):
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._drag_page_id = self._page_id_at(self._tabs.tabAt(event.position().toPoint()))
+                self._drag_moved = False
+        elif event.type() == QEvent.Type.MouseButtonRelease and self._drag_page_id is not None:
+            page_id, moved, deferred = self._drag_page_id, self._drag_moved, self._deferred_pages
+            self._drag_page_id, self._drag_moved, self._deferred_pages = None, False, None
+            if moved:
+                self.page_move_requested.emit(page_id, self._index_of(page_id))
+            if deferred is not None:
+                self.set_pages(*deferred)
 
     def _is_outside_editor(self, receiver: QObject | None) -> bool:
         edit = self._rename_edit
@@ -259,7 +288,10 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
         if self._updating:
             return
         self._finish_rename(commit=False)
-        page_id = self._page_id_at(to_index)
+        if self._drag_page_id is not None:
+            self._drag_moved = True  # a mouse drag: the release emits one move for the final position
+            return
+        page_id = self._page_id_at(to_index)  # code-initiated move, no drag: emit right away
         if page_id is not None:
             self.page_move_requested.emit(page_id, to_index)
 

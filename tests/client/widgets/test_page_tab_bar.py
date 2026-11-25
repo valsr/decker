@@ -2,7 +2,7 @@
 
 import pytest
 from assertpy import assert_that
-from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtCore import QEvent, QPoint, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication, QLabel, QTabBar, QToolButton
@@ -442,10 +442,38 @@ class TestMovableTabs:
 
         assert_that(moves).is_equal_to([("id1", 2)])
 
-    def test_rebuilding_the_tabs_does_not_emit_a_move(self, bar, model) -> None:
+    def test_a_real_drag_across_tabs_emits_one_move_with_the_final_index(self, bar, model) -> None:
+        for _ in range(2):
+            model.add_page()
+        bar.set_pages(model.pages, None, model.default_page_id)
+        bar.show()
         moves = _record(bar.page_move_requested)
 
-        bar.set_pages(list(reversed(model.pages)), None, model.default_page_id)
+        _drag(bar, 0, 3)
+
+        assert_that(moves).is_equal_to([("id1", 3)])
+        assert_that(bar.tab_bar.tabData(3)).is_equal_to("id1")
+
+    def test_a_rebuild_requested_mid_drag_does_not_cancel_the_drag(self, bar, model) -> None:
+        for _ in range(2):
+            model.add_page()
+        bar.set_pages(model.pages, None, model.default_page_id)
+        bar.show()
+        moves = _record(bar.page_move_requested)
+        tabs = bar.tab_bar
+        end_x = tabs.tabRect(3).right() - 2
+        _drag_to(tabs, tabs.tabRect(0).center(), end_x)
+
+        bar.set_pages(model.pages, None, model.default_page_id)  # a server push arrives mid-drag
+        QTest.mouseRelease(tabs, Qt.MouseButton.LeftButton, pos=QPoint(end_x, tabs.tabRect(3).center().y()))  # type: ignore[call-overload]
+
+        assert_that(moves).is_equal_to([("id1", 3)])
+
+    def test_a_move_during_a_rebuild_is_not_reported(self, bar, model) -> None:
+        moves = _record(bar.page_move_requested)
+        bar._updating = True
+        bar.tab_bar.moveTab(0, 1)
+        bar._updating = False
 
         assert_that(moves).is_empty()
 
@@ -459,3 +487,19 @@ class TestMovableTabs:
 
         assert_that(bar._rename_edit).is_none()
         assert_that(renames).is_empty()
+
+
+def _drag_to(tabs: QTabBar, start: QPoint, end_x: int) -> None:
+    """Press at start and move the mouse in small steps to end_x, leaving the button held."""
+    QTest.mousePress(tabs, Qt.MouseButton.LeftButton, pos=start)  # type: ignore[call-overload]
+    step = 4 if end_x > start.x() else -4
+    for x in range(start.x() + step, end_x + step, step):
+        QTest.mouseMove(tabs, QPoint(x, start.y()))  # type: ignore[call-overload]  # stubs lack the widget overload
+
+
+def _drag(bar: PageTabBar, from_index: int, to_index: int) -> None:
+    """Drag a tab with real mouse events, crossing each neighbour on the way, and release."""
+    tabs = bar.tab_bar
+    end_x = tabs.tabRect(to_index).right() - 2
+    _drag_to(tabs, tabs.tabRect(from_index).center(), end_x)
+    QTest.mouseRelease(tabs, Qt.MouseButton.LeftButton, pos=QPoint(end_x, tabs.tabRect(from_index).center().y()))  # type: ignore[call-overload]

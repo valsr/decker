@@ -428,7 +428,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         self._page_call("page_move", page_id, new_index)
         cm = AppContext.get().connection_manager
         if cm is not None:
-            cm.request_device_refresh()  # a refused move leaves the strip showing the dragged order otherwise
+            cm.request_layout_refresh()  # a refused move leaves the strip showing the dragged order otherwise
 
     def _on_set_default_page(self, page_id: str) -> None:
         self._page_call("page_set_default", page_id)
