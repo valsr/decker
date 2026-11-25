@@ -225,7 +225,7 @@ does not change keys already placed.
 
 ```json
 {
-  "id": "com.example.pages.next",
+  "id": "com.example.pages.preset-next",
   "name": "Next page",
   "tooltip": "Go to the next page",
   "icon": "fas:forward",

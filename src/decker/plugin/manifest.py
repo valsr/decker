@@ -200,6 +200,7 @@ class PluginManifest:  # pylint: disable=too-many-instance-attributes
         if actions and runtime is None:
             raise ManifestValidationError("manifest contributes actions but declares no runtime")
         presets = _parse_presets(contributes.get("presets", []), plugin_id)
+        _check_preset_ids_unique(presets, cards, actions)
         _check_own_bindings(cards, actions, plugin_id, "card")
         _check_own_bindings(presets, actions, plugin_id, "preset")
         _check_preset_action_scopes(presets, actions)
@@ -365,6 +366,20 @@ def _parse_presets(value: Any, plugin_id: str) -> tuple[PresetSpec, ...]:
         if ids.count(preset_id) > 1:
             raise ManifestValidationError(f"duplicate preset id {preset_id!r}")
     return presets
+
+
+def _check_preset_ids_unique(
+    presets: tuple[PresetSpec, ...], cards: tuple[CardSpec, ...], actions: tuple[ActionSpec, ...]
+) -> None:
+    for kind, others in (("card", cards), ("action", actions)):
+        taken = {other.id for other in others}
+        for preset in presets:
+            if preset.id in taken:
+                raise ManifestValidationError(f"preset id {preset.id!r} is also {_article(kind)} {kind} id")
+
+
+def _article(kind: str) -> str:
+    return "an" if kind[0] in "aeiou" else "a"
 
 
 def _parse_preset(entry: Any, plugin_id: str) -> PresetSpec:

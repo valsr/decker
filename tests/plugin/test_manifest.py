@@ -644,6 +644,21 @@ def test_preset_bound_to_own_plugin_scoped_action_is_refused() -> None:
         PluginManifest.from_dict(data)
 
 
+def test_preset_id_equal_to_an_action_id_is_refused() -> None:
+    data = _preset_manifest({"id": "com.x.go"})
+
+    with pytest.raises(ManifestValidationError, match="preset id 'com.x.go' is also an action id"):
+        PluginManifest.from_dict(data)
+
+
+def test_preset_id_equal_to_a_card_id_is_refused() -> None:
+    data = _preset_manifest({"id": "com.x.card"})
+    data["contributes"]["cards"] = [{"id": "com.x.card", "name": "C", "static": True}]
+
+    with pytest.raises(ManifestValidationError, match="preset id 'com.x.card' is also a card id"):
+        PluginManifest.from_dict(data)
+
+
 def test_presets_alone_need_no_runtime() -> None:
     data = _preset_manifest({"bindings": {"press": {"action": "com.decker.core.delay"}}}, actions=False)
 

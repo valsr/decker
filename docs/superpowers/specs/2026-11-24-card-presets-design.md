@@ -79,7 +79,7 @@ is invisible, and it hits the Font Awesome icons Utilities uses).
 
 ```json
 {
-  "id": "com.decker.pages.next",
+  "id": "com.decker.pages.preset-next",
   "name": "Next page",
   "tooltip": "Go to the next page",
   "icon": "fas:forward",

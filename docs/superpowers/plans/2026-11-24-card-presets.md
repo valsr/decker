@@ -27,7 +27,7 @@ Two repos, two PRs, in this order: Part 1 (Decker, repo `/work/decker/decker`), 
 
 ## Review Focus
 
-- A preset bound to another plugin's `plugin`-scoped action: refused at manifest load (and tested through `from_dict`).
+- A preset bound to another plugin's `plugin`-scoped action is filtered at list time, not refused at load; only a preset's OWN plugin-scoped bindings are refused at manifest load (tested through `from_dict`).
 - Dropping a preset on a key that already has a card replaces it and deactivates the old card (no orphaned live instance), and on an unknown page returns False without writing anything.
 - A preset whose bound action is not installed is hidden from `plugins_presets_list` and returns when the action appears (no stale cache).
 - An existing page holding old `com.decker.blank.pagename`/`.pagecount` keys loads without error and those keys are empty.
