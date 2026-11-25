@@ -138,6 +138,7 @@ class ActionRunner:
                 "settings_schema": schema_to_json(spec.settings),
                 "scope": spec.scope,
                 "returns": spec.returns,
+                "cards": [card.id for card in plugin.manifest.cards if spec.id in card.actions],
             }
             for plugin, spec in entries
         ]
