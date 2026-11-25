@@ -868,6 +868,7 @@ class TestPageRpcs:
         assert_that(json.loads(s.pages_list("dev1"))).is_none()
         assert_that(json.loads(s.page_add("dev1"))).is_none()
         assert_that(s.page_rename("dev1", P1, "x")).is_false()
+        assert_that(s.page_move("dev1", P1, 0)).is_false()
         assert_that(s.page_delete("dev1", P1)).is_false()
         assert_that(s.page_set_default("dev1", P1)).is_false()
         assert_that(s.page_activate("dev1", P1)).is_false()
@@ -884,6 +885,17 @@ class TestPageRpcs:
                 "profile_id": 0,
             }
         )
+
+    def test_page_move_rpc_reorders_and_returns_true(self, service):
+        page = json.loads(service.page_add("dev1", "Media"))
+
+        assert_that(service.page_move("dev1", page["page_id"], 0)).is_true()
+
+        listing = json.loads(service.pages_list("dev1"))
+        assert_that([p["name"] for p in listing["pages"]]).is_equal_to(["Media", "Page 1"])
+
+    def test_page_move_rpc_unknown_page_returns_false(self, service):
+        assert_that(service.page_move("dev1", "nope", 0)).is_false()
 
     def test_add_rename_default_activate_delete(self, service):
         page = json.loads(service.page_add("dev1", "Media"))

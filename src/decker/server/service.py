@@ -1094,6 +1094,11 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         return self._context is not None and self._context.page_controller.rename_page(device_id, page_id, name)
 
     @exposed
+    def page_move(self, device_id: str, page_id: str, new_index: int) -> bool:
+        """Move a page to new_index within its profile. Returns False for an unknown page."""
+        return self._context is not None and self._context.page_controller.move_page(device_id, page_id, new_index)
+
+    @exposed
     def page_delete(self, device_id: str, page_id: str) -> bool:
         """Delete a page and its key assignments. The last page cannot be deleted."""
         return self._context is not None and self._context.page_controller.delete_page(device_id, page_id)

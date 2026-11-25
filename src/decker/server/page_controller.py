@@ -193,6 +193,18 @@ class PageController(Manager):
             self._notify(device_id)
         return renamed
 
+    def move_page(self, device_id: str, page_id: str, new_index: int) -> bool:
+        """Move a page within its profile. Returns False for an unknown page; a no-op move succeeds silently."""
+        store = self._ctx.page_store
+        profile_id = store.profile_of_page(device_id, page_id)
+        if profile_id is None:
+            return False
+        before = store.list_pages(device_id, profile_id)
+        moved = store.move_page(device_id, page_id, new_index)
+        if moved and store.list_pages(device_id, profile_id) != before:
+            self._notify(device_id)
+        return moved
+
     def set_default_page(self, device_id: str, page_id: str) -> bool:
         """Make page_id the page shown when the server starts. Returns False for an unknown page."""
         updated = self._ctx.page_store.set_default_page(device_id, page_id)
