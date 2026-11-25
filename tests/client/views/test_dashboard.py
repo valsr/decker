@@ -397,9 +397,9 @@ class TestKeyInteractions:
 
         panel = view._config_panel  # pylint: disable=protected-access
         assert_that(view._selected_key).is_equal_to(2)  # pylint: disable=protected-access
-        assert_that(panel._tabs.currentIndex()).is_equal_to(
-            panel._gesture_index["long_press"]
-        )  # pylint: disable=protected-access
+        tabs = panel._tabs  # pylint: disable=protected-access
+        expected = panel._gesture_index["long_press"]  # pylint: disable=protected-access
+        assert_that(tabs.currentIndex()).is_equal_to(expected)
 
     def test_key_press_with_slot_simulates_press(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)

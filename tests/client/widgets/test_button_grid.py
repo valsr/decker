@@ -17,6 +17,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QColor,
+    QContextMenuEvent,
     QDragEnterEvent,
     QDragLeaveEvent,
     QDragMoveEvent,
@@ -28,7 +29,7 @@ from PyQt6.QtGui import (
     QPalette,
 )
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMenu
 
 import decker.client.widgets.button_grid as button_grid_module
 from decker.animation.factory import AnimationFactory
@@ -1065,3 +1066,14 @@ class TestContextMenu:
         grid._buttons[2].gesture_edit_requested.emit(2, "press")  # pylint: disable=protected-access
 
         assert_that(seen).is_equal_to([(2, "press")])
+
+    def test_context_menu_is_released_after_it_closes(self, qapp, monkeypatch):  # pylint: disable=unused-argument
+        button = _key()
+        button.set_draggable(True)
+        monkeypatch.setattr(QMenu, "exec", lambda *_a, **_k: None)
+        event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(1, 1), QPoint(1, 1))
+
+        button.contextMenuEvent(event)
+        QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+        assert_that(button.findChildren(QMenu)).is_empty()
