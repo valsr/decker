@@ -30,7 +30,7 @@ reached from the Actions tab.
 ## Non-goals
 
 - Presets (a card that is declared as Blank + action). Next push.
-- Migrating stored keys. A key that names a deleted card loads empty, as retired cards already do in format 3.
+- Migrating stored keys. A key that names a deleted card stays assigned but inert (does nothing, shows no face) until the user clears it; a "Card removed" placeholder is a possible follow-up.
 - Per-card exported variables (`{weather-card-url}`). Separate spec.
 - New plugins from the todo list (System, Weather, Sensors).
 

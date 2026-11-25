@@ -278,7 +278,7 @@ class SchemaForm(QWidget):
 
     changed = pyqtSignal()
 
-    def __init__(self, track_defaults: bool = True) -> None:
+    def __init__(self, track_defaults: bool = False) -> None:
         super().__init__()
         self._track_defaults = track_defaults
         self._defaults: dict[str, Any] = {}
@@ -395,7 +395,7 @@ class SchemaForm(QWidget):
         return dict(self._defaults)
 
     def _compute_defaults(self, schema: list[dict[str, Any]]) -> dict[str, Any]:
-        probe = SchemaForm(track_defaults=False)
+        probe = SchemaForm()
         probe.set_schema(schema, {})
         result = probe.values()
         return result

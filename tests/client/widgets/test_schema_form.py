@@ -744,7 +744,28 @@ class TestDefaults:
             {"key": "t", "type": "text", "label": "T", "default": "a"},
             {"key": "b", "type": "bool", "label": "B", "default": False},
         ]
-        form = _form(schema, {"t": "other", "b": True})
+        form = SchemaForm(track_defaults=True)
+        form.set_schema(schema, {"t": "other", "b": True})
 
         assert_that(form.values()).is_equal_to({"t": "other", "b": True})
         assert_that(form.defaults()).is_equal_to({"t": "a", "b": False})
+
+    def test_default_form_builds_no_defaults_probe(self, qapp, monkeypatch):  # pylint: disable=unused-argument
+        import decker.client.widgets.schema_form as module
+
+        calls: list[str] = []
+        real = module._build_field  # pylint: disable=protected-access
+
+        def counting(entry, values, plugin_id=""):
+            calls.append(entry["key"])
+            return real(entry, values, plugin_id)
+
+        monkeypatch.setattr(module, "_build_field", counting)
+        schema: list[dict[str, Any]] = [
+            {"key": "t", "type": "text", "label": "T", "default": "a"},
+            {"key": "b", "type": "bool", "label": "B", "default": False},
+        ]
+
+        SchemaForm().set_schema(schema, {})
+
+        assert_that(calls).is_length(2)
