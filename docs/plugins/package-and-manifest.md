@@ -139,7 +139,7 @@ key picker lists.
 A card is worth shipping only if it draws something a Blank card cannot, or owns state or refresh logic. A "Blank card
 plus an action" is just an action: declare it as a `global` action and, if it makes a sensible key, a [preset](#presets) for it. In
 the card editor a card's settings appear on the Card tab (hidden when it has none) and its gestures on the Press,
-Double Press and Long Press tabs, where the Action dropdown lists Do Nothing, the card's own plugin's actions (either scope), the built-in actions, then other plugins' global actions.
+Double Press and Long Press tabs, where the Action dropdown lists Do Nothing, the card's own plugin-scoped actions (those the card lists in `actions`, plus any that no card of the plugin lists), the built-in actions, then every plugin's global actions.
 
 | Field | Notes |
 |-------|-------|

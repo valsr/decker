@@ -22,6 +22,7 @@ def _action(plugin: str, plugin_name: str, uuid: str, name: str, scope: str) -> 
         "action_name": name,
         "scope": scope,
         "icon_b64": "",
+        "cards": [],
     }
 
 
@@ -115,3 +116,60 @@ class TestActionEditSections:
         assert_that(_texts(ActionEdit())).is_equal_to(
             ["(choose an action)", "Built-in", "Delay", "Global", "Other", "Web", "Owner", "Own Shared"]
         )
+
+
+_CARD_A = f"{_OWNER}.card-a"
+_CARD_B = f"{_OWNER}.card-b"
+_ONLY_A = {**_action(_OWNER, "Owner", f"{_OWNER}.only-a", "Only A", "plugin"), "cards": [_CARD_A]}
+_ONLY_B = {**_action(_OWNER, "Owner", f"{_OWNER}.only-b", "Only B", "plugin"), "cards": [_CARD_B]}
+_BOTH = {**_action(_OWNER, "Owner", f"{_OWNER}.both", "Both", "plugin"), "cards": [_CARD_A, _CARD_B]}
+_UNLISTED = _OWNER_PLUGIN
+
+
+def _card_actions(combo: ActionEdit) -> list[str]:
+    texts = _texts(combo)
+    start = texts.index("Card actions") + 1 if "Card actions" in texts else len(texts)
+    stop = next((i for i in range(start, len(texts)) if texts[i] in ("Built-in", "Global")), len(texts))
+    return texts[start:stop]
+
+
+class TestCardFilter:
+    @pytest.fixture(autouse=True)
+    def _served(self) -> None:
+        _serve([_NOTHING, _DELAY, _UNLISTED, _ONLY_A, _ONLY_B, _BOTH])
+
+    def test_card_actions_limited_to_the_card(self) -> None:
+        combo = ActionEdit(owner=_OWNER)
+        combo.set_owner(_OWNER, _CARD_A)
+        assert_that(_card_actions(combo)).does_not_contain("Only B")
+        assert_that(_card_actions(combo)).contains("Only A")
+
+    def test_unlisted_plugin_actions_visible_on_every_card(self) -> None:
+        combo = ActionEdit(owner=_OWNER)
+        for card in (_CARD_A, _CARD_B):
+            combo.set_owner(_OWNER, card)
+            assert_that(_card_actions(combo)).contains("Own Thing")
+
+    def test_shared_action_on_both_cards(self) -> None:
+        combo = ActionEdit(owner=_OWNER)
+        for card in (_CARD_A, _CARD_B):
+            combo.set_owner(_OWNER, card)
+            assert_that(_card_actions(combo)).contains("Both")
+
+    def test_bound_action_stays_listed_when_not_offered(self) -> None:
+        combo = ActionEdit(owner=_OWNER)
+        combo.set_value(f"{_OWNER}.only-b")
+        combo.set_owner(_OWNER, _CARD_A)
+        assert_that(_card_actions(combo)).contains("Only B")
+        assert_that(_texts(combo)).does_not_contain("(missing action)")
+        assert_that(combo.value()).is_equal_to(f"{_OWNER}.only-b")
+
+    def test_empty_card_id_lists_all_plugin_actions(self) -> None:
+        combo = ActionEdit(owner=_OWNER)
+        combo.set_owner(_OWNER, "")
+        assert_that(_card_actions(combo)).contains("Only A", "Only B", "Both", "Own Thing")
+
+    def test_unknown_card_id_lists_unlisted_only(self) -> None:
+        combo = ActionEdit(owner=_OWNER)
+        combo.set_owner(_OWNER, f"{_OWNER}.nope")
+        assert_that(_card_actions(combo)).is_equal_to(["Own Thing"])

@@ -73,8 +73,10 @@ class _BindingRow(QWidget):
         self._params.value_changed.connect(self._on_edited)
         self._reset.clicked.connect(self._on_reset)
 
-    def load(self, default: Mapping[str, Any] | None, stored: Mapping[str, Any] | None, plugin_id: str) -> None:
-        self._action_edit.set_owner(plugin_id)
+    def load(
+        self, default: Mapping[str, Any] | None, stored: Mapping[str, Any] | None, plugin_id: str, card_id: str = ""
+    ) -> None:
+        self._action_edit.set_owner(plugin_id, card_id)
         self._action_edit.reload()  # the actions may have changed (or been unreachable) since the row was built
         self._show(*_split(default))
         self._default = (self._action_edit.value(), self._params.value())
@@ -156,11 +158,11 @@ class BindingsEdit(QObject):
         """Whether the gesture's binding differs from the manifest default."""
         return not self._rows[gesture].is_default()
 
-    def set_bindings(self, spec: BindingsSpec, plugin_id: str) -> None:
+    def set_bindings(self, spec: BindingsSpec, plugin_id: str, card_id: str = "") -> None:
         """Show the stored bindings (the manifest default where a gesture has none). Emits nothing."""
         for gesture, row in self._rows.items():
             row.blockSignals(True)
-            row.load(spec.defaults.get(gesture), spec.stored.get(gesture), plugin_id)
+            row.load(spec.defaults.get(gesture), spec.stored.get(gesture), plugin_id, card_id)
             row.blockSignals(False)
 
     def value(self) -> dict[str, dict[str, Any]]:

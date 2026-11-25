@@ -743,6 +743,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
             self._make_save_callback(index),
             title=str((card or {}).get("card_name") or ""),
             plugin_id=str(slot.get("plugin_uuid") or ""),
+            card_id=str(slot.get("card_uuid") or ""),
             bindings=BindingsSpec(dict((card or {}).get("bindings") or {}), dict(slot.get("bindings") or {})),
         )
 
