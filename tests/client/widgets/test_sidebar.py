@@ -30,7 +30,7 @@ def _count(sidebar):  # pylint: disable=protected-access
 
 
 class TestSidebarWidget:
-    def test_set_actions_populates_list(self, qapp):  # pylint: disable=unused-argument
+    def test_set_cards_populates_list(self, qapp):  # pylint: disable=unused-argument
         sidebar = SidebarWidget()
         sidebar.set_cards(_ACTIONS)
         assert_that(_count(sidebar)).is_equal_to(2)  # pylint: disable=protected-access
