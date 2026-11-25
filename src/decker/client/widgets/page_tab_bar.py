@@ -50,7 +50,7 @@ class _TabViewport(QScrollArea):
 class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
     """Browser-style page tabs.
 
-    Double-click a tab to rename it in place, ✕ deletes the page, + adds one, and right-click opens
+    Drag a tab to reorder pages. Double-click a tab to rename it in place, ✕ deletes the page, + adds one, and right-click opens
     Rename / Delete / Set as Default. Arrows appear at the sides when the tabs overflow.
     The ⚙ button at the far right opens a menu that the owner fills via menu_about_to_show.
     """
@@ -61,6 +61,7 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
     delete_page_requested = pyqtSignal(str)
     rename_page_requested = pyqtSignal(str, str)  # page_id, new name
     set_default_page_requested = pyqtSignal(str)
+    page_move_requested = pyqtSignal(str, int)  # page_id, new index
 
     def __init__(self) -> None:
         super().__init__()
@@ -85,10 +86,12 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
         self._tabs.setUsesScrollButtons(False)
         self._tabs.setExpanding(False)
         self._tabs.setDrawBase(False)
+        self._tabs.setMovable(True)
         self._tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self._tabs.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tabs.currentChanged.connect(self._on_current_changed)
         self._tabs.tabBarDoubleClicked.connect(self._on_tab_double_clicked)
+        self._tabs.tabMoved.connect(self._on_tab_moved)
         self._tabs.customContextMenuRequested.connect(self._show_context_menu)
 
         self._viewport = _TabViewport(self._tabs)
@@ -251,6 +254,14 @@ class PageTabBar(QWidget):  # pylint: disable=too-many-instance-attributes
         page_id = self._page_id_at(index)
         if page_id is not None:
             self.page_selected.emit(page_id)
+
+    def _on_tab_moved(self, _from_index: int, to_index: int) -> None:
+        if self._updating:
+            return
+        self._finish_rename(commit=False)
+        page_id = self._page_id_at(to_index)
+        if page_id is not None:
+            self.page_move_requested.emit(page_id, to_index)
 
     def _on_tab_double_clicked(self, index: int) -> None:
         page_id = self._page_id_at(index)
