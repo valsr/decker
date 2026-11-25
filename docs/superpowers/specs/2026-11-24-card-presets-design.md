@@ -57,8 +57,9 @@ is invisible, and it hits the Font Awesome icons Utilities uses).
 ## Constraints
 
 - Manifest and binding rules from `docs/plugins/package-and-manifest.md`: gestures are exactly `press`,
-  `double_press`, `long_press`; a binding may name the plugin's own actions of either scope, any `global` action or Do
-  Nothing (a foreign `plugin`-scoped action is refused at load).
+  `double_press`, `long_press`. A preset's binding may name only a `global` action (of any plugin, including its own) or
+  Do Nothing: the dropped key is a Blank card, which cannot run its origin plugin's `plugin`-scoped actions, so a preset
+  bound to one is refused at manifest load (a ruling made during Task 2 review).
 - Key appearance `icon` values are refs (`pack:<pack id>/<path>` or `fas:play`), not plugin-relative file paths. A
   preset's picker icon (`icon`) may be a plugin file; the key icon (`appearance.icon`) may not.
 - Static cards may already declare `appearance` and `bindings` (Blank's Page Name uses `appearance.title`). The preset
@@ -98,8 +99,9 @@ is invisible, and it hits the Font Awesome icons Utilities uses).
 A preset may not declare `settings`, `states`, `static` or `gestures`. The plugin needs no `runtime` for presets
 alone (the bound actions run in their own plugins, as for static cards).
 
-Manifest validation: id prefix, unknown keys refused, bindings checked like a card's (own-plugin ids must exist, no
-foreign `plugin`-scoped action), `appearance` checked like a card's. A plugin that declares presets must declare a
+Manifest validation: id prefix, unknown keys refused, bindings checked like a card's (own-plugin ids must exist),
+except that an action of the plugin's own that is `plugin`-scoped is refused (foreign `plugin`-scoped actions are
+filtered at list time), `appearance` checked like a card's. A plugin that declares presets must declare a
 `"decker"` constraint that guarantees the Decker version adding them.
 
 ## Server
