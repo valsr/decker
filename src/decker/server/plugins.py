@@ -889,6 +889,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             return None
         found = self._action_runner.scope_of(press.action)
         action = self._action_runner.spec(press.action)
+        # scope_of only tells whether the action's plugin is still installed; if not, the title is hidden too
         with self._lock:
             plugin = self._plugins.get(found[0]) if found is not None else None
         return action if plugin is not None else None
