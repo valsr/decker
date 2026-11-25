@@ -6,9 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from assertpy import assert_that
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QMessageBox
 
-from decker.client.card_icons import placeholder_pixmap
+from decker.client.card_icons import builtin_pixmap, placeholder_pixmap
 from decker.client.context import AppContext
 from decker.client.events import (
     PluginInstallFinishedEvent,
@@ -198,7 +199,19 @@ def test_ref_icon_row_draws_without_rpc(manager, qapp):
 
 def test_unknown_ref_falls_back_to_placeholder(manager, qapp):
     widget = _dialog_with(manager, qapp, _plugin("a.bad", "Bad", icon_ref="fas:no-such-icon"))
-    assert_that(widget._rows).contains_key("a.bad")
+    row = widget._rows["a.bad"]
+    assert_that(row.has_local_icon).is_false()
+    placeholder = placeholder_pixmap("Bad", 40).toImage()
+    assert_that(row.icon_label.pixmap().toImage() == placeholder).is_true()
+    widget.close()
+
+
+def test_ref_icon_is_smooth_scaled(manager, qapp):
+    widget = _dialog_with(manager, qapp, _plugin("a.ref", "Ref", icon_ref="fas:toolbox"))
+    source = builtin_pixmap("fas:toolbox")
+    assert source is not None
+    expected = source.scaled(40, 40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    assert_that(widget._rows["a.ref"].icon_label.pixmap().toImage() == expected.toImage()).is_true()
     widget.close()
 
 

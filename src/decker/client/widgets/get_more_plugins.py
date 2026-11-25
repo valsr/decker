@@ -1,6 +1,5 @@
 """Get More Plugins dialog: browse the plugin repositories' catalog and install or update plugins."""
 
-import base64
 import logging
 import threading
 from collections import deque
@@ -10,9 +9,7 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -27,8 +24,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from decker.asset.builtinicons import read_builtin_ref
-from decker.client.card_icons import decode_icon, placeholder_pixmap
+from decker.client.card_icons import builtin_pixmap, decode_icon, placeholder_pixmap
 from decker.client.connection_manager import to_plain
 from decker.client.context import AppContext
 from decker.client.events import (
@@ -104,14 +100,6 @@ def _matches(plugin: dict[str, Any], needle: str) -> bool:
     return any(needle in str(field or "").lower() for field in fields)
 
 
-def _builtin_pixmap(ref: Any) -> QPixmap | None:
-    raw = read_builtin_ref(ref)
-    if raw is None:
-        return None
-    tint = QApplication.palette().text().color().name()
-    return decode_icon(base64.b64encode(raw).decode("ascii"), tint)
-
-
 class _PluginRow(QWidget):
     install_clicked = pyqtSignal(str)
 
@@ -127,7 +115,7 @@ class _PluginRow(QWidget):
         self.button.clicked.connect(lambda: self.install_clicked.emit(self.plugin_id))
         self.icon_label.setFixedSize(_THUMB_SIZE, _THUMB_SIZE)
         self.has_local_icon: bool = False
-        local = _builtin_pixmap(plugin.get("icon_ref"))
+        local = builtin_pixmap(plugin.get("icon_ref"))
         if local is not None:
             self.has_local_icon = True
             self.set_pixmap(local)
@@ -153,7 +141,11 @@ class _PluginRow(QWidget):
 
     def set_pixmap(self, pixmap: Any) -> None:
         """Show pixmap as the row icon."""
-        self.icon_label.setPixmap(pixmap.scaled(_THUMB_SIZE, _THUMB_SIZE, Qt.AspectRatioMode.KeepAspectRatio))
+        self.icon_label.setPixmap(
+            pixmap.scaled(
+                _THUMB_SIZE, _THUMB_SIZE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+        )
 
 
 class GetMorePluginsDialog(QDialog):  # pylint: disable=too-many-instance-attributes
