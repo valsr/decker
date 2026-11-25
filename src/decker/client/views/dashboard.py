@@ -196,6 +196,7 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
         self._page_tabs.add_page_requested.connect(self._on_add_page)
         self._page_tabs.delete_page_requested.connect(self._on_delete_page)
         self._page_tabs.rename_page_requested.connect(self._on_rename_page)
+        self._page_tabs.page_move_requested.connect(self._on_move_page)
         self._page_tabs.set_default_page_requested.connect(self._on_set_default_page)
         selector = self._page_tabs.profile_selector
         selector.profile_selected.connect(self._on_profile_selected)
@@ -422,6 +423,12 @@ class DashboardView(BaseView):  # pylint: disable=too-many-instance-attributes
 
     def _on_rename_page(self, page_id: str, name: str) -> None:
         self._page_call("page_rename", page_id, name)
+
+    def _on_move_page(self, page_id: str, new_index: int) -> None:
+        self._page_call("page_move", page_id, new_index)
+        cm = AppContext.get().connection_manager
+        if cm is not None:
+            cm.request_device_refresh()  # a refused move leaves the strip showing the dragged order otherwise
 
     def _on_set_default_page(self, page_id: str) -> None:
         self._page_call("page_set_default", page_id)

@@ -427,3 +427,35 @@ class TestClickOutsideCommits:
         self._click(other)
 
         assert_that(calls).is_empty()
+
+
+class TestMovableTabs:
+    def test_tabs_are_movable(self, bar) -> None:
+        assert_that(bar.tab_bar.isMovable()).is_true()
+
+    def test_moving_a_tab_emits_page_move_requested(self, bar, model) -> None:
+        model.add_page()
+        bar.set_pages(model.pages, None, model.default_page_id)
+        moves = _record(bar.page_move_requested)
+
+        bar.tab_bar.moveTab(0, 2)
+
+        assert_that(moves).is_equal_to([("id1", 2)])
+
+    def test_rebuilding_the_tabs_does_not_emit_a_move(self, bar, model) -> None:
+        moves = _record(bar.page_move_requested)
+
+        bar.set_pages(list(reversed(model.pages)), None, model.default_page_id)
+
+        assert_that(moves).is_empty()
+
+    def test_move_while_renaming_commits_or_cancels_the_edit(self, bar, model) -> None:
+        renames = _record(bar.rename_page_requested)
+        bar.start_rename("id1")
+        assert bar._rename_edit is not None
+        bar._rename_edit.setText("Other")
+
+        bar.tab_bar.moveTab(0, 1)
+
+        assert_that(bar._rename_edit).is_none()
+        assert_that(renames).is_empty()
