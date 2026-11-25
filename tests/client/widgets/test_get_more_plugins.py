@@ -2,8 +2,8 @@
 
 import base64
 import json
-from pathlib import Path
 import threading
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
