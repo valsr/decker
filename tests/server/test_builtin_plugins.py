@@ -26,8 +26,8 @@ from decker.server.service import DeckerService
 from tests.server.test_plugin_installer import Env, _manifest, _package
 from tests.server.test_plugins import FakeBus, FakeDeviceManager, FakePages
 
-BLANK = "com.decker.blank"
-BLANK_ACTION = "com.decker.blank.blank"
+BLANK = "com.decker.core"
+BLANK_ACTION = "com.decker.core.blank"
 
 
 @pytest.fixture(name="env")
@@ -37,33 +37,20 @@ def env_fixture(tmp_path):
     environment.close()
 
 
-def test_blank_manifest_ships_in_the_package():
+def test_core_manifest_has_the_static_blank_card():
     manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / BLANK / "manifest.json")
 
-    assert_that(manifest.id).is_equal_to(BLANK)
-    assert_that(manifest.runtime).is_none()
-    assert_that([(a.id, a.static, a.name) for a in manifest.cards]).is_equal_to([(BLANK_ACTION, True, "Blank")])
+    assert_that([c.id for c in manifest.cards]).is_equal_to([BLANK_ACTION])
+    assert_that(manifest.cards[0].static).is_true()
+    assert_that(manifest.cards[0].name).is_equal_to("Blank")
     assert_that(manifest.cards[0].tooltip).is_equal_to("Draws only the background and title")
+    assert_that((BUILTIN_PLUGINS_DIR / "com.decker.blank").exists()).is_false()
 
 
-def test_blank_version_is_deckers():
-    from decker.common.version import decker_version
-
-    manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / BLANK / "manifest.json")
-    assert_that(manifest.version).is_equal_to(decker_version())
-
-
-def test_blank_icon_resolves():
-    manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / BLANK / "manifest.json")
-    from decker.plugin.icons import read_icon
-
-    assert_that(read_icon(BUILTIN_PLUGINS_DIR / BLANK, manifest.cards[0].icon or manifest.icon)).is_not_none()
-
-
-def test_scan_builtin_finds_blank(tmp_path):
+def test_scan_builtin_finds_core(tmp_path):
     result = PluginLoader(tmp_path / "empty").scan_builtin()
 
-    assert_that([p.manifest.id for p in result.plugins]).is_equal_to(sorted([BLANK, "com.decker.core"]))
+    assert_that([p.manifest.id for p in result.plugins]).is_equal_to([BLANK])
     assert_that(result.failures).is_empty()
 
 
@@ -84,14 +71,18 @@ def test_blank_key_draws_background_and_title_only(env):
 
 
 def test_builtin_cannot_be_uninstalled(env):
-    with pytest.raises(PluginInstallError, match="com.decker.blank is built into Decker"):
+    with pytest.raises(PluginInstallError, match="com.decker.core is built into Decker"):
         env.installer.uninstall(BLANK)
 
     assert_that(env.manager.is_builtin(BLANK)).is_true()
 
 
 def test_builtin_cannot_be_replaced_by_a_package_with_its_id(env, tmp_path):
-    finished = env.install(_package(tmp_path / "x.log", _manifest(plugin_id=BLANK)))
+    contributes = {
+        "cards": [{"id": f"{BLANK}.show", "name": "Show"}],
+        "actions": [{"id": f"{BLANK}.nothing", "name": "Nothing", "scope": "global"}],
+    }
+    finished = env.install(_package(tmp_path / "x.log", _manifest(plugin_id=BLANK, contributes=contributes)))
 
     assert_that(finished["ok"]).is_false()
     assert_that(finished["message"]).contains("built into Decker")
@@ -127,13 +118,6 @@ def test_plugins_list_marks_builtin(env):
     assert_that(listed[BLANK]["builtin"]).is_true()
 
 
-def test_blank_ships_only_the_blank_card() -> None:
-    manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / "com.decker.blank" / "manifest.json")
-
-    assert_that([c.id for c in manifest.cards]).is_equal_to([BLANK_ACTION])
-    assert_that(manifest.description).is_equal_to("A key that shows only a background and a title.")
-
-
 _CORE_PRESETS = {
     "com.decker.core.preset-httprequest": ("HTTP Request", "com.decker.core.httprequest"),
     "com.decker.core.preset-delay": ("Delay", "com.decker.core.delay"),
@@ -166,10 +150,9 @@ def test_core_presets_not_listed_for_nothing(env) -> None:
     assert_that(pressed).does_not_contain("com.decker.core.nothing")
 
 
-def test_core_ships_no_cards() -> None:
+def test_core_ships_its_actions() -> None:
     manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / "com.decker.core" / "manifest.json")
 
-    assert_that(manifest.cards).is_empty()
     assert_that([a.id for a in manifest.actions]).contains("com.decker.core.httprequest")
 
 

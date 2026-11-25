@@ -240,8 +240,8 @@ class TestKeyAssignPreset:
 
         assert_that(result).is_equal_to({"ok": True, "errors": {}})
         assignment = store.get("dev1", P1, 0)
-        assert_that(assignment.target.plugin_uuid).is_equal_to("com.decker.blank")
-        assert_that(assignment.target.card_uuid).is_equal_to("com.decker.blank.blank")
+        assert_that(assignment.target.plugin_uuid).is_equal_to("com.decker.core")
+        assert_that(assignment.target.card_uuid).is_equal_to("com.decker.core.blank")
         assert_that(assignment.bindings["press"]["action"]).is_equal_to("com.p.act")
         assert_that(assignment.appearance["title"]["text"]).is_equal_to("Go")
         assert_that(assignment.appearance["background"]).is_equal_to("#123456")
@@ -303,7 +303,7 @@ class TestKeyAssignPreset:
         self._drop(service, manager, _preset())
 
         manager.deactivate_card.assert_called_once_with(old)
-        assert_that(store.get("dev1", P1, 0).target.card_uuid).is_equal_to("com.decker.blank.blank")
+        assert_that(store.get("dev1", P1, 0).target.card_uuid).is_equal_to("com.decker.core.blank")
 
     def test_reports_incomplete_bindings_but_still_stores(self, service, manager, store) -> None:
         manager.validate_bindings.return_value = {"press.page": "is required"}

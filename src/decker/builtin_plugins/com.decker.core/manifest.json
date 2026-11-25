@@ -13,7 +13,15 @@
   },
   "category": "Utilities",
   "contributes": {
-    "cards": [],
+    "cards": [
+      {
+        "id": "com.decker.core.blank",
+        "name": "Blank",
+        "tooltip": "Draws only the background and title",
+        "icon": "far:square",
+        "static": true
+      }
+    ],
     "actions": [
       {
         "id": "com.decker.core.nothing",

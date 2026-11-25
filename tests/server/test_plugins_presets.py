@@ -137,6 +137,6 @@ def test_preset_bound_to_own_global_action_is_listed_and_valid_on_a_blank_key(ma
 
     (entry,) = manager.list_presets()
 
-    target = CardTarget("com.decker.blank", "com.decker.blank.blank", "ctx", "dev", 0)
+    target = CardTarget("com.decker.core", "com.decker.core.blank", "ctx", "dev", 0)
     assert_that(manager.validate_bindings(target, entry["bindings"])).is_empty()
     assert_that(manager.preset_usable(manager.preset("com.t.own", "com.t.own.p"))).is_true()

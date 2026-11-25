@@ -465,3 +465,38 @@ class TestRetiredBlankCards:
         assignment = store.get("dev1", "p1", 0)
         assert assignment is not None
         assert_that(assignment.appearance).is_equal_to({"title": {"text": "Hi"}})
+
+
+class TestLegacyBlankAlias:
+    def _insert_legacy(self, store) -> None:
+        store.assign("dev1", "p1", 0, _target(plugin="com.decker.blank", action="com.decker.blank.blank"), {"a": 1})
+        store.update_appearance("dev1", "p1", 0, {"title": {"text": "Hi"}})
+        store.update_bindings("dev1", "p1", 0, {"press": {"action": "x.go", "args": {}}})
+
+    def _check(self, assignment) -> None:
+        assert assignment is not None
+        assert_that(assignment.target.plugin_uuid).is_equal_to("com.decker.core")
+        assert_that(assignment.target.card_uuid).is_equal_to("com.decker.core.blank")
+        assert_that(assignment.settings).is_equal_to({"a": 1})
+        assert_that(assignment.appearance).is_equal_to({"title": {"text": "Hi"}})
+        assert_that(assignment.bindings).is_equal_to({"press": {"action": "x.go", "args": {}}})
+
+    def test_legacy_blank_row_loads_as_core_blank(self, store) -> None:
+        self._insert_legacy(store)
+
+        self._check(store.get("dev1", "p1", 0))
+        self._check(store.all_for_page("dev1", "p1")[0][1])
+
+    def test_legacy_blank_counts_for_core(self, store) -> None:
+        self._insert_legacy(store)
+
+        found = store.assignments_for_plugin("com.decker.core")
+
+        assert_that(found).is_length(1)
+        self._check(found[0][3])
+        assert_that(store.plugin_ids()).contains("com.decker.core").does_not_contain("com.decker.blank")
+
+    def test_retired_blank_cards_still_load_empty(self, store) -> None:
+        store.assign("dev1", "p1", 0, _target(plugin="com.decker.blank", action="com.decker.blank.pagename"), {})
+
+        assert_that(store.get("dev1", "p1", 0)).is_none()
