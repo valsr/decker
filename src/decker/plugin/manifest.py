@@ -79,6 +79,7 @@ class CardSpec:
     appearance: dict[str, Any] = field(default_factory=dict, hash=False)
     static: bool = False
     bindings: Mapping[str, Binding] = field(default_factory=dict, hash=False)
+    actions: tuple[str, ...] = ()
 
     @property
     def headless(self) -> bool:
@@ -201,6 +202,7 @@ class PluginManifest:  # pylint: disable=too-many-instance-attributes
             raise ManifestValidationError("manifest contributes actions but declares no runtime")
         presets = _parse_presets(contributes.get("presets", []), plugin_id)
         _check_preset_ids_unique(presets, cards, actions)
+        _check_card_actions(cards, actions)
         _check_own_bindings(cards, actions, plugin_id, "card")
         _check_own_bindings(presets, actions, plugin_id, "preset")
         _check_preset_action_scopes(presets, actions)
@@ -342,7 +344,31 @@ def _parse_card(entry: Any, plugin_id: str) -> CardSpec:
         appearance=appearance,
         static=static,
         bindings=_parse_card_bindings(entry, card_id),
+        actions=_parse_card_actions(entry.get("actions", []), card_id),
     )
+
+
+def _parse_card_actions(value: Any, card_id: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ManifestValidationError(f"card {card_id} actions must be a list")
+    ids: list[str] = []
+    for action_id in value:
+        if not isinstance(action_id, str) or not is_valid_plugin_id(action_id):
+            raise ManifestValidationError(f"card {card_id} action id {action_id!r} is not a valid identifier")
+        if action_id in ids:
+            raise ManifestValidationError(f"card {card_id} lists action {action_id!r} more than once")
+        ids.append(action_id)
+    return tuple(ids)
+
+
+def _check_card_actions(cards: tuple[CardSpec, ...], actions: tuple[ActionSpec, ...]) -> None:
+    scopes = {action.id: action.scope for action in actions}
+    for card in cards:
+        for action_id in card.actions:
+            if action_id not in scopes:
+                raise ManifestValidationError(f"card {card.id} lists unknown action {action_id!r}")
+            if scopes[action_id] != "plugin":
+                raise ManifestValidationError(f"card {card.id} lists global action {action_id!r}; only plugin-scoped")
 
 
 def _parse_appearance(entry: dict[str, Any], owner: str) -> dict[str, Any]:
