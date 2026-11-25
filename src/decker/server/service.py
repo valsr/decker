@@ -1,6 +1,7 @@
 """RPyC service definition for the Decker server."""
 
 import base64
+import copy
 import inspect
 import ipaddress
 import json
@@ -46,7 +47,7 @@ from decker.plugin.loader import InstalledPlugin
 from decker.plugin.repository_index import IndexVersion, latest_compatible
 from decker.plugin.settings_schema import schema_to_json
 from decker.plugin.target import CardTarget
-from decker.server.key_assignments import KeyAssignment
+from decker.server.key_assignments import BLANK_CARD_ID, BLANK_PLUGIN_ID, KeyAssignment
 from decker.server.plugin_installer import PluginInstallError
 from decker.server.repositories import CatalogEntry, RepositoryError, RepositoryStore
 from decker.server.settings import apply_settings_request, read_settings
@@ -288,6 +289,14 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         if self._context is None:
             return []
         return self._context.plugin_manager.list_cards()
+
+    @exposed
+    @api_response
+    def plugins_presets_list(self) -> list:
+        """List every usable preset declared across all loaded plugin manifests as a JSON string."""
+        if self._context is None:
+            return []
+        return self._context.plugin_manager.list_presets()
 
     @exposed
     @api_response
@@ -576,19 +585,64 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
             device_id=device_id,
             key_index=key_index,
         )
+        self._place_card(target, page_id, settings, bindings, {})
+        return True
+
+    @exposed
+    @api_response
+    def key_assign_preset(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self, device_id: str, page_id: str, key_index: int, plugin_uuid: str, preset_id: str, context_id: str
+    ) -> dict:
+        """
+        Drop a plugin preset on a key as a Blank card carrying its appearance and bindings, in one step.
+
+        Returns:
+            dict: ``{"ok": bool, "errors": {"<gesture>[.<arg>]": message}}``; ok is False for an unknown page or
+            preset (nothing written); the errors name bindings still to be completed, which are stored anyway.
+        """
+        if self._context is None or self._context.page_store.get(device_id, page_id) is None:
+            return {"ok": False, "errors": {}}
+        pm = self._context.plugin_manager
+        preset = pm.preset(plugin_uuid, preset_id)
+        if preset is None:
+            return {"ok": False, "errors": {}}
+        appearance = copy.deepcopy(preset.appearance)
+        title = appearance.get("title")
+        title = dict(title) if isinstance(title, dict) else {}
+        title.setdefault("text", preset.name)
+        appearance["title"] = title
+        bindings = {
+            gesture: binding.to_json() for gesture, binding in preset.bindings.items() if not binding.is_nothing
+        }
+        target = CardTarget(
+            plugin_uuid=BLANK_PLUGIN_ID,
+            card_uuid=BLANK_CARD_ID,
+            context_id=context_id,
+            device_id=device_id,
+            key_index=key_index,
+        )
+        self._place_card(target, page_id, {}, bindings, appearance)
+        return {"ok": True, "errors": pm.validate_bindings(target, bindings)}
+
+    def _place_card(
+        self, target: CardTarget, page_id: str, settings: dict[str, Any], bindings: dict[str, Any], appearance: dict
+    ) -> None:
+        """Replace the key's card: deactivate the old one, store the new, and activate it if the page is live."""
+        assert self._context is not None
         key_store = self._context.key_assignment_store
         pm = self._context.plugin_manager
-        is_active = self._is_active_page(device_id, page_id)
-        existing = key_store.get(device_id, page_id, key_index)
+        is_active = self._is_active_page(target.device_id, page_id)
+        existing = key_store.get(target.device_id, page_id, target.key_index)
         if existing is not None and is_active:
             pm.deactivate_card(existing.target)
-        key_store.assign(device_id, page_id, key_index, target, settings, bindings)
+        key_store.assign(target.device_id, page_id, target.key_index, target, settings, bindings, appearance)
         pm.store_settings(target, settings)
         pm.set_bindings(target, bindings)
+        if appearance:
+            pm.set_appearance(target, appearance)
         if is_active:
-            self._context.device_manager.open_device(device_id)
-            pm.activate_card(target, {})
-        return True
+            self._context.device_manager.open_device(target.device_id)
+            pm.activate_card(target, appearance)
 
     @exposed
     def key_unassign(self, device_id: str, page_id: str, key_index: int) -> bool:

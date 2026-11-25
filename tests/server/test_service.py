@@ -14,8 +14,9 @@ from decker.animation.factory import AnimationFactory
 from decker.animation.model import AnimationSpec
 from decker.common.platforms import HostPlatform, PlatformSpec
 from decker.common.version import decker_version
+from decker.plugin.bindings import parse_manifest_bindings
 from decker.plugin.events import PluginLoadFailedEvent
-from decker.plugin.manifest import VariableSpec
+from decker.plugin.manifest import PresetSpec, VariableSpec
 from decker.plugin.repository_index import IndexPlugin, IndexVersion
 from decker.plugin.target import CardTarget
 from decker.server.appearance import resolve_appearance
@@ -215,6 +216,94 @@ class TestVariablesList:
 
     def test_is_listed_by_commands(self, service):
         assert_that(json.loads(service.commands())).contains_key("variables.list")
+
+
+def _preset(appearance: dict | None = None, bindings: dict | None = None) -> PresetSpec:
+    stored = bindings if bindings is not None else {"press": {"action": "com.p.act", "args": {"n": 1}}}
+    return PresetSpec(
+        id="com.p.go",
+        name="Go",
+        appearance=appearance or {},
+        bindings=parse_manifest_bindings(stored, "test"),
+    )
+
+
+class TestKeyAssignPreset:
+    @staticmethod
+    def _drop(service, manager, preset: PresetSpec | None, page: str = P1) -> dict:
+        manager.preset.return_value = preset
+        return json.loads(service.key_assign_preset("dev1", page, 0, "com.p", "com.p.go", "ctx1"))
+
+    def test_assigns_blank_with_bindings_and_appearance(self, service, manager, store) -> None:
+        result = self._drop(service, manager, _preset({"background": "#123456"}))
+
+        assert_that(result).is_equal_to({"ok": True, "errors": {}})
+        assignment = store.get("dev1", P1, 0)
+        assert_that(assignment.target.plugin_uuid).is_equal_to("com.decker.blank")
+        assert_that(assignment.target.card_uuid).is_equal_to("com.decker.blank.blank")
+        assert_that(assignment.bindings["press"]["action"]).is_equal_to("com.p.act")
+        assert_that(assignment.appearance["title"]["text"]).is_equal_to("Go")
+        assert_that(assignment.appearance["background"]).is_equal_to("#123456")
+        assert_that(assignment.settings).is_equal_to({})
+        manager.activate_card.assert_called_once()
+
+    def test_keeps_a_title_text_the_preset_gives_and_other_title_fields(self, service, manager, store) -> None:
+        self._drop(service, manager, _preset({"title": {"text": "Own", "position": "top"}}))
+        assert_that(store.get("dev1", P1, 0).appearance["title"]).is_equal_to({"text": "Own", "position": "top"})
+
+        self._drop(service, manager, _preset({"title": {"position": "top"}}))
+        assert_that(store.get("dev1", P1, 0).appearance["title"]).is_equal_to({"text": "Go", "position": "top"})
+
+    def test_does_not_mutate_the_preset_appearance(self, service, manager) -> None:
+        preset = _preset({"title": {"position": "top"}})
+        self._drop(service, manager, preset)
+        assert_that(preset.appearance).is_equal_to({"title": {"position": "top"}})
+
+    def test_unknown_page_returns_not_ok_and_writes_nothing(self, service, manager, store) -> None:
+        result = self._drop(service, manager, _preset(), page="nope")
+
+        assert_that(result).is_equal_to({"ok": False, "errors": {}})
+        assert_that(store.get("dev1", "nope", 0)).is_none()
+        manager.activate_card.assert_not_called()
+
+    def test_unknown_preset_returns_not_ok(self, service, manager, store) -> None:
+        result = self._drop(service, manager, None)
+
+        assert_that(result).is_equal_to({"ok": False, "errors": {}})
+        assert_that(store.get("dev1", P1, 0)).is_none()
+
+    def test_replaces_existing_card_and_deactivates_it(self, service, manager, store) -> None:
+        old = _make_target()
+        store.assign("dev1", P1, 0, old, {})
+
+        self._drop(service, manager, _preset())
+
+        manager.deactivate_card.assert_called_once_with(old)
+        assert_that(store.get("dev1", P1, 0).target.card_uuid).is_equal_to("com.decker.blank.blank")
+
+    def test_reports_incomplete_bindings_but_still_stores(self, service, manager, store) -> None:
+        manager.validate_bindings.return_value = {"press.page": "is required"}
+
+        result = self._drop(service, manager, _preset(bindings={"press": {"action": "com.decker.core.goto"}}))
+
+        assert_that(result).is_equal_to({"ok": True, "errors": {"press.page": "is required"}})
+        assert_that(store.get("dev1", P1, 0)).is_not_none()
+
+    def test_without_bindings_stores_empty_bindings(self, service, manager, store) -> None:
+        self._drop(service, manager, _preset(bindings={}))
+
+        assert_that(store.get("dev1", P1, 0).bindings).is_equal_to({})
+
+
+class TestPluginsPresetsList:
+    def test_returns_empty_list_without_context(self) -> None:
+        assert_that(json.loads(DeckerService().plugins_presets_list())).is_equal_to([])
+
+    def test_returns_the_managers_listing(self, service, manager) -> None:
+        rows = [{"preset_uuid": "com.p.go", "preset_name": "Go"}]
+        manager.list_presets.return_value = rows
+
+        assert_that(json.loads(service.plugins_presets_list())).is_equal_to(rows)
 
 
 class TestKeyAssign:

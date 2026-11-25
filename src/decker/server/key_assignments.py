@@ -19,8 +19,15 @@ from decker.server.pages import initial_page_id
 if TYPE_CHECKING:
     from decker.server.server_context import ServerContext
 
+BLANK_PLUGIN_ID = "com.decker.blank"
+BLANK_CARD_ID = "com.decker.blank.blank"
 RETIRED_CARDS: frozenset[tuple[str, str]] = frozenset(
-    {("com.decker.core", "com.decker.core.runaction"), ("com.decker.core", "com.decker.core.switch")}
+    {
+        ("com.decker.core", "com.decker.core.runaction"),
+        ("com.decker.core", "com.decker.core.switch"),
+        (BLANK_PLUGIN_ID, "com.decker.blank.pagename"),
+        (BLANK_PLUGIN_ID, "com.decker.blank.pagecount"),
+    }
 )
 _TABLE = "key_assignments"
 _SCHEMA = f"""
@@ -105,20 +112,21 @@ class KeyAssignmentStore(Manager):
         target: CardTarget,
         settings: dict[str, Any],
         bindings: dict[str, Any] | None = None,
+        appearance: dict[str, Any] | None = None,
     ) -> None:
         """Persist an assignment, replacing any previous one for this slot."""
         with self._lock:
             self._db.execute(
                 f"""
                 INSERT INTO {_TABLE}
-                    (device_id, page_id, key_index, plugin_uuid, card_uuid, context_id, settings, bindings)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (device_id, page_id, key_index, plugin_uuid, card_uuid, context_id, settings, appearance, bindings)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(device_id, page_id, key_index) DO UPDATE SET
                     plugin_uuid = excluded.plugin_uuid,
                     card_uuid = excluded.card_uuid,
                     context_id  = excluded.context_id,
                     settings    = excluded.settings,
-                    appearance  = '{{}}',
+                    appearance  = excluded.appearance,
                     bindings    = excluded.bindings
                 """,
                 (
@@ -129,6 +137,7 @@ class KeyAssignmentStore(Manager):
                     target.card_uuid,
                     target.context_id,
                     json.dumps(settings),
+                    json.dumps(appearance or {}),
                     json.dumps(bindings or {}),
                 ),
             )
