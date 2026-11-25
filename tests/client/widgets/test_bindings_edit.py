@@ -95,13 +95,15 @@ class TestBindingsEdit:  # pylint: disable=protected-access
         edit = _edit()
 
         assert_that(_texts(_combos(edit)[0])).is_equal_to(
-            ["Do Nothing", "", "com.a", "Own", "Shared", "", "com.b", "Say", "Web"]
+            ["Do Nothing", "", "com.a", "Own", "Shared", "", "Global", "com.b", "Say", "Web"]
         )
 
     def test_generic_action_field_lists_only_globals(self) -> None:
         combo = ActionEdit()
 
-        assert_that(_texts(combo)).is_equal_to(["(choose an action)", "", "com.a", "Shared", "", "com.b", "Say", "Web"])
+        assert_that(_texts(combo)).is_equal_to(
+            ["(choose an action)", "", "Global", "com.a", "Shared", "com.b", "Say", "Web"]
+        )
 
     def test_each_gesture_is_a_titled_group_with_an_action_label_and_reset(self) -> None:
         edit = _edit()
@@ -135,7 +137,9 @@ class TestBindingsEdit:  # pylint: disable=protected-access
 
         AppContext.get().connection_manager = _Rpc()  # type: ignore[assignment]
 
-        assert_that(_texts(ActionEdit())).is_equal_to(["(choose an action)", "", "Alpha", "First", "", "com.b", "Web"])
+        assert_that(_texts(ActionEdit())).is_equal_to(
+            ["(choose an action)", "", "Global", "Alpha", "First", "com.b", "Web"]
+        )
 
     def test_row_shows_manifest_default_until_changed(self) -> None:
         edit = _edit(defaults={"press": _OWN})
@@ -255,7 +259,9 @@ class TestBindingRowFixes:  # pylint: disable=protected-access
         edit.set_bindings(BindingsSpec({}, {"press": {"action": "com.a.shared"}}), "com.a")
 
         combo = _combos(edit)[0]
-        assert_that(_texts(combo)).is_equal_to(["Do Nothing", "", "com.a", "Own", "Shared", "", "com.b", "Say", "Web"])
+        assert_that(_texts(combo)).is_equal_to(
+            ["Do Nothing", "", "com.a", "Own", "Shared", "", "Global", "com.b", "Say", "Web"]
+        )
         assert_that(combo.value()).is_equal_to("com.a.shared")
         assert_that(combo.currentText()).is_equal_to("Shared")
 
