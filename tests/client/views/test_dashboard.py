@@ -381,6 +381,26 @@ class TestKeyInteractions:
         view._on_key_edit_requested(0)  # pylint: disable=protected-access
         assert_that(view._config_panel.currentIndex()).is_equal_to(0)
 
+    def test_gesture_edit_request_selects_key_and_shows_tab(self, qapp, tmp_path):  # pylint: disable=unused-argument
+        view = _make_view(tmp_path)
+        _active_dev1(view)
+        AppContext.get().connection_manager = MagicMock()
+        view._grid.build(_KEYS_6)  # pylint: disable=protected-access
+        view._key_slots[2] = {  # pylint: disable=protected-access
+            "plugin_uuid": "p",
+            "card_uuid": "a",
+            "context_id": "c",
+            "settings": {},
+        }
+
+        view._on_key_gesture_edit_requested(2, "long_press")  # pylint: disable=protected-access
+
+        panel = view._config_panel  # pylint: disable=protected-access
+        assert_that(view._selected_key).is_equal_to(2)  # pylint: disable=protected-access
+        assert_that(panel._tabs.currentIndex()).is_equal_to(
+            panel._gesture_index["long_press"]
+        )  # pylint: disable=protected-access
+
     def test_key_press_with_slot_simulates_press(self, qapp, tmp_path):  # pylint: disable=unused-argument
         view = _make_view(tmp_path)
         _active_dev1(view)
