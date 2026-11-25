@@ -14,7 +14,7 @@ Two repos, two PRs, in this order: Part 1 (Decker, repo `/work/decker/decker`), 
 
 ## Global Constraints
 
-- Gestures are exactly `press`, `double_press`, `long_press`; a binding names the plugin's own actions (either scope), any `global` action, or Do Nothing; a foreign `plugin`-scoped action is a manifest error.
+- Gestures are exactly `press`, `double_press`, `long_press`; a preset binding names only a `global` action (any plugin's, including its own) or Do Nothing, because the dropped key is a Blank card. A preset bound to its own plugin's `plugin`-scoped action is a manifest error; a foreign `plugin`-scoped action is filtered at list time (Task 2).
 - Preset `appearance.icon.ref` must be a ref (`pack:<pack id>/<path>` or `fas:play`), never a plugin file path; the preset's `icon` (picker thumbnail) may be a plugin file or a built-in ref and is not copied to the key.
 - A preset may not declare `settings`, `states`, `static` or `gestures`.
 - A plugin that declares presets must declare a `"decker"` constraint (as `variables` and `options_source` do). New Decker version: `0.8.0`; plugins declare `">=0.8"`.
