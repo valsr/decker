@@ -425,7 +425,7 @@ def test_variables_only_plugin_is_valid() -> None:
 
 
 def test_plugin_contributing_nothing_is_rejected() -> None:
-    with pytest.raises(ManifestValidationError, match="cards, actions, icon packs or variables"):
+    with pytest.raises(ManifestValidationError, match="cards, actions, icon packs, variables or presets"):
         PluginManifest.from_dict(_minimal(3, {"cards": []}))
 
 
@@ -597,3 +597,96 @@ def test_action_timeout_is_parsed_and_bounded() -> None:
     for bad in (0, 301, 1.5, True, "10"):
         with pytest.raises(ManifestValidationError, match="timeout"):
             PluginManifest.from_dict(_with_actions({**_ACT, "timeout": bad}))
+
+
+def _preset_manifest(preset: dict[str, Any] | None = None, actions: bool = True, decker: bool = True) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "id": "com.x.next",
+        "name": "Next",
+        "appearance": {"title": {"text": "Next"}},
+        "bindings": {"press": {"action": "com.x.go", "args": {"wrap": True}}},
+    }
+    entry.update(preset or {})
+    contributes: dict[str, Any] = {"presets": [entry]}
+    data: dict[str, Any] = {
+        "format": 3,
+        "id": "com.x",
+        "name": "X",
+        "version": "1.0.0",
+        "author": "a",
+        "contributes": contributes,
+    }
+    if actions:
+        contributes["actions"] = [{"id": "com.x.go", "name": "Go", "scope": "global"}]
+        data["runtime"] = {"type": "python", "entry": "plugin.py"}
+    if decker:
+        data["decker"] = ">=0.8"
+    return data
+
+
+def test_preset_parses_name_icon_appearance_and_bindings() -> None:
+    manifest = PluginManifest.from_dict(_preset_manifest({"icon": "icons/n", "tooltip": "t"}))
+
+    preset = manifest.presets[0]
+    assert_that(preset.id).is_equal_to("com.x.next")
+    assert_that(preset.name).is_equal_to("Next")
+    assert_that(preset.tooltip).is_equal_to("t")
+    assert_that(preset.icon).is_equal_to("icons/n")
+    assert_that(preset.bindings["press"].args).is_equal_to({"wrap": True})
+    assert_that(preset.appearance["title"]["text"]).is_equal_to("Next")
+
+
+def test_presets_alone_need_no_runtime() -> None:
+    data = _preset_manifest({"bindings": {"press": {"action": "com.decker.core.delay"}}}, actions=False)
+
+    manifest = PluginManifest.from_dict(data)
+
+    assert_that(manifest.presets).is_length(1)
+    assert_that(manifest.runtime).is_none()
+
+
+def test_preset_id_must_start_with_plugin_id() -> None:
+    with pytest.raises(ManifestValidationError, match="com.x"):
+        PluginManifest.from_dict(_preset_manifest({"id": "com.other.next"}))
+
+
+@pytest.mark.parametrize("key", ["settings", "states", "static", "gestures", "bogus"])
+def test_preset_unknown_key_is_refused(key: str) -> None:
+    with pytest.raises(ManifestValidationError, match=key):
+        PluginManifest.from_dict(_preset_manifest({key: []}))
+
+
+def test_preset_unknown_appearance_key_is_refused() -> None:
+    with pytest.raises(ManifestValidationError, match="bogus"):
+        PluginManifest.from_dict(_preset_manifest({"appearance": {"bogus": 1}}))
+
+
+def test_preset_icon_ref_must_not_be_a_path() -> None:
+    with pytest.raises(ManifestValidationError, match="icon"):
+        PluginManifest.from_dict(_preset_manifest({"appearance": {"icon": {"ref": "icons/x"}}}))
+
+
+def test_preset_icon_ref_accepts_refs() -> None:
+    manifest = PluginManifest.from_dict(_preset_manifest({"appearance": {"icon": {"ref": "fas:forward"}}}))
+
+    assert_that(manifest.presets[0].appearance["icon"]["ref"]).is_equal_to("fas:forward")
+
+
+def test_preset_binding_to_undeclared_own_action_is_refused() -> None:
+    data = _preset_manifest({"bindings": {"press": {"action": "com.x.missing"}}})
+
+    with pytest.raises(ManifestValidationError, match="preset"):
+        PluginManifest.from_dict(data)
+
+
+def test_preset_needs_decker_constraint() -> None:
+    with pytest.raises(ManifestValidationError, match="presets"):
+        PluginManifest.from_dict(_preset_manifest(decker=False))
+
+
+def test_duplicate_preset_id_is_refused() -> None:
+    data = _preset_manifest()
+    data["contributes"]["presets"].append(copy.deepcopy(data["contributes"]["presets"][0]))
+
+    with pytest.raises(ManifestValidationError, match="duplicate"):
+        PluginManifest.from_dict(data)
