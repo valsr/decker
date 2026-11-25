@@ -15,7 +15,7 @@ Stopwatch and Counter actions. A plugin is a collection of cards and actions; a 
   currently bound action is always kept listed).
 
 ## Approaches
-1. **Card lists its actions** (chosen): `cards[].actions: ["timer-toggle", ...]`. Reads next to the card; the loader
+1. **Card lists its actions** (chosen): `cards[].actions: ["com.decker.utilities.timer-toggle", ...]`. Reads next to the card; the loader
    validates ids. Cost: a shared action is listed on each card.
 2. Action lists its cards (`actions[].cards`): better for shared actions, but finding a card's actions scans all actions.
 3. Infer from default bindings: no manifest change, but misses actions a card does not bind by default. Rejected.
