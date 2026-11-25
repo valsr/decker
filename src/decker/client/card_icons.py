@@ -4,6 +4,7 @@ import base64
 import binascii
 import zlib
 from pathlib import Path
+from typing import Any
 
 from PyQt6.QtCore import QByteArray, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
@@ -36,13 +37,18 @@ def asset_pixmap(name: str, size: int, tint: str | None = None) -> QPixmap:
     return pixmap.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
 
-def tab_icon(ref: str, size: int = 16) -> QIcon:
-    """A bundled Font Awesome icon (``fas:image``) tinted with the palette text colour; empty if unknown."""
+def builtin_pixmap(ref: Any) -> QPixmap | None:
+    """A bundled Font Awesome icon (``fas:image``) tinted with the palette text colour; None if unknown."""
     raw = read_builtin_ref(ref)
     if raw is None:
-        return QIcon()
+        return None
     tint = QApplication.palette().text().color().name()
-    pixmap = decode_icon(base64.b64encode(raw).decode("ascii"), tint)
+    return decode_icon(base64.b64encode(raw).decode("ascii"), tint)
+
+
+def tab_icon(ref: str, size: int = 16) -> QIcon:
+    """A bundled Font Awesome icon (``fas:image``) tinted with the palette text colour; empty if unknown."""
+    pixmap = builtin_pixmap(ref)
     if pixmap is None:
         return QIcon()
     return QIcon(
