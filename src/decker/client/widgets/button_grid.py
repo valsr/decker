@@ -6,6 +6,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
+from PyQt6 import sip
 from PyQt6.QtCore import (
     QBuffer,
     QByteArray,
@@ -248,7 +249,8 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
         if menu is None or event is None:
             return
         menu.exec(event.globalPos())
-        menu.deleteLater()  # the menu is a child of the key: do not let one pile up per right-click
+        if not sip.isdeleted(menu):  # a grid rebuild while the menu was open deletes the key and its menu
+            menu.deleteLater()  # the menu is a child of the key: do not let one pile up per right-click
         event.accept()
 
     def _show_hover_buttons(self) -> None:
