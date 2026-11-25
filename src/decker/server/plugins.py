@@ -47,6 +47,7 @@ from decker.plugin.manifest import (
     ActionSpec,
     CardSpec,
     PluginManifest,
+    PresetSpec,
     declared_options_sources,
 )
 from decker.plugin.protocol import PROTOCOL_VERSION, Message
@@ -72,6 +73,7 @@ from decker.server.appearance import (
 )
 from decker.server.contributions import ContributionRegistry
 from decker.server.hardware_sink import StreamDeckHardwareSink, write_face
+from decker.server.key_assignments import BLANK_CARD_ID
 from decker.server.options_runner import OptionsResult, OptionsRunner
 from decker.server.page_vars import (
     DeviceLayout,
@@ -97,7 +99,6 @@ _DEFAULT_MEMORY_LIMIT = 256 * 1024 * 1024
 _FAILED_LABEL = "Plugin failed"
 _MISSING_LABEL = "Plugin missing"
 _OPEN_URL_SCHEMES = ("http", "https")
-_BLANK_CARD = "com.decker.blank.blank"
 _DEFAULT_KEY_SIZE = (72, 72)
 
 
@@ -546,6 +547,45 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             )
         return cards
 
+    def list_presets(self) -> list[dict[str, Any]]:
+        """Return every preset whose actions are all installed and usable by its plugin (computed per call)."""
+        presets: list[dict[str, Any]] = []
+        for plugin in self.plugins():
+            manifest = plugin.manifest
+            presets.extend(
+                {
+                    "plugin_uuid": manifest.id,
+                    "plugin_name": manifest.name,
+                    "plugin_builtin": self.is_builtin(manifest.id),
+                    "preset_uuid": spec.id,
+                    "preset_name": spec.name,
+                    "icon_b64": self._icon_b64(plugin.plugin_dir, spec.icon or manifest.icon),
+                    "tooltip": spec.tooltip,
+                    "appearance": dict(spec.appearance),
+                    "bindings": {g: b.to_json() for g, b in spec.bindings.items()},
+                }
+                for spec in manifest.presets
+                if self._preset_usable(manifest.id, spec)
+            )
+        return presets
+
+    def preset(self, plugin_id: str, preset_id: str) -> PresetSpec | None:
+        """Return a declared preset, or None for an unknown plugin or preset."""
+        with self._lock:
+            plugin = self._plugins.get(plugin_id)
+        if plugin is None:
+            return None
+        return next((p for p in plugin.manifest.presets if p.id == preset_id), None)
+
+    def _preset_usable(self, plugin_id: str, spec: PresetSpec) -> bool:
+        for binding in spec.bindings.values():
+            if binding.is_nothing:
+                continue
+            found = self._action_runner.scope_of(binding.action)
+            if found is None or (found[1] != "global" and found[0] != plugin_id):
+                return False
+        return True
+
     def get_key_display_states(self, device_id: str) -> list[dict[str, Any]]:
         """Return the display label and animation id (None when static) of every labelled or animated key."""
         state = self._device_manager.get_device_state(device_id) if self._device_manager is not None else None
@@ -842,7 +882,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
 
     def _shows_action(self, live: _Live) -> bool:
         press = live.bindings.get("press")
-        return live.card.id == _BLANK_CARD and press is not None and not press.is_nothing
+        return live.card.id == BLANK_CARD_ID and press is not None and not press.is_nothing
 
     def _face_action(self, live: _Live) -> tuple[ActionSpec, bytes | None] | None:
         press = live.bindings.get("press")

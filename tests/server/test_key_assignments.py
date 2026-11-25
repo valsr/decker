@@ -443,3 +443,25 @@ class TestBindings:
         assert_that(copied[0][1].bindings["press"]["args"]).is_equal_to({"page": "p9", "n": 2})
         assert_that(copied[0][1].bindings["long_press"]).is_equal_to({"action": "z"})
         assert_that(_bindings(store, "dev1", "p1", 0)["press"]["args"]["page"]).is_equal_to("p1")
+
+
+class TestRetiredBlankCards:
+    def test_page_with_retired_blank_page_name_key_loads_empty(self, store) -> None:
+        store.assign("dev1", "p1", 0, _target(plugin="com.decker.blank", action="com.decker.blank.pagename"), {})
+        store.assign(
+            "dev1",
+            "p1",
+            1,
+            _target(key_index=1, ctx="c1", plugin="com.decker.blank", action="com.decker.blank.pagecount"),
+            {},
+        )
+
+        assert_that(store.get("dev1", "p1", 0)).is_none()
+        assert_that(store.all_for_page("dev1", "p1")).is_empty()
+
+    def test_assign_stores_appearance_in_the_same_insert(self, store) -> None:
+        store.assign("dev1", "p1", 0, _target(), {}, appearance={"title": {"text": "Hi"}})
+
+        assignment = store.get("dev1", "p1", 0)
+        assert assignment is not None
+        assert_that(assignment.appearance).is_equal_to({"title": {"text": "Hi"}})
