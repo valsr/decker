@@ -172,6 +172,17 @@ class TestEditing:
         assert_that(context.page_store.default_page_id(DEV)).is_equal_to(page.page_id)
         context.device_manager.show_page.assert_not_called()
 
+    def test_move_page_notifies_only_when_the_order_changed(self, context):
+        second = context.page_store.add_page(DEV)
+
+        assert_that(context.page_controller.move_page(DEV, second.page_id, 0)).is_true()
+        assert_that([name for name, _ in _events(context)]).is_equal_to(["pages_changed"])
+
+        context.event_bus.push.reset_mock()
+        assert_that(context.page_controller.move_page(DEV, second.page_id, 0)).is_true()
+        assert_that(context.page_controller.move_page(DEV, "nope", 0)).is_false()
+        context.event_bus.push.assert_not_called()
+
     def test_failed_edits_do_not_notify(self, context):
         assert_that(context.page_controller.rename_page(DEV, "nope", "x")).is_false()
         assert_that(context.page_controller.set_default_page(DEV, "nope")).is_false()

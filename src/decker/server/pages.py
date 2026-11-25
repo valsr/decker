@@ -269,6 +269,28 @@ class PageStore(Manager):
             self._db.commit()
         return cursor.rowcount > 0
 
+    def move_page(self, device_id: str, page_id: str, new_index: int) -> bool:
+        """Move a page to new_index (clamped) within its profile. Returns False for an unknown page."""
+        with self._lock:
+            profile_id = self.profile_of_page(device_id, page_id)
+            if profile_id is None:
+                return False
+            rows = self._db.execute(
+                "SELECT page_id, position FROM pages WHERE device_id = ? AND profile_id = ? ORDER BY position",
+                (device_id, profile_id),
+            ).fetchall()
+            ids = [row[0] for row in rows]
+            ids.remove(page_id)
+            ids.insert(max(0, min(new_index, len(ids))), page_id)
+            # Reuse the profile's own position slots so other profiles' rows keep their relative order.
+            slots = [row[1] for row in rows]
+            self._db.executemany(
+                "UPDATE pages SET position = ? WHERE device_id = ? AND page_id = ?",
+                [(slot, device_id, pid) for slot, pid in zip(slots, ids)],
+            )
+            self._db.commit()
+            return True
+
     def delete_page(self, device_id: str, page_id: str) -> bool:
         """Delete a page. Refuses a profile's last page; a deleted default page passes to the profile's first page."""
         with self._lock:

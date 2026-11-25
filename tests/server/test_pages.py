@@ -82,6 +82,58 @@ class TestRenamePage:
         assert_that(store.rename_page("dev1", other, "x")).is_false()
 
 
+class TestMovePage:
+    def _three(self, store):
+        first = store.list_pages("dev1")[0]
+        return [first.page_id, store.add_page("dev1").page_id, store.add_page("dev1").page_id]
+
+    def _order(self, store, profile_id=None):
+        return [p.page_id for p in store.list_pages("dev1", profile_id)]
+
+    def test_move_page_reorders_within_the_profile(self, store):
+        a, b, c = self._three(store)
+
+        assert_that(store.move_page("dev1", c, 0)).is_true()
+        assert_that(self._order(store)).is_equal_to([c, a, b])
+        assert_that(store.move_page("dev1", a, 2)).is_true()
+        assert_that(self._order(store)).is_equal_to([c, b, a])
+
+    def test_move_page_clamps_the_index(self, store):
+        a, b, c = self._three(store)
+
+        assert_that(store.move_page("dev1", c, -5)).is_true()
+        assert_that(self._order(store)).is_equal_to([c, a, b])
+        assert_that(store.move_page("dev1", c, 99)).is_true()
+        assert_that(self._order(store)).is_equal_to([a, b, c])
+
+    def test_move_page_unknown_page_returns_false(self, store):
+        self._three(store)
+
+        assert_that(store.move_page("dev1", "nope", 0)).is_false()
+
+    def test_move_page_keeps_other_profiles_untouched(self, store):
+        a, _, c = self._three(store)
+        other = store.add_profile("dev1")
+        x = store.add_page("dev1", "X", other.profile_id).page_id
+        y = store.add_page("dev1", "Y", other.profile_id).page_id
+
+        store.move_page("dev1", c, 0)
+
+        assert_that(self._order(store, other.profile_id)).is_equal_to(
+            [store.list_pages("dev1", other.profile_id)[0].page_id, x, y]
+        )
+        assert_that(self._order(store, 0)[0]).is_equal_to(c)
+        assert_that(store.move_page("dev1", y, 0)).is_true()
+        assert_that(self._order(store, 0)[0]).is_equal_to(c)
+        assert_that(a).is_in(*self._order(store, 0))
+
+    def test_move_page_to_current_index_is_a_noop_true(self, store):
+        a, b, c = self._three(store)
+
+        assert_that(store.move_page("dev1", b, 1)).is_true()
+        assert_that(self._order(store)).is_equal_to([a, b, c])
+
+
 class TestDeletePage:
     def test_delete(self, store):
         page = store.add_page("dev1")
