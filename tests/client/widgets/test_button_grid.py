@@ -5,6 +5,7 @@ import json
 import pytest
 from assertpy import assert_that
 from PIL import Image
+from PyQt6 import sip
 from PyQt6.QtCore import (
     QBuffer,
     QByteArray,
@@ -1077,3 +1078,15 @@ class TestContextMenu:
         QApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
         assert_that(button.findChildren(QMenu)).is_empty()
+
+    def test_context_menu_survives_the_key_being_deleted_while_open(
+        self, qapp, monkeypatch
+    ):  # pylint: disable=unused-argument
+        button = _key()
+        button.set_draggable(True)
+        monkeypatch.setattr(QMenu, "exec", lambda *_a, **_k: sip.delete(button))
+        event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(1, 1), QPoint(1, 1))
+
+        button.contextMenuEvent(event)
+
+        assert_that(sip.isdeleted(button)).is_true()
