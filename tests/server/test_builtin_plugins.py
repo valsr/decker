@@ -42,13 +42,7 @@ def test_blank_manifest_ships_in_the_package():
 
     assert_that(manifest.id).is_equal_to(BLANK)
     assert_that(manifest.runtime).is_none()
-    assert_that([(a.id, a.static, a.name) for a in manifest.cards]).is_equal_to(
-        [
-            (BLANK_ACTION, True, "Blank"),
-            ("com.decker.blank.pagename", True, "Page Name"),
-            ("com.decker.blank.pagecount", True, "Page Count"),
-        ]
-    )
+    assert_that([(a.id, a.static, a.name) for a in manifest.cards]).is_equal_to([(BLANK_ACTION, True, "Blank")])
     assert_that(manifest.cards[0].tooltip).is_equal_to("Draws only the background and title")
 
 
@@ -133,17 +127,41 @@ def test_plugins_list_marks_builtin(env):
     assert_that(listed[BLANK]["builtin"]).is_true()
 
 
-def test_blank_ships_page_name_and_page_count_presets() -> None:
-    manifest = PluginManifest.from_dict(
-        json.loads((BUILTIN_PLUGINS_DIR / "com.decker.blank" / "manifest.json").read_text())
-    )
-    specs = {a.id: a for a in manifest.cards}
+def test_blank_ships_only_the_blank_card() -> None:
+    manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / "com.decker.blank" / "manifest.json")
 
-    assert_that(specs["com.decker.blank.pagename"].static).is_true()
-    assert_that(specs["com.decker.blank.pagename"].appearance["title"]["text"]).is_equal_to("{page_name}")
-    assert_that(specs["com.decker.blank.pagecount"].appearance["title"]["text"]).is_equal_to(
-        "{page_index} / {page_count}"
-    )
+    assert_that([c.id for c in manifest.cards]).is_equal_to([BLANK_ACTION])
+    assert_that(manifest.description).is_equal_to("A key that shows only a background and a title.")
+
+
+_CORE_PRESETS = {
+    "com.decker.core.preset-httprequest": ("HTTP Request", "com.decker.core.httprequest"),
+    "com.decker.core.preset-delay": ("Delay", "com.decker.core.delay"),
+    "com.decker.core.preset-sequence": ("Sequence", "com.decker.core.sequence"),
+}
+
+
+def test_core_ships_presets_for_httprequest_delay_and_sequence(env) -> None:
+    manifest = PluginManifest.load(BUILTIN_PLUGINS_DIR / "com.decker.core" / "manifest.json")
+    actions = {a.id: a for a in manifest.actions}
+    specs = {p.id: p for p in manifest.presets}
+
+    assert_that(specs).is_length(3)
+    for preset_id, (name, action_id) in _CORE_PRESETS.items():
+        spec = specs[preset_id]
+        assert_that(spec.name).is_equal_to(name)
+        assert_that(spec.icon).is_equal_to(actions[action_id].icon)
+        assert_that(spec.bindings["press"].action).is_equal_to(action_id)
+        assert_that(spec.bindings["press"].args).is_empty()
+        assert_that(actions[action_id].scope).is_equal_to("global")
+    listed = {p["preset_uuid"] for p in env.manager.list_presets()}
+    assert_that(set(_CORE_PRESETS)).is_subset_of(listed)
+
+
+def test_core_presets_not_listed_for_nothing(env) -> None:
+    pressed = [p["bindings"]["press"]["action"] for p in env.manager.list_presets()]
+
+    assert_that(pressed).does_not_contain("com.decker.core.nothing")
 
 
 def test_core_ships_no_cards() -> None:

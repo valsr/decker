@@ -2,9 +2,9 @@
   "format": 3,
   "id": "com.decker.blank",
   "name": "Blank",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "author": "Decker",
-  "description": "A key that shows only a background and a title, plus ready-made page name and page count keys.",
+  "description": "A key that shows only a background and a title.",
   "icon": "icons/blank",
   "category": "Utilities",
   "contributes": {
@@ -15,34 +15,6 @@
         "tooltip": "Draws only the background and title",
         "icon": "icons/blank",
         "static": true
-      },
-      {
-        "id": "com.decker.blank.pagename",
-        "name": "Page Name",
-        "tooltip": "Shows the name of the current page",
-        "icon": "icons/blank",
-        "static": true,
-        "appearance": {
-          "title": {
-            "text": "{page_name}",
-            "position": "middle",
-            "size": 16
-          }
-        }
-      },
-      {
-        "id": "com.decker.blank.pagecount",
-        "name": "Page Count",
-        "tooltip": "Shows the page number, like 2 / 5",
-        "icon": "icons/blank",
-        "static": true,
-        "appearance": {
-          "title": {
-            "text": "{page_index} / {page_count}",
-            "position": "middle",
-            "size": 24
-          }
-        }
       }
     ]
   }

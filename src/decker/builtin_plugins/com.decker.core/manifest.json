@@ -2,11 +2,11 @@
   "format": 3,
   "id": "com.decker.core",
   "name": "Core",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "author": "Decker",
   "description": "The actions Decker ships.",
   "icon": "icons/blank",
-  "decker": ">=0.7",
+  "decker": ">=0.8",
   "runtime": {
     "type": "python",
     "entry": "plugin.py"
@@ -230,6 +230,56 @@
             "default": true
           }
         ]
+      }
+    ],
+    "presets": [
+      {
+        "id": "com.decker.core.preset-httprequest",
+        "name": "HTTP Request",
+        "tooltip": "Sends an HTTP request when pressed",
+        "icon": "icons/blank",
+        "appearance": {
+          "icon": {
+            "ref": "fas:globe"
+          }
+        },
+        "bindings": {
+          "press": {
+            "action": "com.decker.core.httprequest"
+          }
+        }
+      },
+      {
+        "id": "com.decker.core.preset-delay",
+        "name": "Delay",
+        "tooltip": "Waits when pressed",
+        "icon": "fas:hourglass-half",
+        "appearance": {
+          "icon": {
+            "ref": "fas:hourglass-half"
+          }
+        },
+        "bindings": {
+          "press": {
+            "action": "com.decker.core.delay"
+          }
+        }
+      },
+      {
+        "id": "com.decker.core.preset-sequence",
+        "name": "Sequence",
+        "tooltip": "Runs several actions in a row when pressed",
+        "icon": "fas:list-ol",
+        "appearance": {
+          "icon": {
+            "ref": "fas:list-ol"
+          }
+        },
+        "bindings": {
+          "press": {
+            "action": "com.decker.core.sequence"
+          }
+        }
       }
     ]
   }
