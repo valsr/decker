@@ -248,6 +248,7 @@ class KeyButtonWidget(QPushButton):  # pylint: disable=too-many-instance-attribu
         if menu is None or event is None:
             return
         menu.exec(event.globalPos())
+        menu.deleteLater()  # the menu is a child of the key: do not let one pile up per right-click
         event.accept()
 
     def _show_hover_buttons(self) -> None:
