@@ -59,13 +59,28 @@ class TestActionEditSections:
         combo = ActionEdit(owner=_OWNER)
 
         assert_that(_texts(combo)).is_equal_to(
-            ["Do Nothing", "Owner", "Own Shared", "Own Thing", "Built-in", "Delay", "Global", "Other", "Web"]
+            [
+                "Do Nothing",
+                "Card actions",
+                "Own Thing",
+                "Built-in",
+                "Delay",
+                "Global",
+                "Other",
+                "Web",
+                "Owner",
+                "Own Shared",
+            ]
         )
         model = combo.model()
         assert isinstance(model, QStandardItemModel)
-        headers = [i for i in range(combo.count()) if combo.itemText(i) in ("Owner", "Built-in", "Global", "Other")]
+        headers = [
+            i
+            for i in range(combo.count())
+            if combo.itemText(i) in ("Card actions", "Built-in", "Global", "Other", "Owner")
+        ]
         item_flags = [model.item(i).isEnabled() for i in headers]  # type: ignore[union-attr]
-        assert_that(item_flags).is_equal_to([False] * 4)
+        assert_that(item_flags).is_equal_to([False] * 5)
 
     def test_other_plugins_scoped_actions_are_not_listed(self) -> None:
         assert_that(_texts(ActionEdit(owner=_OWNER))).does_not_contain("Private")
@@ -74,7 +89,8 @@ class TestActionEditSections:
         texts = _texts(ActionEdit(owner=_OWNER))
 
         assert_that(texts.count("Own Shared")).is_equal_to(1)
-        assert_that(texts.index("Own Shared")).is_less_than(texts.index("Built-in"))
+        assert_that(texts.index("Own Shared")).is_greater_than(texts.index("Global"))
+        assert_that(texts.index("Own Thing")).is_less_than(texts.index("Built-in"))
 
     def test_empty_sections_have_no_header(self) -> None:
         _serve([_NOTHING, _DELAY])
