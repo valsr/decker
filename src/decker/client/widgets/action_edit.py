@@ -27,6 +27,9 @@ _MISSING = "(missing action)"
 _OFFLINE_HINT = "Connect to the server to list its actions"
 _NOTHING = "Do Nothing"
 _ICON_SIZE = 16
+_CORE_PLUGIN_ID = "com.decker.core"
+_BUILT_IN = "Built-in"
+_GLOBAL = "Global"
 
 
 def _app_rpc() -> RpcCaller | None:
@@ -67,10 +70,20 @@ def _plugin_label(action: dict[str, Any]) -> str:
     return str(action.get("plugin_name") or action.get("plugin_uuid") or "")
 
 
-class ActionEdit(QComboBox):
-    """Pick an action; ``value()`` is its id (with an ``owner``, Do Nothing, its own and global actions).
+def _sort_key(action: dict[str, Any]) -> tuple[str, str, str, str]:
+    return (
+        _plugin_label(action).lower(),
+        str(action.get("plugin_uuid")),
+        str(action.get("action_name")),
+        str(action.get("action_uuid")),
+    )
 
-    Actions are grouped by plugin (alphabetically), each group under a separator and the plugin's name.
+
+class ActionEdit(QComboBox):
+    """Pick an action; ``value()`` is its id.
+
+    With an ``owner``: Do Nothing, then the owner's actions, Built-in (Core) and Global (other plugins' global
+    actions, one sub-header per plugin). Without one the card section is left out. Empty sections have no header.
     """
 
     value_changed = pyqtSignal()
@@ -111,22 +124,16 @@ class ActionEdit(QComboBox):
         self._actions = listed or []
         self._rebuild()
 
-    def _shown_actions(self) -> list[dict[str, Any]]:
-        shown = [
-            a
-            for a in self._actions
-            if a.get("action_uuid") != NOTHING_ACTION_ID
-            and (a.get("scope") == "global" or (self._owner is not None and a.get("plugin_uuid") == self._owner))
-        ]
-        return sorted(
-            shown,
-            key=lambda a: (
-                _plugin_label(a).lower(),
-                str(a.get("plugin_uuid")),
-                str(a.get("action_name")),
-                str(a.get("action_uuid")),
-            ),
-        )
+    def _sections(self) -> list[tuple[str, list[dict[str, Any]]]]:
+        usable = [a for a in self._actions if a.get("action_uuid") != NOTHING_ACTION_ID]
+        card = [a for a in usable if self._owner is not None and a.get("plugin_uuid") == self._owner]
+        built_in = [a for a in usable if a.get("plugin_uuid") == _CORE_PLUGIN_ID and a not in card]
+        rest = [a for a in usable if a not in card and a not in built_in and a.get("scope") == "global"]
+        sections = [(self._owner_label(card), card), (_BUILT_IN, built_in), (_GLOBAL, rest)]
+        return [(title, sorted(actions, key=_sort_key)) for title, actions in sections if actions]
+
+    def _owner_label(self, card: list[dict[str, Any]]) -> str:
+        return _plugin_label(card[0]) if card else str(self._owner or "")
 
     def _rebuild(self) -> None:
         self.blockSignals(True)
@@ -135,16 +142,16 @@ class ActionEdit(QComboBox):
             self.addItem(_NONE, "")
         else:
             self.addItem(_nothing_icon(), _NOTHING, NOTHING_ACTION_ID)
-        shown = self._shown_actions()
-        group: str | None = None
-        for action in shown:
-            if action.get("plugin_uuid") != group:
-                group = str(action.get("plugin_uuid"))
-                self._add_group_header(_plugin_label(action))
-            self.addItem(_action_icon(action), str(action.get("action_name")), str(action["action_uuid"]))
-        listed = {str(a["action_uuid"]) for a in shown}
-        if self._owner is not None:
-            listed.add(NOTHING_ACTION_ID)
+        listed = {NOTHING_ACTION_ID} if self._owner is not None else set()
+        for title, actions in self._sections():
+            self._add_group_header(title)
+            group: str | None = None
+            for action in actions:
+                if title == _GLOBAL and action.get("plugin_uuid") != group:
+                    group = str(action.get("plugin_uuid"))
+                    self._add_group_header(_plugin_label(action), sub=True)
+                self.addItem(_action_icon(action), str(action.get("action_name")), str(action["action_uuid"]))
+                listed.add(str(action["action_uuid"]))
         if self._value and self._online and self._value not in listed:
             self.insertSeparator(self.count())
             self.addItem(_MISSING, self._value)
@@ -153,8 +160,9 @@ class ActionEdit(QComboBox):
         self.setToolTip("" if self._online else _OFFLINE_HINT)
         self.blockSignals(False)
 
-    def _add_group_header(self, title: str) -> None:
-        self.insertSeparator(self.count())
+    def _add_group_header(self, title: str, sub: bool = False) -> None:
+        if not sub:
+            self.insertSeparator(self.count())
         self.addItem(title)
         self._disable_last(bold=True)
 
