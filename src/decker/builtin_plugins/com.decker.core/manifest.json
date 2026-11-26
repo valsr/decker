@@ -69,12 +69,14 @@
             "key": "url",
             "type": "text",
             "label": "URL",
-            "placeholder": "https://example.com/hook"
+            "placeholder": "https://example.com/hook",
+            "template": true
           },
           {
             "key": "body",
             "type": "text",
             "label": "Body",
+            "template": true,
             "multiline": true
           },
           {

@@ -94,7 +94,7 @@ def sequence(ctx: ActionCallContext) -> None:
         if left <= 0:
             raise ActionError(f"step {number}: out of time")
         try:
-            call_action(action_id, params, timeout=left)
+            call_action(action_id, params, timeout=left, slot=f"step_{number}")
         except ActionError as exc:
             if stop_on_error:
                 raise ActionError(f"step {number} ({action_id}): {exc}") from exc
