@@ -125,7 +125,7 @@
 ### Task 5: Core plugin — templates in HTTP Request, Sequence slots
 
 **Files:**
-- Modify: `src/decker/builtin_plugins/com.decker.core/manifest.json` (`url`, `body` get `"template": true`)
+- Modify: `src/decker/builtin_plugins/com.decker.core/manifest.json` (`url` gets `"template": true`; `body` does not — `}}` would corrupt nested JSON)
 - Modify: `src/decker/builtin_plugins/com.decker.core/plugin.py` (`sequence` passes `slot=f"step_{number}"`)
 - Test: `tests/server/test_core_plugin.py`
 
@@ -133,7 +133,7 @@
 - Consumes: Task 3 `call_action(..., slot=)`, Task 4 slot handling.
 - Produces: Sequence step N runs with slot `step_N`, so `{press.step_1.status}` and any variables step 1's action set are readable by step 2's template fields.
 
-- [ ] **Step 1: Write failing tests**: a Sequence of two steps run from a `press` gesture (Delay then HTTP Request against a local test server) leaves `press.step_1.status == "SUCCESS"`, `press.step_2.status == "SUCCESS"` and `press.status == "SUCCESS"`; a failing step 1 with `stop_on_error: false` has `press.step_1.status == "FAILURE"` and step 2's URL `http://127.0.0.1:{port}/{press.step_1.status}` reaches the server as `/FAILURE`; a manifest check that `url` and `body` are template fields.
+- [ ] **Step 1: Write failing tests**: a Sequence of two steps run from a `press` gesture (Delay then HTTP Request against a local test server) leaves `press.step_1.status == "SUCCESS"`, `press.step_2.status == "SUCCESS"` and `press.status == "SUCCESS"`; a failing step 1 with `stop_on_error: false` has `press.step_1.status == "FAILURE"` and step 2's URL `http://127.0.0.1:{port}/{press.step_1.status}` reaches the server as `/FAILURE`; a manifest check that `url` is a template field and `body` is not.
 - [ ] **Step 2: Run** `uv run pytest tests/server/test_core_plugin.py -v`; expect FAIL.
 - [ ] **Step 3: Implement** the two edits.
 - [ ] **Step 4: Run** `uv run pytest tests/server/test_core_plugin.py tests/server/test_builtin_plugins.py -v`; expect PASS.
