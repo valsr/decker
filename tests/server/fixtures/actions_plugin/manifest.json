@@ -177,6 +177,84 @@
         "scope": "global",
         "timeout": 1,
         "settings": []
+      },
+      {
+        "id": "com.decker.acttest.setvar",
+        "name": "Set variable",
+        "tooltip": "Sets a card variable",
+        "scope": "plugin",
+        "variables": [
+          {
+            "name": "pid",
+            "description": "A number"
+          },
+          {
+            "name": "other",
+            "description": "Another"
+          }
+        ],
+        "settings": [
+          {
+            "key": "name",
+            "type": "text",
+            "label": "Name",
+            "default": "pid"
+          },
+          {
+            "key": "value",
+            "type": "text",
+            "label": "Value",
+            "default": "1"
+          },
+          {
+            "key": "big",
+            "type": "bool",
+            "label": "Big",
+            "default": false
+          },
+          {
+            "key": "nan",
+            "type": "bool",
+            "label": "NaN",
+            "default": false
+          }
+        ]
+      },
+      {
+        "id": "com.decker.acttest.echo",
+        "name": "Echo",
+        "tooltip": "Writes its text to echo.log",
+        "scope": "plugin",
+        "settings": [
+          {
+            "key": "text",
+            "type": "text",
+            "label": "Text",
+            "default": "",
+            "template": true
+          }
+        ]
+      },
+      {
+        "id": "com.decker.acttest.boom",
+        "name": "Boom",
+        "tooltip": "Always fails",
+        "scope": "plugin",
+        "settings": []
+      },
+      {
+        "id": "com.decker.acttest.slots",
+        "name": "Slots",
+        "tooltip": "Calls children with slots",
+        "scope": "plugin",
+        "settings": []
+      },
+      {
+        "id": "com.decker.acttest.inner",
+        "name": "Inner",
+        "tooltip": "Calls setvar with a slot",
+        "scope": "plugin",
+        "settings": []
       }
     ]
   }

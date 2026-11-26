@@ -1465,7 +1465,9 @@ class TestTemplates:
     def test_action_args_without_a_device_are_unset_and_templates_expand_empty(self, env):
         args = {"label": "On {page_name}", "where": "p3"}
 
-        delivered = env.manager._resolve_args(self._action_spec(), args, None)  # pylint: disable=protected-access
+        delivered = env.manager._resolve_args(
+            self._action_spec(), args, ActionCall("x", args, "plugin")
+        )  # pylint: disable=protected-access
 
         assert_that(delivered["label"]).is_equal_to("On ")
         assert_that(delivered["where"]).is_equal_to({"page_id": "", "name": "", "index": 0, "profile_id": -1})
@@ -1473,7 +1475,9 @@ class TestTemplates:
     def test_action_args_with_a_device_resolve_against_its_pages(self, env):
         args = {"label": "On {page_name}", "where": "p3"}
 
-        delivered = env.manager._resolve_args(self._action_spec(), args, "dev-1")  # pylint: disable=protected-access
+        delivered = env.manager._resolve_args(
+            self._action_spec(), args, ActionCall("x", args, "plugin", device="dev-1")
+        )  # pylint: disable=protected-access
 
         assert_that(delivered["label"]).is_equal_to("On Settings")
         assert_that(delivered["where"]).is_equal_to({"page_id": "p3", "name": "Media", "index": 3, "profile_id": 0})

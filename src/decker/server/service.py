@@ -641,6 +641,8 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         existing = key_store.get(target.device_id, page_id, target.key_index)
         if existing is not None and is_active:
             pm.deactivate_card(existing.target)
+        if existing is not None and existing.target.context_id != target.context_id:
+            pm.drop_card_variables(existing.target.context_id)
         key_store.assign(target.device_id, page_id, target.key_index, target, settings, bindings, appearance)
         pm.store_settings(target, settings)
         pm.set_bindings(target, bindings)
@@ -665,6 +667,7 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         if assignment is None:
             return False
         key_store.unassign(device_id, page_id, key_index)
+        self._context.plugin_manager.drop_card_variables(assignment.target.context_id)
         if self._is_active_page(device_id, page_id):
             self._context.plugin_manager.deactivate_card(assignment.target)
             self._context.device_manager.clear_key_state(device_id, key_index)
@@ -691,6 +694,8 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         # the store goes first: a refused or failed write must leave the live instances as they were
         if not ctx.key_assignment_store.move(device_id, page_id, from_index, to_index):
             return False
+        if replaced is not None:
+            ctx.plugin_manager.drop_card_variables(replaced.target.context_id)
         if active:
             ctx.plugin_manager.deactivate_card(source.target)
             if replaced is not None:
@@ -719,6 +724,8 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
         replaced = ctx.key_assignment_store.get(device_id, page_id, to_index)
         if ctx.key_assignment_store.copy_key(device_id, page_id, from_index, to_index, uuid.uuid4().hex) is None:
             return False
+        if replaced is not None:
+            ctx.plugin_manager.drop_card_variables(replaced.target.context_id)
         if active:
             if replaced is not None:
                 ctx.plugin_manager.deactivate_card(replaced.target)

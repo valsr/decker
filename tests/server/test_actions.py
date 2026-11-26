@@ -12,7 +12,7 @@ from assertpy import assert_that
 from decker.plugin.bindings import NOTHING_ACTION_ID
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import PluginManifest
-from decker.server.action_calls import ActionCall
+from decker.server.action_calls import ActionCall, BindingRef
 from decker.server.actions import (
     MAX_CALL_TIMEOUT_S,
     ActionResult,
@@ -163,8 +163,8 @@ class TestProtocol4:
     def test_args_are_resolved_for_the_device_before_sending(self):
         seen: list[Any] = []
 
-        def resolve(spec: Any, args: Any, device: Any) -> dict[str, Any]:
-            seen.append((spec.id, dict(args), device))
+        def resolve(spec: Any, args: Any, call: Any) -> dict[str, Any]:
+            seen.append((spec.id, dict(args), call.device))
             return {"n": 99}
 
         runner, supervisor, _ = self._plugin_runner(resolve)
@@ -262,8 +262,8 @@ class _Rig:
         self.runner.register(_plugin([_ECHO, _GLOBAL]))
         self.runner.register(_plugin([_OTHER_PRIVATE, _OTHER_GLOBAL], "com.t.other"))
 
-    def _resolve(self, _spec: Any, args: Any, device: Any) -> dict[str, Any]:
-        self.devices.append(device)
+    def _resolve(self, _spec: Any, args: Any, call: Any) -> dict[str, Any]:
+        self.devices.append(call.device)
         return dict(args)
 
     def _send(self, plugin_id: str, message: Any) -> None:
@@ -677,3 +677,86 @@ class TestMayDrive:
         runner, _ = self._runner_with(None)
 
         assert_that(runner.may_drive("com.t.act", "r1", "dev1")).is_false()
+
+
+_VARS = {
+    "id": "com.t.act.vars",
+    "name": "Vars",
+    "variables": [{"name": "pid", "description": ""}],
+}
+
+
+class TestFinishedAndSlots:
+    def _rig(self, answer: Any = None) -> tuple[_Rig, list[tuple[ActionCall, ActionResult]]]:
+        finished: list[tuple[ActionCall, ActionResult]] = []
+        rig = _Rig(answer)
+        rig.runner._on_finished = lambda c, r: finished.append((c, r))  # pylint: disable=protected-access
+        rig.runner.register(_plugin([_VARS]))
+        return rig, finished
+
+    def test_a_call_with_a_ref_reports_when_it_ends(self) -> None:
+        rig, finished = self._rig(lambda _p: {"ok": True})
+
+        rig.runner.execute(_call("com.t.act.echo", ref=BindingRef("c", "press")))
+
+        assert_that([(c.ref, r.ok) for c, r in finished]).is_equal_to([(BindingRef("c", "press"), True)])
+
+    def test_a_call_without_a_ref_or_do_nothing_does_not_report(self) -> None:
+        rig, finished = self._rig(lambda _p: {"ok": True})
+
+        rig.runner.execute(_call("com.t.act.echo"))
+        rig.runner.execute(_call(NOTHING_ACTION_ID, ref=BindingRef("c", "press")))
+
+        assert_that(finished).is_empty()
+
+    def test_a_timeout_and_a_stopped_plugin_report_failure(self) -> None:
+        rig, finished = self._rig()
+        rig.runner._timeout = 0.05  # pylint: disable=protected-access
+        rig.runner.execute(_call("com.t.act.echo", ref=BindingRef("c", "press")))
+        threading.Timer(0.05, lambda: rig.runner.plugin_stopped("com.t.act")).start()
+        rig.runner._timeout = 5  # pylint: disable=protected-access
+        rig.runner.execute(_call("com.t.act.echo", ref=BindingRef("c", "press")))
+
+        assert_that([r.error for _, r in finished]).is_equal_to(["timed out", "the plugin stopped"])
+
+    def test_variable_target_needs_the_owner_and_a_live_call(self) -> None:
+        rig, _ = self._rig()
+        call = _call("com.t.act.vars", ref=BindingRef("c", "press"))
+        threading.Thread(target=rig.runner.execute, args=(call,), daemon=True).start()
+        _wait_sent(rig)
+        request = rig.sent[0]["request"]
+
+        found = rig.runner.variable_target("com.t.act", request)
+
+        assert found is not None
+        assert_that(found[0].ref).is_equal_to(BindingRef("c", "press"))
+        assert_that(found[1].id).is_equal_to("com.t.act.vars")
+        assert_that(rig.runner.variable_target("com.t.other", request)).is_none()
+        assert_that(rig.runner.variable_target("com.t.act", "nope")).is_none()
+        assert_that(rig.runner.variable_target("com.t.act", 5)).is_none()
+        rig.runner.on_result("com.t.act", {"request": request, "ok": True})
+        assert_that(rig.runner.variable_target("com.t.act", request)).is_none()
+
+    def test_a_slotted_child_gets_the_parents_binding_and_a_grandchild_gets_none(self) -> None:
+        rig, finished = self._rig(lambda p: {"ok": True} if p["action"] != "com.t.act.vars" else None)
+        parent = _call("com.t.act.vars", ref=BindingRef("c", "press"))
+        threading.Thread(target=rig.runner.execute, args=(parent,), daemon=True).start()
+        _wait_sent(rig)
+        outer = rig.sent[0]["request"]
+
+        rig.call("com.t.act", request="r1", parent=outer, slot="step_1")
+        rig.call("com.t.act", request="r2", parent=outer)
+        rig.call("com.t.act", request="r3", parent="missing", slot="step_3")
+
+        refs = [c.ref for c, _ in finished]
+        assert_that(refs).is_equal_to([BindingRef("c", "press", "step_1")])
+        rig.runner.on_result("com.t.act", {"request": outer, "ok": True})
+
+    @pytest.mark.parametrize("slot", ["status", "Bad", "x" * 33, 5])
+    def test_a_bad_slot_fails_the_call(self, slot: Any) -> None:
+        rig, finished = self._rig(lambda _p: {"ok": True})
+
+        reply = rig.call("com.t.act", slot=slot)
+
+        assert_that(reply["error"]).is_equal_to("invalid slot")
+        assert_that(finished).is_empty()

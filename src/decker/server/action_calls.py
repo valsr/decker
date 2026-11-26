@@ -19,6 +19,15 @@ def _now() -> datetime:
 
 
 @dataclass(frozen=True)
+class BindingRef:
+    """The card binding (and optional slot) whose variables a call reads and writes."""
+
+    context: str
+    binding: str
+    slot: str | None = None
+
+
+@dataclass(frozen=True)
 class ActionCall:
     """One request to run an action, with where it came from."""
 
@@ -33,6 +42,7 @@ class ActionCall:
     called_at: datetime = field(default_factory=_now)
     timeout: float | None = None
     parent: str | None = None
+    ref: BindingRef | None = None
 
     def payload(self, request: str, args: Mapping[str, Any]) -> dict[str, Any]:
         """The ``run_action`` payload for a plugin."""

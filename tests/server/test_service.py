@@ -346,6 +346,17 @@ class TestKeyAssign:
         service.key_assign("dev1", P1, 0, "com.q", "com.q.b", "ctx2")
         manager.deactivate_card.assert_called_once_with(target)
 
+    def test_assign_replacing_a_card_drops_its_variables(self, service, manager, store):
+        store.assign("dev1", P1, 0, _make_target(), {})
+        service.key_assign("dev1", P1, 0, "com.q", "com.q.b", "ctx2")
+        manager.drop_card_variables.assert_called_once_with(_make_target().context_id)
+
+    def test_assign_over_the_same_instance_keeps_its_variables(self, service, manager, store):
+        target = _make_target()
+        store.assign("dev1", P1, 0, target, {})
+        service.key_assign("dev1", P1, 0, target.plugin_uuid, target.card_uuid, target.context_id)
+        manager.drop_card_variables.assert_not_called()
+
     def test_key_assign_stores_bindings_json(self, service, store) -> None:
         bindings = {"press": {"action": "com.p.go", "args": {"n": 1}}}
         service.key_assign("dev1", P1, 0, "com.p", "com.p.a", "ctx1", "{}", json.dumps(bindings))
@@ -370,6 +381,12 @@ class TestKeyUnassign:
         assert_that(result).is_true()
         manager.deactivate_card.assert_called_once_with(target)
         assert_that(store.get("dev1", P1, 0)).is_none()
+
+    def test_unassign_drops_the_card_variables(self, service, manager, store):
+        target = _make_target()
+        store.assign("dev1", P1, 0, target, {})
+        service.key_unassign("dev1", P1, 0)
+        manager.drop_card_variables.assert_called_once_with(target.context_id)
 
     def test_unassign_returns_false_when_unassigned(self, service, manager):
         result = service.key_unassign("dev1", P1, 0)
@@ -1193,6 +1210,24 @@ class TestKeyMoveAndCopy:
         manager.activate_card.assert_called_once_with(moved.target, {"background": {"color": "#ff0000"}})
         names = [c[0] for c in order.mock_calls]
         assert_that(names.index("dm.clear_key_state")).is_less_than(names.index("pm.activate_card"))
+
+    def test_move_drops_only_the_replaced_card_variables(self, service, manager, store):
+        self._seed(service, store)
+        replaced = store.get("dev1", P1, 4).target.context_id
+        self._reset(manager, service)
+
+        service.key_move("dev1", P1, 0, 4)
+
+        manager.drop_card_variables.assert_called_once_with(replaced)
+
+    def test_copy_drops_only_the_replaced_card_variables(self, service, manager, store):
+        self._seed(service, store)
+        replaced = store.get("dev1", P1, 4).target.context_id
+        self._reset(manager, service)
+
+        service.key_copy("dev1", P1, 0, 4)
+
+        manager.drop_card_variables.assert_called_once_with(replaced)
 
     def test_move_on_an_inactive_page_only_changes_rows_and_cached_state(self, service, manager, store):
         other = service._context.page_store.add_page("dev1", "Other")  # pylint: disable=protected-access
