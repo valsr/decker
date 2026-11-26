@@ -139,6 +139,7 @@ class ActionRunner:
                 "scope": spec.scope,
                 "returns": spec.returns,
                 "cards": [card.id for card in plugin.manifest.cards if spec.id in card.actions],
+                "variables": [{"name": v.name, "description": v.description} for v in spec.variables],
             }
             for plugin, spec in entries
         ]

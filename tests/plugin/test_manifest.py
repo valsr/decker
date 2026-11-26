@@ -7,6 +7,7 @@ from assertpy import assert_that
 
 from decker.common.platforms import PlatformSpec
 from decker.plugin.manifest import (
+    ActionVariable,
     ManifestValidationError,
     PluginManifest,
     declared_options_sources,
@@ -751,3 +752,35 @@ def test_card_actions_duplicate_rejected() -> None:
 def test_preset_cannot_declare_actions() -> None:
     with pytest.raises(ManifestValidationError, match="unknown key.*actions"):
         PluginManifest.from_dict(_preset_manifest({"actions": ["com.x.go"]}))
+
+
+def _action_manifest(**action: Any) -> dict[str, Any]:
+    data = _counter()
+    data["contributes"]["actions"] = [{"id": "com.decker.counter.act", "name": "Act", **action}]
+    return data
+
+
+def test_action_variables_parse() -> None:
+    data = _action_manifest(variables=[{"name": "pid", "description": "process id"}])
+    manifest = PluginManifest.from_dict(data)
+    assert_that(manifest.actions[0].variables).is_equal_to((ActionVariable("pid", "process id"),))
+
+
+def test_action_without_variables_has_none() -> None:
+    manifest = PluginManifest.from_dict(_action_manifest())
+    assert_that(manifest.actions[0].variables).is_equal_to(())
+
+
+@pytest.mark.parametrize(
+    "variables",
+    [
+        [{"name": "status"}],
+        [{"name": "Bad"}],
+        [{"name": "pid"}, {"name": "pid"}],
+        {"name": "pid"},
+        [{"description": "no name"}],
+    ],
+)
+def test_invalid_action_variables_rejected(variables: Any) -> None:
+    with pytest.raises(ManifestValidationError):
+        PluginManifest.from_dict(_action_manifest(variables=variables))

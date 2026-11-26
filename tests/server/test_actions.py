@@ -196,6 +196,14 @@ class TestProtocol4:
         assert_that(runner.scope_of("com.t.act.echo")).is_equal_to(("com.t.act", "global"))
         assert_that(runner.scope_of("nope")).is_none()
 
+    def test_listing_reports_variables(self):
+        runner, _ = _runner()
+        runner.register(_plugin([{**_ECHO, "variables": [{"name": "pid", "description": "process id"}]}]))
+
+        listed = runner.listing(lambda _p, _s: "")
+
+        assert_that(listed[0]["variables"]).is_equal_to([{"name": "pid", "description": "process id"}])
+
 
 def _carded_plugin(actions: list[dict[str, Any]], cards: list[dict[str, Any]]) -> InstalledPlugin:
     data: dict[str, Any] = {

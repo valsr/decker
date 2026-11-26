@@ -10,6 +10,7 @@ from typing import Any, Literal, cast
 from packaging.requirements import InvalidRequirement, Requirement
 
 from decker.common.appearance_schema import APPEARANCE_KEYS
+from decker.common.card_variables import RESERVED_NAME, is_valid_name
 from decker.common.icon_ref import parse_icon_ref
 from decker.common.platforms import PlatformSpec, parse_platform_spec
 from decker.common.variables import (
@@ -100,6 +101,14 @@ class PresetSpec:
 
 
 @dataclass(frozen=True)
+class ActionVariable:
+    """A per-card variable an action declares it may set."""
+
+    name: str
+    description: str = ""
+
+
+@dataclass(frozen=True)
 class ActionSpec:
     """A headless action a plugin contributes: code to run with settings, drawing nothing."""
 
@@ -111,6 +120,7 @@ class ActionSpec:
     scope: Literal["global", "plugin"] = "plugin"
     returns: str = ""
     timeout: int | None = None
+    variables: tuple[ActionVariable, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -457,7 +467,24 @@ def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
         scope=_parse_scope(entry.get("scope", "plugin"), action_id),
         returns=_parse_returns(entry.get("returns", ""), action_id),
         timeout=_parse_timeout(entry.get("timeout"), action_id),
+        variables=_parse_action_variables(entry.get("variables", []), action_id),
     )
+
+
+def _parse_action_variables(value: Any, action_id: str) -> tuple[ActionVariable, ...]:
+    if not isinstance(value, list):
+        raise ManifestValidationError(f"action {action_id} variables must be a list")
+    result: list[ActionVariable] = []
+    for item in value:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise ManifestValidationError(f"action {action_id} has an invalid variable entry: {item!r}")
+        name = item["name"]
+        if not is_valid_name(name) or name == RESERVED_NAME:
+            raise ManifestValidationError(f"action {action_id} variable name {name!r} is invalid or reserved")
+        if any(v.name == name for v in result):
+            raise ManifestValidationError(f"action {action_id} declares variable {name!r} twice")
+        result.append(ActionVariable(name, str(item.get("description") or "")))
+    return tuple(result)
 
 
 def _parse_timeout(value: Any, action_id: str) -> int | None:
