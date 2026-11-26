@@ -854,6 +854,22 @@ class DeckerService(Service):  # pylint: disable=too-many-public-methods  # one 
             return ""
 
     @exposed
+    @api_response
+    def key_variables(self, device_id: str, page_id: str, key_index: int) -> dict[str, Any]:
+        """
+        Return the action variables of a key's card as ``{binding: {name: value, slot: {name: value}}}``.
+
+        Returns:
+            dict: Empty when the key is empty, the page is unknown or nothing has been stored yet.
+        """
+        if self._context is None:
+            return {}
+        assignment = self._context.key_assignment_store.get(device_id, page_id, key_index)
+        if assignment is None:
+            return {}
+        return self._context.plugin_manager.card_variables.snapshot(assignment.target.context_id)
+
+    @exposed
     def key_animation(self, animation_id: str) -> str:
         """
         Return the composed animated image of an animated key, by the animation_id of its state event.
