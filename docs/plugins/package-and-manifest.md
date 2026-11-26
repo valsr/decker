@@ -80,7 +80,7 @@ with a message naming the format, and there is no compatibility layer: a plugin 
 | `version` | yes | Semantic version `x.y.z` (pre-release/build suffixes allowed). |
 | `description`, `homepage`, `category` | no | Strings. |
 | `icon` | no | Path inside the package; the extension is optional (looked up as `.svg`, `@2x.png`, `.png`). A built-in Font Awesome short reference (`fas:`, `far:` or `fab:`, such as `fas:play`; see [Images](protocol.md#images)) names a bundled icon instead of a file, and is the usual choice for plugin and card icons. Values starting with `pack:` are reserved. |
-| `decker` | no (yes for `variables`, `options_source` and `presets`) | Version specifier for Decker, e.g. `>=0.7` (format 3 needs Decker 0.7). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker refuses a field without `options`, and on one with `options` it ignores `options_source`, so the field becomes a plain static choice that replaces an unlisted saved value. |
+| `decker` | no (yes for `variables`, action `variables`, `options_source` and `presets`) | Version specifier for Decker, e.g. `>=0.7` (format 3 needs Decker 0.7). Install is refused if the running server does not satisfy it. Set it to the release that supports a feature you use, for example `options_source` on a `choice` field: an older Decker refuses a field without `options`, and on one with `options` it ignores `options_source`, so the field becomes a plain static choice that replaces an unlisted saved value. |
 | `runtime` | for `actions` (every action runs in its plugin's process), for `variables`, for `options_source` fields and for `cards` that are not `static` | See below. |
 | `global_settings` | no | [Settings schema](settings-schema.md) for plugin-wide settings, shown in Settings, Plugins. |
 | `permissions` | no | Reserved, ignored in v1. |
@@ -197,6 +197,7 @@ them with `call_action`.
 | `settings` | [Settings schema](settings-schema.md) for the action's arguments, including the validation rules `required`, `pattern`, `min_length` and `max_length`. |
 | `returns` | Optional text describing the return value. Documentation only: it is shown to users and never checked. |
 | `timeout` | Optional whole seconds, 1 to 300: how long a run may take before the server gives up. Default 30. A caller's own `timeout` wins, and a nested call never outlives the action that made it. |
+| `variables` | Optional list of `{"name", "description?"}`: the per-card variables the action may set with `ctx.set_variable` (see [Action variables](#action-variables)). |
 
 A plugin with actions needs a `runtime`: Decker starts the plugin and sends `run_action` (see the
 [protocol](protocol.md)). Decker itself ships four actions in the built-in Core plugin, all `global`: **Do Nothing**
@@ -204,6 +205,42 @@ A plugin with actions needs a `runtime`: Decker starts the plugin and sends `run
 (`com.decker.core.httprequest`, returns `{"status", "body"}`), **Delay** (`com.decker.core.delay`, waits 0 to 60
 seconds, manifest `timeout` 65) and **Sequence** (`com.decker.core.sequence`, runs up to ten actions in order within
 300 seconds, manifest `timeout` 300).
+
+#### Action variables
+
+Each of a key's three bindings (`press`, `double_press`, `long_press`) has variables of its own, so one binding can use
+what another produced: a card whose press starts a program and whose long press stops it can pass `{press.pid}`.
+
+```json
+{ "id": "com.example.runner.start", "variables": [ { "name": "pid", "description": "Process id of the program" } ] }
+```
+
+- **Declaring.** `name` matches `[a-z][a-z0-9_-]*` and may not be `status`; duplicates in one action are a manifest
+  error. An action can set only the names it declares. `status` is reserved and not declarable: the server sets it on
+  every binding when its action finishes, to `SUCCESS` if the action returned and `FAILURE` if it raised, timed out,
+  was refused or its plugin failed. Do Nothing never touches `status`.
+- **Setting.** `ctx.set_variable(name, value)` (see the [SDK](sdk-quickstart.md#action-variables)) stores the
+  value on the binding that ran the action. Values are JSON, finite numbers only, at most 64 KiB encoded. A nested
+  call has no binding unless its caller gives it a *slot*, so `set_variable` in an unslotted nested call is refused.
+- **Slots.** `call_action(..., slot="step_1")` gives a nested call variables and a `status` of its own, read as
+  `{press.step_1.pid}`. A slot matches `[a-z][a-z0-9_-]*`, at most 32 characters, and may not be `status`; a bad slot
+  fails the call. There is one level: only a call made by a gesture binding's own action can pass a slot, and a
+  slotted call's own nested calls get none. **Sequence** labels its steps `step_1` to `step_10`.
+- **Reading.** `{<binding>.<name>}` and `{<binding>.<slot>.<name>}` expand in the arguments of any action of the same
+  card, when the action runs (values change between presses and between Sequence steps). Examples: `{press.pid}`,
+  `{double_press.status}`, `{long_press.status}`, `{press.step_1.pid}`. Only settings fields of type `text` or
+  `text_style` with `"template": true` expand, so a whole-value reference is always text: null (not yet set) is empty,
+  strings are as is and everything else is its JSON text. Core's HTTP Request expands `url` but not `body`, because
+  `{{` and `}}` are template escapes and would corrupt a JSON body.
+- **Left as typed.** A two-part reference is expanded only when the binding's action declared that name (or it is
+  `status`); an undeclared name or unknown qualifier stays as typed, so it cannot clash with global `{name}` variables.
+  A three-part slot reference is never left as typed: unset reads as empty. Write literal braces as `{{` and `}}`.
+- **Lifetime.** Variables live in server memory only. They survive page and profile switches and moving the key, are
+  dropped when the key is unassigned or its card replaced, and at server restart. Changing a binding's *action*
+  resets that binding's variables and slots to unset; editing only its arguments does not. A key's variables are
+  listed by the `key_variables(device_id, page_id, key_index)` RPC, as `{binding: {name: value, slot: {name: value}}}`
+  (empty for an empty key).
+- A plugin that declares action `variables` needs `"decker": ">=0.8"` and protocol 6.
 
 ### What changed in format 3
 

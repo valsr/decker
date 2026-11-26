@@ -76,6 +76,7 @@ larger than 1 MiB is an error.
 | `args` | The validated arguments (a `dict`) |
 | `caller` | The calling plugin's id for `plugin` calls, else `None` |
 | `device_id` | The device the call runs for (from the card or the chain), else `None` |
+| `set_variable(name, value)` | Set one of the action's declared [variables](#action-variables) on the binding that ran it |
 | `switch_page(to, wrap)`, `go_to_page(page_id)`, `switch_profile(to, wrap)`, `go_to_profile(profile_id)` | Navigate `device_id` while the call runs; raise `ActionError("no device for this call")` when it is `None` |
 
 ### CardProxy
@@ -97,6 +98,25 @@ For a card of the **same plugin** the proxy is an `OwnCardProxy`: it also has `i
 action can change its state) and `set_settings(dict)`; it stays usable after the call and its `queue_paint()` runs
 `on_paint`. For a card of **another plugin** there is no setter, config writes are refused, and the card is touchable
 only until the action returns (see [Foreign cards](protocol.md#foreign-cards)); drawing on it or sending it a command later raises `RuntimeError`.
+
+### Action variables
+
+An action that lists `variables` in its manifest (see [Action variables](package-and-manifest.md#action-variables);
+needs `"decker": ">=0.8"`, protocol 6) sets them on the key's binding, where the card's other bindings read them as
+`{press.pid}` in `template: true` text fields:
+
+```python
+@action("com.example.runner.start")
+def start(ctx: ActionCallContext) -> None:
+    ctx.set_variable("pid", launch(ctx.args["command"]))   # JSON value, finite numbers, at most 64 KiB
+```
+
+`ctx.set_variable` blocks until the server answers (up to 10 s), so the value is stored before the action ends, and
+raises `ActionError` when refused: a name the action did not declare, `status` (reserved), a value that is not JSON or
+too large, or a nested call that has no binding. Give a nested call a binding with a slot,
+`call_action(other, args, slot="step_1")`: the callee's variables and its `status` then live under
+`{press.step_1.<name>}` (one level; Sequence uses `step_1` to `step_10`). Variables survive page switches and key moves
+and are dropped on unassign, replace and server restart.
 
 ### Calling actions
 

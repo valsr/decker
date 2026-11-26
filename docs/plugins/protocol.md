@@ -133,6 +133,25 @@ action; Do Nothing is handled by the server and never sent. A plugin may also st
   usual `to`/`wrap`/`page_id`/`profile_id`. The server drops it (logged once per plugin) when the call has ended, belongs
   to another plugin or has another device.
 
+## Action variables
+
+Protocol 6. The bindings of a key keep per-card variables (see
+[Action variables](package-and-manifest.md#action-variables) for names, slots, reading and lifetime).
+
+- `set_variable` carries the `request` of the `run_action` that is running. The server maps it to the binding (and
+  slot) of that run and stores `value` under `name`; the name must be one the running action declared, not `status`.
+  The value is JSON, finite numbers only, at most 64 KiB encoded. It always answers with `set_variable_result` (same
+  `id`); refused when no such call is running, when the call has no binding (a nested call without a slot), for an
+  undeclared or reserved name and for a bad value. The first refusal per plugin is logged at warning level.
+- `call_action` takes an optional `slot`. When the call's `parent` is a run of a gesture binding's own action, the
+  call belongs to that binding and slot: its `set_variable` events write the slot's variables and its end sets the
+  slot's `status`. A slot matches `[a-z][a-z0-9_-]*`, at most 32 characters, not `status`; a bad slot fails the call.
+  A slotted call's own nested calls get no slot.
+- The server sets `status` (`SUCCESS`/`FAILURE`) on a binding when its action's `run_action` finishes. It is not
+  something a plugin sends.
+- The server expands `{press.pid}`, `{double_press.status}`, `{long_press.status}` and `{press.step_1.pid}` in
+  `template: true` text arguments before `run_action` is sent, so the plugin receives the expanded `args`.
+
 ## Foreign cards
 
 A plugin may touch a card of **another plugin** only while a `run_action` that carried that card is in flight: it sends
