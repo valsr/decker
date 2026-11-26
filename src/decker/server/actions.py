@@ -66,6 +66,7 @@ class ActionRunner:
         self._resolve = resolve
         self._timeout = timeout
         self._on_finished = on_finished
+        self.has_slot_room: Callable[[BindingRef], bool] = lambda _ref: True
         self._lock = threading.Lock()
         self._actions: dict[str, tuple[InstalledPlugin, ActionSpec]] = {}
         self._pending: dict[str, _Pending] = {}
@@ -267,6 +268,8 @@ class ActionRunner:
             return ActionResult(False, "invalid slot")
         parent = payload.get("parent")
         ref = self._slot_ref(plugin_id, parent, slot) if isinstance(parent, str) else None
+        if ref is not None and not self.has_slot_room(ref):
+            return ActionResult(False, "too many slots")
         refused = self._refused_call(plugin_id, payload)
         if refused is not None:
             self._finished(ActionCall(str(payload.get("action")), {}, "plugin", ref=ref), refused)
@@ -307,7 +310,8 @@ class ActionRunner:
         target = self.variable_target(plugin_id, parent) if slot is not None else None
         if target is None or target[0].ref is None or target[0].ref.slot is not None:
             return None
-        return BindingRef(target[0].ref.context, target[0].ref.binding, slot)
+        parent_ref = target[0].ref
+        return BindingRef(parent_ref.context, parent_ref.binding, slot, parent_ref.declared)
 
     def _refusal(self, plugin_id: str, action: str) -> str:
         if action == NOTHING_ACTION_ID:

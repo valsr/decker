@@ -200,7 +200,7 @@ class TestSlots:
         _bind(env, press={"action": _SLOTS, "args": {}})
         _run_and_wait_status(env)
 
-        assert_that(_wait(lambda: any("refused" in line for line in _log(env, "setvar.log")))).is_true()
+        assert_that(_wait(lambda: "unattached" in _log(env, "setvar.log"))).is_true()
         assert_that(_vars(env)["press"]).does_not_contain_key("pid")
 
     def test_bad_slots_fail_the_call(self, env: _Env) -> None:
@@ -216,4 +216,35 @@ class TestSlots:
 
         assert_that(_wait(lambda: "step_5" in _vars(env).get("press", {}))).is_true()
         assert_that(_vars(env)["press"]["step_5"]).does_not_contain_key("deep")
-        assert_that(_wait(lambda: any("refused" in line for line in _log(env, "setvar.log")))).is_true()
+        assert_that(_wait(lambda: _log(env, "setvar.log").count("unattached") == 2)).is_true()
+
+
+_LINGER = "com.decker.acttest.lingering"
+_FLOOD = "com.decker.acttest.flood"
+
+
+class TestFixWave:
+    def test_references_expand_after_the_card_is_deactivated_mid_run(self, env: _Env) -> None:
+        _bind(env, press={"action": _LINGER, "args": {}})
+        env.manager.card_variables.set(_TILE.context_id, "press", "pid", "123")
+        env.press(_TILE)
+        assert_that(_wait(lambda: env.read("started") != "")).is_true()
+
+        env.manager.deactivate_card(_TILE)
+        (env.plugin_dir / "go").write_text("1", encoding="utf-8")
+
+        assert_that(_wait(lambda: _log(env, "echo.log") != [])).is_true()
+        assert_that(_log(env, "echo.log")).is_equal_to(["saw 123 "])
+
+    def test_new_slots_beyond_the_cap_are_refused_and_not_created(self, env: _Env) -> None:
+        _bind(env, press={"action": _FLOOD, "args": {}})
+        _run_and_wait_status(env)
+
+        assert_that(_wait(lambda: len(_log(env, "flood.log")) == 35)).is_true()
+        lines = _log(env, "flood.log")
+        assert_that(lines[31]).is_equal_to("31 ok")
+        assert_that(lines[32]).contains("too many slots")
+        assert_that(lines[33]).contains("too many slots")
+        assert_that(lines[34]).is_equal_to("0 ok")
+        slots = [key for key in _vars(env)["press"] if key.startswith("s") and key != "status"]
+        assert_that(slots).is_length(32)

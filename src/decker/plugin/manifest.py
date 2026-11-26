@@ -474,6 +474,10 @@ def _parse_action(entry: Any, plugin_id: str) -> ActionSpec:
 def _parse_action_variables(value: Any, action_id: str) -> tuple[ActionVariable, ...]:
     if not isinstance(value, list):
         raise ManifestValidationError(f"action {action_id} variables must be a list")
+    if len(value) > card_variables.MAX_ACTION_VARIABLES:
+        raise ManifestValidationError(
+            f"action {action_id} may declare at most {card_variables.MAX_ACTION_VARIABLES} variables"
+        )
     result: list[ActionVariable] = []
     for item in value:
         if not isinstance(item, dict) or not isinstance(item.get("name"), str):

@@ -20,11 +20,16 @@ def _now() -> datetime:
 
 @dataclass(frozen=True)
 class BindingRef:
-    """The card binding (and optional slot) whose variables a call reads and writes."""
+    """The card binding (and optional slot) whose variables a call reads and writes.
+
+    ``declared`` is the names each binding's action declared when the gesture fired, so references keep expanding
+    after the card leaves the screen.
+    """
 
     context: str
     binding: str
     slot: str | None = None
+    declared: Mapping[str, frozenset[str]] | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

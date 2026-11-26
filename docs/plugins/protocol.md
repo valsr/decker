@@ -142,11 +142,16 @@ Protocol 6. The bindings of a key keep per-card variables (see
   slot) of that run and stores `value` under `name`; the name must be one the running action declared, not `status`.
   The value is JSON, finite numbers only, at most 64 KiB encoded. It always answers with `set_variable_result` (same
   `id`); refused when no such call is running, when the call has no binding (a nested call without a slot), for an
-  undeclared or reserved name and for a bad value. The first refusal per plugin is logged at warning level.
+  undeclared or reserved name and for a bad value. A refusal for a call with no binding also carries
+  `"code": "unattached"` (the SDK returns `False` for it instead of raising). The first refusal per plugin is logged at
+  warning level.
 - `call_action` takes an optional `slot`. When the call's `parent` is a run of a gesture binding's own action, the
   call belongs to that binding and slot: its `set_variable` events write the slot's variables and its end sets the
   slot's `status`. A slot matches `[a-z][a-z0-9_-]*`, at most 32 characters, not `status`; a bad slot fails the call.
-  A slotted call's own nested calls get no slot.
+  A slotted call's own nested calls get no slot. A valid slot passed where slots are not allowed (the parent is not a
+  gesture run of the caller, or the call is already slotted) is ignored: the call runs unslotted and is not failed.
+  A binding keeps at most 32 slots: a call that would create a 33rd fails with `too many slots` and records nothing
+  (existing slots keep working).
 - The server sets `status` (`SUCCESS`/`FAILURE`) on a binding when its action's `run_action` finishes. It is not
   something a plugin sends.
 - The server expands `{press.pid}`, `{double_press.status}`, `{long_press.status}` and `{press.step_1.pid}` in

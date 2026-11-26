@@ -108,12 +108,18 @@ needs `"decker": ">=0.8"`, protocol 6) sets them on the key's binding, where the
 ```python
 @action("com.example.runner.start")
 def start(ctx: ActionCallContext) -> None:
-    ctx.set_variable("pid", launch(ctx.args["command"]))   # JSON value, finite numbers, at most 64 KiB
+    pid = launch(ctx.args["command"])   # your own code: start the program, return its process id
+    if not ctx.set_variable("pid", pid):   # JSON value, finite numbers, at most 64 KiB
+        # False: this call has no card binding (nested without a slot, or called by another plugin);
+        # the variable was not stored, but the action can carry on
+        log_warning("no binding to store pid on")
 ```
 
-`ctx.set_variable` blocks until the server answers (up to 10 s), so the value is stored before the action ends, and
-raises `ActionError` when refused: a name the action did not declare, `status` (reserved), a value that is not JSON or
-too large, or a nested call that has no binding. Give a nested call a binding with a slot,
+`ctx.set_variable` blocks until the server answers (up to 10 s), so the value is stored before the action ends. It
+returns `True` when stored and `False` when the call has no card binding (a nested call without a slot), so an action
+works the same on its own and nested. It raises `ActionError` for author errors: a name the action did not declare,
+`status` (reserved), a value that is not JSON or too large, or no answer in time. A binding keeps at most 32 slots.
+Give a nested call a binding with a slot,
 `call_action(other, args, slot="step_1")`: the callee's variables and its `status` then live under
 `{press.step_1.<name>}` (one level; Sequence uses `step_1` to `step_10`). Variables survive page switches and key moves
 and are dropped on unassign, replace and server restart.
@@ -131,7 +137,7 @@ except ActionError as exc:   # refused, failed or timed out; the message says wh
 result = await call_action_async("com.example.hello.sendwave", {"times": 2})  # in async code
 ```
 
-`call_action(action_id, args=None, timeout=None, device=None, slot=None)` (`slot` names the caller's variable slot, protocol 6; `ctx.set_variable(name, value)` sets a variable from an action and raises `ActionError` if refused) blocks until the action returns its value and raises
+`call_action(action_id, args=None, timeout=None, device=None, slot=None)` (`slot` names the caller's variable slot, protocol 6; `ctx.set_variable(name, value)` sets a variable from an action, returning `False` if the call has no binding and raising `ActionError` if refused) blocks until the action returns its value and raises
 `ActionError` when the call is refused (see [Action calls](protocol.md#action-calls) for who may call what), fails or
 times out; `timeout` is capped at 300 s. `timeout=None` (the default) lets the server use the called action's manifest
 `timeout` (1-300 s) and otherwise 30 s; an explicit `timeout` overrides it. A nested call is also capped by the time its

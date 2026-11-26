@@ -255,6 +255,33 @@
         "tooltip": "Calls setvar with a slot",
         "scope": "plugin",
         "settings": []
+      },
+      {
+        "id": "com.decker.acttest.lingering",
+        "name": "Lingering",
+        "tooltip": "Waits for a go file, then echoes a reference",
+        "scope": "plugin",
+        "settings": [],
+        "timeout": 30,
+        "variables": [
+          {
+            "name": "pid",
+            "description": "A number"
+          }
+        ]
+      },
+      {
+        "id": "com.decker.acttest.flood",
+        "name": "Flood",
+        "tooltip": "Calls echo with 34 slots",
+        "scope": "plugin",
+        "settings": [],
+        "variables": [
+          {
+            "name": "pid",
+            "description": "A number"
+          }
+        ]
       }
     ]
   }

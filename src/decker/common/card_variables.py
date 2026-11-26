@@ -1,4 +1,4 @@
-"""Rules for per-card action variables: names, slots and value size."""
+"""Rules for per-card action variables: names, slots, value size and counts."""
 
 import json
 import re
@@ -8,6 +8,8 @@ NAME_PATTERN: re.Pattern[str] = re.compile(r"[a-z][a-z0-9_-]*")
 RESERVED_NAME = "status"
 MAX_SLOT_LENGTH = 32
 MAX_VALUE_BYTES = 64 * 1024
+MAX_SLOTS_PER_BINDING = 32
+MAX_ACTION_VARIABLES = 32
 
 
 def is_valid_name(name: str) -> bool:
