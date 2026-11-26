@@ -19,6 +19,7 @@ from ._proxy import CardProxy
 MAX_VALUE_BYTES = 1024 * 1024  # keep in sync with decker.plugin.protocol.MAX_VALUE_BYTES
 MAX_TIMEOUT = 300.0  # the server caps call timeouts here
 WAIT_AFTER_RACE = 1.0
+SET_VARIABLE_TIMEOUT = 10.0
 
 
 class Input(StrEnum):
@@ -45,11 +46,22 @@ class ActionCallContext:  # pylint: disable=too-many-instance-attributes
     _chain: str = ""
     _depth: int = 0
     _emit: Callable[[str, dict[str, Any]], None] | None = None
+    _set_var: Callable[[str, Any], None] | None = None
 
     def _navigate(self, event: str, payload: dict[str, Any]) -> None:
         if self.device_id is None or self._emit is None:
             raise ActionError("no device for this call")
         self._emit(event, {"request": self.request, "device": self.device_id, **payload})
+
+    def set_variable(self, name: str, value: Any) -> None:
+        """Set a variable this call may write, waiting for the server's answer; raises ActionError if refused."""
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ActionError("value is not JSON") from exc
+        if self._set_var is None:
+            raise ActionError("set_variable is not available here")
+        self._set_var(name, value)
 
     def switch_page(self, to: str = "next", wrap: bool = False) -> None:
         """Switch the call's device to the ``next``/``previous``/``first``/``last`` page; ``wrap`` loops at the ends."""
@@ -130,6 +142,38 @@ class CallHost:
         self._pool: ElasticPool = pool
         self._lock: threading.Lock = threading.Lock()
         self._pending: dict[str, _Waiter] = {}
+        self._pending_vars: dict[str, _Waiter] = {}
+
+    def deliver_set_variable(self, payload: dict[str, Any]) -> None:
+        """Hand a set_variable_result to its waiting caller; unknown ids are ignored."""
+        with self._lock:
+            waiter = self._pending_vars.pop(str(payload.get("id")), None)
+        if waiter is not None:
+            waiter.payload = payload
+            waiter.done.set()
+
+    def set_variable(self, request: str, name: str, value: Any) -> None:
+        """Send set_variable for a running call and wait for the answer; raises ActionError if refused."""
+        ident = uuid.uuid4().hex
+        waiter = _Waiter()
+        with self._lock:
+            self._pending_vars[ident] = waiter
+        try:
+            self._send("set_variable", None, {"id": ident, "request": request, "name": name, "value": value})
+        except BaseException:
+            with self._lock:
+                self._pending_vars.pop(ident, None)
+            raise
+        with self._pool.blocking():
+            arrived = waiter.done.wait(SET_VARIABLE_TIMEOUT)
+        if not arrived:
+            with self._lock:
+                self._pending_vars.pop(ident, None)
+            waiter.done.wait(WAIT_AFTER_RACE)  # an answer took the entry just before the timeout did
+        if not waiter.payload:
+            raise ActionError("set_variable timed out")
+        if not waiter.payload.get("ok"):
+            raise ActionError(str(waiter.payload.get("error") or "set_variable failed"))
 
     def deliver(self, payload: dict[str, Any]) -> None:
         """Hand a call_result to its waiting caller; unknown requests are ignored."""
@@ -143,7 +187,14 @@ class CallHost:
         """Mark the calling pool worker as waiting (see ElasticPool.blocking)."""
         return self._pool.blocking()
 
-    def call(self, action_id: str, args: dict[str, Any] | None, timeout: float | None, device: str | None) -> Any:
+    def call(  # pylint: disable=too-many-arguments
+        self,
+        action_id: str,
+        args: dict[str, Any] | None,
+        timeout: float | None,
+        device: str | None,
+        slot: str | None = None,
+    ) -> Any:
         """Send call_action and wait for its call_result; no timeout lets the server use the action's own."""
         if timeout is not None and (
             not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or timeout <= 0
@@ -163,6 +214,8 @@ class CallHost:
         device = device or (frame.device if frame is not None else None)
         if device:
             message["device"] = device
+        if slot is not None:
+            message["slot"] = slot
         waiter = _Waiter()
         with self._lock:
             self._pending[request] = waiter
@@ -197,21 +250,29 @@ def set_calls(host: CallHost | None) -> None:
 
 
 def call_action(
-    action_id: str, args: dict[str, Any] | None = None, timeout: float | None = None, device: str | None = None
+    action_id: str,
+    args: dict[str, Any] | None = None,
+    timeout: float | None = None,
+    device: str | None = None,
+    slot: str | None = None,
 ) -> Any:
     """Run an action through the server and return its value; raises ActionError on refusal, failure or timeout."""
     host = _CALLS
     if host is None:
         raise RuntimeError("no Decker plugin runtime is running")
-    return host.call(action_id, args, timeout, device)
+    return host.call(action_id, args, timeout, device, slot)
 
 
 async def call_action_async(
-    action_id: str, args: dict[str, Any] | None = None, timeout: float | None = None, device: str | None = None
+    action_id: str,
+    args: dict[str, Any] | None = None,
+    timeout: float | None = None,
+    device: str | None = None,
+    slot: str | None = None,
 ) -> Any:
     """call_action for coroutines; it waits on a thread so the event loop stays free."""
     host = _CALLS
     if host is None:
         raise RuntimeError("no Decker plugin runtime is running")
     with host.blocking():  # the pool worker running this loop is waiting too
-        return await asyncio.to_thread(call_action, action_id, args, timeout, device)
+        return await asyncio.to_thread(call_action, action_id, args, timeout, device, slot)

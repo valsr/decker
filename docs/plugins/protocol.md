@@ -28,13 +28,14 @@ discarded.
 
 | Event | Context | Payload |
 |-------|---------|---------|
-| `hello` | | `{"protocol": 5, "decker_version": "0.7.2", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
+| `hello` | | `{"protocol": 6, "decker_version": "0.7.2", "plugin_id": "com.example.hello", "global_settings": {...}}` (first message) |
 | `will_appear` | yes | `{"card": "<card id>", "device": "<device id>", "key": {"index": 0, "column": 0, "row": 0}, "size": [72, 72], "settings": {...}, "bindings": {...}, "state": 0}`. `size` is the key's pixel size; `bindings` the card's effective [bindings](package-and-manifest.md#bindings) as `{gesture: {"action", "args"}}`, read-only; `args` arrive resolved like `settings` (a `page` argument as the page object, a `profile` argument as the profile object, opted-in text expanded), and stay as stored for Do Nothing and for an action that is not installed |
 | `will_disappear` | yes | none |
 | `key_down`, `key_up` | yes | none (raw key events, for visual feedback; gestures are not sent to cards) |
 | `settings_changed` | yes | `{"settings": {...}, "bindings": {...}}`; also sent when the key's bindings are edited, or when a resolved binding argument changes (for example a page is renamed) |
 | `run_action` | | the call details, see [Action calls](#action-calls): run one of your [actions](package-and-manifest.md#actions) with its validated arguments and answer with `action_result` carrying the same `request`. Runs are independent of any key and may overlap |
 | `call_result` | | `{"request": "<id>", "ok": true, "value": ...}` or `{"request": "<id>", "ok": false, "error": "text"}`, answering your `call_action` (see [Action calls](#action-calls)) |
+| `set_variable_result` | | `{"id": "<id>", "ok": true}` or `{"id": "<id>", "ok": false, "error": "text"}`, answering `set_variable` (protocol 6) |
 | `image_result` | | `{"request": "<id>", "image": "<base64 PNG>"\|null, "format": "png"}`, answering `get_image` (see [Painting](#painting)) |
 | `global_settings_changed` | | `{"global_settings": {...}}` |
 | `device_connected` | | `{"device": "<device id>"}`: sent for every known device when you become ready, and whenever a deck connects or reconnects while you run (repeats are possible, treat it as a set) |
@@ -65,9 +66,10 @@ runs the bound actions.)
 | `switch_profile` | yes (or none, like `switch_page`, see [Action calls](#action-calls)) | `{"to": "next"\|"previous"\|"first"\|"last", "wrap": false}` or `{"profile_id": 2}`: switch the key's device to that profile's default page (see [Profiles](#profiles)) |
 | `set_global_settings` | | `{"settings": {...}}`, validated against `global_settings` and saved |
 | `action_result` | | `{"request": "<id>", "ok": true, "value": ...}` (`value` optional) or `{"request": "<id>", "ok": false, "error": "text"}`, answering `run_action`. `value` is any JSON, at most 1 MiB encoded, larger is an error. The server gives up after the call's timeout (the caller's `timeout`, else the action's manifest `timeout`, else 30 s) and shows the user the error |
-| `call_action` | | `{"request": "<id>", "action": "<action id>", "args": {...}, "timeout": 30, "chain": "<id>", "parent": "<request id>", "depth": 0, "device": "<device id>"}` (all but `request` and `action` optional): run an action and get its value, see [Action calls](#action-calls) |
+| `call_action` | | `{"request": "<id>", "action": "<action id>", "args": {...}, "timeout": 30, "chain": "<id>", "parent": "<request id>", "depth": 0, "device": "<device id>", "slot": "<slot>"}` (all but `request` and `action` optional): run an action and get its value, see [Action calls](#action-calls) |
 | `get_deck_brightness` | | `{"request": "<id>", "device": "<device id>"}`: ask for a deck's normal brightness; answered with `deck_brightness` (protocol 5) |
 | `set_deck_brightness` | | `{"device": "<device id>", "percent": 80}`: set a deck's normal brightness, clamped to 1-100 and stored as the screensaver's `brightness`. No reply; a non-integer percent or unknown device is logged by the server. Not throttled by Decker beyond the 100 msg/s per-plugin flood limit (protocol 5) |
+| `set_variable` | | `{"id": "<id>", "request": "<run_action request>", "name": "<variable>", "value": ...}`: set a variable the running action may write; answered with `set_variable_result`, which the SDK waits for up to 10 s (protocol 6) |
 | `get_image` | | `{"request": "<id>", "context": "<ctx>", "call": "<run_action request>"}`: ask for a key's current plugin image, see [Painting](#painting) |
 | `register_variable` | | `{"name": "<concrete name>"}`: announce a name inside one of your declared patterns (see [Variables](#variables)) |
 | `unregister_variable` | | `{"name": "<concrete name>"}`: withdraw it and its value |

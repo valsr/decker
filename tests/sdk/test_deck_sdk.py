@@ -105,7 +105,7 @@ def test_sdk_get_set_and_hook(hooks):
 
     rig = Rig()
     try:
-        rig.send("hello", {"protocol": 5, "decker_version": "x", "plugin_id": "t", "global_settings": {}})
+        rig.send("hello", {"protocol": 6, "decker_version": "x", "plugin_id": "t", "global_settings": {}})
         rig.recv_until("ready")
         result: list[int] = []
         getter = threading.Thread(target=lambda: result.append(sdk.get_deck_brightness("dev1")))
@@ -127,7 +127,7 @@ def test_sdk_get_set_and_hook(hooks):
 def test_sdk_brightness_errors(hooks):
     rig = Rig()
     try:
-        rig.send("hello", {"protocol": 5, "decker_version": "x", "plugin_id": "t", "global_settings": {}})
+        rig.send("hello", {"protocol": 6, "decker_version": "x", "plugin_id": "t", "global_settings": {}})
         rig.recv_until("ready")
         with pytest.raises(sdk.ActionError, match="no device"):
             sdk.get_deck_brightness()
