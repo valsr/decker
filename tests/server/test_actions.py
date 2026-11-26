@@ -760,3 +760,45 @@ class TestFinishedAndSlots:
 
         assert_that(reply["error"]).is_equal_to("invalid slot")
         assert_that(finished).is_empty()
+
+
+class TestRefusedSlottedCalls:
+    def _parent(self) -> tuple[_Rig, list[tuple[ActionCall, ActionResult]], str]:
+        finished: list[tuple[ActionCall, ActionResult]] = []
+        rig = _Rig(lambda p: {"ok": True} if p["action"] != "com.t.act.vars" else None)
+        rig.runner._on_finished = lambda c, r: finished.append((c, r))  # pylint: disable=protected-access
+        rig.runner.register(_plugin([_VARS]))
+        parent = _call("com.t.act.vars", ref=BindingRef("c", "press"))
+        threading.Thread(target=rig.runner.execute, args=(parent,), daemon=True).start()
+        _wait_sent(rig)
+        return rig, finished, rig.sent[0]["request"]
+
+    def _refused(self, **fields: Any) -> list[tuple[ActionCall, ActionResult]]:
+        rig, finished, outer = self._parent()
+        reply = rig.call("com.t.act", parent=outer, slot="step_2", **fields)
+        assert_that(reply["ok"]).is_false()
+        rig.runner.on_result("com.t.act", {"request": outer, "ok": True})
+        return [(c, r) for c, r in finished if c.ref == BindingRef("c", "press", "step_2")]
+
+    def test_an_unknown_action_records_failure_for_the_slot(self) -> None:
+        records = self._refused(action="com.t.nowhere.gone")
+
+        assert_that([r.ok for _, r in records]).is_equal_to([False])
+
+    def test_another_plugins_private_action_records_failure_for_the_slot(self) -> None:
+        records = self._refused(action="com.t.other.secret")
+
+        assert_that([r.ok for _, r in records]).is_equal_to([False])
+
+    def test_a_call_over_the_depth_limit_records_failure_for_the_slot(self) -> None:
+        records = self._refused(depth=99)
+
+        assert_that([r.ok for _, r in records]).is_equal_to([False])
+
+    def test_an_invalid_slot_records_nothing(self) -> None:
+        rig, finished, outer = self._parent()
+
+        rig.call("com.t.act", parent=outer, slot="Bad", action="com.t.nowhere.gone")
+
+        assert_that(finished).is_empty()
+        rig.runner.on_result("com.t.act", {"request": outer, "ok": True})
