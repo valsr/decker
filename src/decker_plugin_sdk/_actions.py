@@ -46,22 +46,22 @@ class ActionCallContext:  # pylint: disable=too-many-instance-attributes
     _chain: str = ""
     _depth: int = 0
     _emit: Callable[[str, dict[str, Any]], None] | None = None
-    _set_var: Callable[[str, Any], None] | None = None
+    _set_var: Callable[[str, Any], bool] | None = None
 
     def _navigate(self, event: str, payload: dict[str, Any]) -> None:
         if self.device_id is None or self._emit is None:
             raise ActionError("no device for this call")
         self._emit(event, {"request": self.request, "device": self.device_id, **payload})
 
-    def set_variable(self, name: str, value: Any) -> None:
-        """Set a variable this call may write, waiting for the server's answer; raises ActionError if refused."""
+    def set_variable(self, name: str, value: Any) -> bool:
+        """Set a variable this call may write; False if the call has no card binding, ActionError if refused."""
         try:
             json.dumps(value)
         except (TypeError, ValueError, RecursionError) as exc:
             raise ActionError("value is not JSON") from exc
         if self._set_var is None:
             raise ActionError("set_variable is not available here")
-        self._set_var(name, value)
+        return self._set_var(name, value)
 
     def switch_page(self, to: str = "next", wrap: bool = False) -> None:
         """Switch the call's device to the ``next``/``previous``/``first``/``last`` page; ``wrap`` loops at the ends."""
@@ -152,8 +152,8 @@ class CallHost:
             waiter.payload = payload
             waiter.done.set()
 
-    def set_variable(self, request: str, name: str, value: Any) -> None:
-        """Send set_variable for a running call and wait for the answer; raises ActionError if refused."""
+    def set_variable(self, request: str, name: str, value: Any) -> bool:
+        """Send set_variable and wait for the answer: True if stored, False if unattached, else ActionError."""
         ident = uuid.uuid4().hex
         waiter = _Waiter()
         with self._lock:
@@ -172,8 +172,11 @@ class CallHost:
             waiter.done.wait(WAIT_AFTER_RACE)  # an answer took the entry just before the timeout did
         if not waiter.payload:
             raise ActionError("set_variable timed out")
-        if not waiter.payload.get("ok"):
-            raise ActionError(str(waiter.payload.get("error") or "set_variable failed"))
+        if waiter.payload.get("ok"):
+            return True
+        if waiter.payload.get("code") == "unattached":
+            return False
+        raise ActionError(str(waiter.payload.get("error") or "set_variable failed"))
 
     def deliver(self, payload: dict[str, Any]) -> None:
         """Hand a call_result to its waiting caller; unknown requests are ignored."""

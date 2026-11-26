@@ -135,8 +135,7 @@ def setvar(ctx: ActionCallContext) -> None:
     if ctx.args["nan"]:
         value = float("nan")
     try:
-        ctx.set_variable(ctx.args["name"], value)
-        _log("setvar.log", "ok")
+        _log("setvar.log", "ok" if ctx.set_variable(ctx.args["name"], value) else "unattached")
     except ActionError as exc:
         _log("setvar.log", f"refused: {exc}")
 
@@ -172,3 +171,23 @@ def slots(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
     except ActionError:
         pass
     call_action("com.decker.acttest.inner", {}, slot="step_5")
+
+
+@action("com.decker.acttest.lingering")
+def lingering(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    here = Path(__file__).parent
+    (here / "started").write_text("1", encoding="utf-8")
+    deadline = time.monotonic() + 15
+    while not (here / "go").exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    call_action("com.decker.acttest.echo", {"text": "saw {press.pid} {press.step_1.x}"}, slot="step_2")
+
+
+@action("com.decker.acttest.flood")
+def flood(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    for index in [*range(34), 0]:
+        try:
+            call_action("com.decker.acttest.echo", {"text": "x"}, slot=f"s{index}")
+            _log("flood.log", f"{index} ok")
+        except ActionError as exc:
+            _log("flood.log", f"{index} {exc}")

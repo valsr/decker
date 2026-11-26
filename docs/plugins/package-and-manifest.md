@@ -216,16 +216,19 @@ what another produced: a card whose press starts a program and whose long press 
 ```
 
 - **Declaring.** `name` matches `[a-z][a-z0-9_-]*` and may not be `status`; duplicates in one action are a manifest
-  error. An action can set only the names it declares. `status` is reserved and not declarable: the server sets it on
+  error, and so are more than 32 variables in one action. An action can set only the names it declares. `status` is reserved and not declarable: the server sets it on
   every binding when its action finishes, to `SUCCESS` if the action returned and `FAILURE` if it raised, timed out,
-  was refused or its plugin failed. Do Nothing never touches `status`.
+  was refused, returned an invalid or oversized value or its plugin failed. Do Nothing never touches `status`.
 - **Setting.** `ctx.set_variable(name, value)` (see the [SDK](sdk-quickstart.md#action-variables)) stores the
   value on the binding that ran the action. Values are JSON, finite numbers only, at most 64 KiB encoded. A nested
-  call has no binding unless its caller gives it a *slot*, so `set_variable` in an unslotted nested call is refused.
+  call has no binding unless its caller gives it a *slot*; in an unslotted nested call (or one made by another
+  plugin's `call_action`) `set_variable` returns `False` and stores nothing, and the call expands no card references
+  either. The action keeps working, so the same code runs on its own and nested.
 - **Slots.** `call_action(..., slot="step_1")` gives a nested call variables and a `status` of its own, read as
   `{press.step_1.pid}`. A slot matches `[a-z][a-z0-9_-]*`, at most 32 characters, and may not be `status`; a bad slot
   fails the call. There is one level: only a call made by a gesture binding's own action can pass a slot, and a
-  slotted call's own nested calls get none. **Sequence** labels its steps `step_1` to `step_10`.
+  slotted call's own nested calls get none; a valid slot passed anywhere else is ignored (the call runs unslotted and
+  is not failed). A binding keeps at most 32 slots: a call that would create another fails with `too many slots`. **Sequence** labels its steps `step_1` to `step_10`.
 - **Reading.** `{<binding>.<name>}` and `{<binding>.<slot>.<name>}` expand in the arguments of any action of the same
   card, when the action runs (values change between presses and between Sequence steps). Examples: `{press.pid}`,
   `{double_press.status}`, `{long_press.status}`, `{press.step_1.pid}`. Only settings fields of type `text` or
@@ -234,13 +237,17 @@ what another produced: a card whose press starts a program and whose long press 
   `{{` and `}}` are template escapes and would corrupt a JSON body.
 - **Left as typed.** A two-part reference is expanded only when the binding's action declared that name (or it is
   `status`); an undeclared name or unknown qualifier stays as typed, so it cannot clash with global `{name}` variables.
-  A three-part slot reference is never left as typed: unset reads as empty. Write literal braces as `{{` and `}}`.
+  A three-part reference whose first part is a binding and whose slot is a valid slot name expands (unset reads as
+  empty); an unknown first part or an invalid slot name stays as typed. Write literal braces as `{{` and `}}`.
 - **Lifetime.** Variables live in server memory only. They survive page and profile switches and moving the key, are
   dropped when the key is unassigned or its card replaced, and at server restart. Changing a binding's *action*
   resets that binding's variables and slots to unset; editing only its arguments does not. A key's variables are
   listed by the `key_variables(device_id, page_id, key_index)` RPC, as `{binding: {name: value, slot: {name: value}}}`
   (empty for an empty key).
-- A plugin that declares action `variables` needs `"decker": ">=0.8"` and protocol 6.
+- A plugin that declares action `variables` should declare `"decker": ">=0.8"` (the loader does not enforce it for
+  them) and uses protocol 6.
+- References keep expanding after the card leaves the screen mid-run (a long press that switches page, then reads
+  `{press.pid}`): the declared names are fixed when the gesture fires.
 
 ### What changed in format 3
 

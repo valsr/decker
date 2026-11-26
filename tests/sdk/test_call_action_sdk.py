@@ -78,8 +78,7 @@ def _navigates(ctx: ActionCallContext) -> Any:
 
 
 def _sets_var(ctx: ActionCallContext) -> Any:
-    ctx.set_variable("pid", 7)
-    return "done"
+    return ctx.set_variable("pid", 7)
 
 
 def _sets_var_refused(ctx: ActionCallContext) -> Any:
@@ -500,7 +499,18 @@ def test_set_variable_sends_event_and_returns_on_ok() -> None:
         assert_that([sent["request"], sent["name"], sent["value"]]).is_equal_to(["r1", "pid", 7])
         host.send("set_variable_result", {"id": "unknown", "ok": True})  # ignored
         host.send("set_variable_result", {"id": sent["id"], "ok": True})
-        assert_that(host.recv_until("action_result")["payload"]["value"]).is_equal_to("done")
+        assert_that(host.recv_until("action_result")["payload"]["value"]).is_true()
+    finally:
+        host.close()
+
+
+def test_set_variable_returns_false_when_the_call_is_unattached() -> None:
+    host = _host()
+    try:
+        host.run_action("t.setvar", "r1")
+        sent = host.recv_until("set_variable")["payload"]
+        host.send("set_variable_result", {"id": sent["id"], "ok": False, "error": "no binding", "code": "unattached"})
+        assert_that(host.recv_until("action_result")["payload"]["value"]).is_false()
     finally:
         host.close()
 

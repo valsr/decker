@@ -98,6 +98,7 @@ if TYPE_CHECKING:
     from decker.server.server_context import ServerContext
 
 _DEFAULT_MEMORY_LIMIT = 256 * 1024 * 1024
+_UNATTACHED = "this call is not attached to a card binding (give it a slot)"
 _FAILED_LABEL = "Plugin failed"
 _MISSING_LABEL = "Plugin missing"
 _OPEN_URL_SCHEMES = ("http", "https")
@@ -240,6 +241,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         self._action_runner = ActionRunner(
             self._supervisor, self._on_action_failed, self._resolve_args, on_finished=self._on_action_finished
         )
+        self._action_runner.has_slot_room = self._has_slot_room
         self._variable_warned: set[str] = set()
         self._foreign_warned: set[str] = set()
         self._drive_warned: set[str] = set()
@@ -421,7 +423,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             layout = DeviceLayout()
             variables = VariableChain({name: "" for name in CORE_VARIABLE_NAMES}, self.variables.view())
         if call.ref is not None:
-            card = self.card_variables.view(call.ref.context, self._declared_names(call.ref.context))
+            declared = call.ref.declared if call.ref.declared is not None else self._declared_names(call.ref.context)
+            card = self.card_variables.view(call.ref.context, declared)
             variables = card if variables is None else VariableChain(card, variables)
         return deliver_settings(spec.settings, args, layout, variables)
 
@@ -429,12 +432,18 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         """For each binding of a live card, the variable names its current action declares."""
         with self._lock:
             live = self._live.get(context)
+        return self._declared_for(live)
+
+    def _declared_for(self, live: _Live | None) -> dict[str, frozenset[str]]:
         result: dict[str, frozenset[str]] = {gesture: frozenset() for gesture in GESTURES}
         for gesture, binding in (live.bindings if live is not None else {}).items():
             spec = None if binding.is_nothing else self._action_runner.spec(binding.action)
             if spec is not None:
                 result[gesture] = frozenset(variable.name for variable in spec.variables)
         return result
+
+    def _has_slot_room(self, ref: BindingRef) -> bool:
+        return self.card_variables.has_room(ref.context, ref.binding, ref.slot)
 
     def _on_action_finished(self, call: ActionCall, result: ActionResult) -> None:
         if call.ref is not None:
@@ -848,7 +857,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             input=gesture.value,
             card=self._card_payload(live),
             device=live.target.device_id,
-            ref=BindingRef(live.target.context_id, gesture.value),
+            ref=BindingRef(live.target.context_id, gesture.value, declared=self._declared_for(live)),
         )
         self._action_runner.run(call)
 
@@ -1201,6 +1210,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         reply: dict[str, Any] = {"id": ident, "ok": not error}
         if error:
             reply["error"] = error
+            if error == _UNATTACHED:
+                reply["code"] = "unattached"
             if plugin_id in self._variable_warned:
                 logging.debug("[%s] set_variable refused: %s", plugin_id, error)
             else:
@@ -1215,7 +1226,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             return "no running call to set a variable for"
         call, spec = target
         if call.ref is None:
-            return "this call is not attached to a card binding (give it a slot)"
+            return _UNATTACHED
         name = payload.get("name")
         if name == RESERVED_NAME:
             return f"{RESERVED_NAME} is reserved"

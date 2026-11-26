@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from assertpy import assert_that
 
+from decker.common.card_variables import MAX_ACTION_VARIABLES
 from decker.common.platforms import PlatformSpec
 from decker.plugin.manifest import (
     ActionVariable,
@@ -789,3 +790,10 @@ def test_invalid_action_variables_rejected(variables: Any) -> None:
 def test_action_variable_name_may_contain_a_hyphen() -> None:
     manifest = PluginManifest.from_dict(_action_manifest(variables=[{"name": "my-var"}]))
     assert_that(manifest.actions[0].variables).is_equal_to((ActionVariable("my-var"),))
+
+
+def test_action_variable_limit() -> None:
+    names = [{"name": f"v{i}"} for i in range(MAX_ACTION_VARIABLES)]
+    assert_that(PluginManifest.from_dict(_action_manifest(variables=names)).actions[0].variables).is_length(32)
+    with pytest.raises(ManifestValidationError, match="at most 32 variables"):
+        PluginManifest.from_dict(_action_manifest(variables=[*names, {"name": "extra"}]))

@@ -6,6 +6,7 @@ from collections.abc import Iterator, Mapping
 from typing import Any
 
 from decker.common.card_variables import (
+    MAX_SLOTS_PER_BINDING,
     RESERVED_NAME,
     is_valid_name,
     is_valid_slot,
@@ -23,10 +24,16 @@ class _Binding:
         self.values: dict[str, Any] = {}
         self.slots: dict[str, dict[str, Any]] = {}
 
+    def has_room(self, slot: str | None) -> bool:
+        """Whether ``slot`` exists or may still be created."""
+        return slot is None or slot in self.slots or len(self.slots) < MAX_SLOTS_PER_BINDING
+
     def target(self, slot: str | None) -> dict[str, Any]:
-        """Values of the binding itself, or of one slot."""
+        """Values of the binding itself, or of one slot (a new slot beyond the cap is not kept)."""
         if slot is None:
             return self.values
+        if not self.has_room(slot):
+            return {}
         return self.slots.setdefault(slot, {})
 
     def snapshot(self) -> dict[str, Any]:
@@ -48,6 +55,12 @@ class CardVariableStore:
         """Store ``value`` as ``name`` of the binding, or of its slot."""
         with self._lock:
             self._binding(context, binding).target(slot)[name] = value
+
+    def has_room(self, context: str, binding: str, slot: str | None) -> bool:
+        """Whether a call may write ``slot`` of the binding: it exists, or the binding has room for another."""
+        with self._lock:
+            found = self._data.get(context, {}).get(binding)
+            return found is None or found.has_room(slot)
 
     def set_status(self, context: str, binding: str, ok: bool, slot: str | None = None) -> None:
         """Store ``SUCCESS`` or ``FAILURE`` as the reserved ``status``."""
