@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from decker.common.card_variables import is_valid_slot
 from decker.plugin.bindings import NOTHING_ACTION_ID
 from decker.plugin.loader import InstalledPlugin
 from decker.plugin.manifest import ActionSpec
@@ -21,7 +22,7 @@ from decker.plugin.settings_schema import (
     apply_schema,
     schema_to_json,
 )
-from decker.server.action_calls import MAX_DEPTH, ActionCall
+from decker.server.action_calls import MAX_DEPTH, ActionCall, BindingRef
 
 DEFAULT_TIMEOUT_S = 30.0
 MAX_CALL_TIMEOUT_S = 300.0
@@ -37,7 +38,7 @@ class ActionResult:
     value: Any = None
 
 
-ArgsResolver = Callable[[ActionSpec, Mapping[str, Any], str | None], dict[str, Any]]
+ArgsResolver = Callable[[ActionSpec, Mapping[str, Any], ActionCall], dict[str, Any]]
 
 
 class _Pending:
@@ -58,11 +59,13 @@ class ActionRunner:
         on_failure: Callable[[str, str], None],
         resolve: ArgsResolver,
         timeout: float = DEFAULT_TIMEOUT_S,
+        on_finished: Callable[[ActionCall, ActionResult], None] | None = None,
     ) -> None:
         self._supervisor = supervisor
         self._on_failure = on_failure
         self._resolve = resolve
         self._timeout = timeout
+        self._on_finished = on_finished
         self._lock = threading.Lock()
         self._actions: dict[str, tuple[InstalledPlugin, ActionSpec]] = {}
         self._pending: dict[str, _Pending] = {}
@@ -93,6 +96,25 @@ class ActionRunner:
         if pending is None or pending.plugin_id != plugin_id or pending.done.is_set() or pending.call.card is None:
             return False
         return pending.call.card.get("context") == context
+
+    def variable_target(self, plugin_id: str, request: Any) -> tuple[ActionCall, ActionSpec] | None:
+        """The in-flight call ``plugin_id`` was sent under ``request``, with its action's spec; None if there is none."""
+        if not isinstance(request, str):
+            return None
+        with self._lock:
+            pending = self._pending.get(request)
+            entry = self._actions.get(pending.call.action) if pending is not None else None
+        if pending is None or entry is None or pending.plugin_id != plugin_id or pending.done.is_set():
+            return None
+        return pending.call, entry[1]
+
+    def _finished(self, call: ActionCall, result: ActionResult) -> None:
+        if self._on_finished is None or call.ref is None or call.action == NOTHING_ACTION_ID:
+            return
+        try:
+            self._on_finished(call, result)
+        except Exception:  # pylint: disable=broad-except
+            logging.exception("Action %s: recording its status failed", call.action)
 
     def may_drive(self, plugin_id: str, request: Any, device_id: str) -> bool:
         """Whether ``plugin_id`` may navigate ``device_id`` now: only while a call it was sent for that device runs."""
@@ -157,6 +179,7 @@ class ActionRunner:
     def execute(self, call: ActionCall) -> ActionResult:
         """Run a call and wait for it to end (up to the timeout)."""
         result = self._execute_safely(call)
+        self._finished(call, result)
         if not result.ok:
             logging.warning("Action %s failed: %s", call.action, result.error)
             self._on_failure(call.action, result.error)
@@ -249,6 +272,9 @@ class ActionRunner:
         call_depth, inherited = self._derive(plugin_id, chain, payload.get("depth") or 0)
         if call_depth > MAX_DEPTH:
             return ActionResult(False, f"call depth limit ({MAX_DEPTH}) exceeded")
+        slot = payload.get("slot")
+        if slot is not None and not (isinstance(slot, str) and is_valid_slot(slot)):
+            return ActionResult(False, "invalid slot")
         call = ActionCall(
             str(action),
             payload.get("args", {}),
@@ -259,8 +285,18 @@ class ActionRunner:
             device=device if device is not None else inherited,
             timeout=min(float(timeout), MAX_CALL_TIMEOUT_S) if timeout is not None else None,
             parent=payload.get("parent"),
+            ref=self._slot_ref(plugin_id, payload.get("parent"), slot),
         )
-        return self._execute_safely(call)
+        result = self._execute_safely(call)
+        self._finished(call, result)
+        return result
+
+    def _slot_ref(self, plugin_id: str, parent: Any, slot: str | None) -> BindingRef | None:
+        """The binding a slotted call writes to: its parent's, when the parent is a gesture run of the caller."""
+        target = self.variable_target(plugin_id, parent) if slot is not None else None
+        if target is None or target[0].ref is None or target[0].ref.slot is not None:
+            return None
+        return BindingRef(target[0].ref.context, target[0].ref.binding, slot)
 
     def _refusal(self, plugin_id: str, action: str) -> str:
         if action == NOTHING_ACTION_ID:
@@ -302,7 +338,7 @@ class ActionRunner:
         except SettingsValidationError as exc:
             detail = "; ".join(f"{key}: {message}" for key, message in exc.errors.items())
             return ActionResult(False, f"invalid arguments: {detail}")
-        args = self._resolve(spec, validated, call.device)
+        args = self._resolve(spec, validated, call)
         return self._run_in_plugin(plugin.manifest.id, call, args)
 
     def timeout_for(self, call: ActionCall) -> float:

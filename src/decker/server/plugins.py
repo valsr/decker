@@ -20,6 +20,7 @@ from decker.asset.iconpack import IconPackRegistry
 from decker.asset.renderer import AssetRenderer
 from decker.asset.tint import tint_svg
 from decker.common import config
+from decker.common.card_variables import MAX_VALUE_BYTES, RESERVED_NAME
 from decker.common.manager import Manager
 from decker.common.options import is_valid_source
 from decker.common.platforms import detect_platform, platform_supports
@@ -61,8 +62,8 @@ from decker.plugin.settings_schema import (
 )
 from decker.plugin.settings_store import PluginSettingsStore
 from decker.plugin.target import CardTarget
-from decker.server.action_calls import ActionCall
-from decker.server.actions import ActionRunner
+from decker.server.action_calls import ActionCall, BindingRef
+from decker.server.actions import ActionResult, ActionRunner
 from decker.server.appearance import (
     PACK_ICON_SCALE,
     Composed,
@@ -71,6 +72,7 @@ from decker.server.appearance import (
     intern_background,
     resolve_appearance,
 )
+from decker.server.card_variables import CardVariableStore
 from decker.server.contributions import ContributionRegistry
 from decker.server.hardware_sink import StreamDeckHardwareSink, write_face
 from decker.server.key_assignments import BLANK_CARD_ID
@@ -234,7 +236,11 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             policy = SupervisorPolicy(memory_limit=limit)
         self._supervisor = PluginSupervisor(policy, PluginProcess, self._on_plugin_message, self._on_plugin_failed)
         self._supervisor.on_exit = self._on_plugin_exit
-        self._action_runner = ActionRunner(self._supervisor, self._on_action_failed, self._resolve_args)
+        self.card_variables = CardVariableStore()
+        self._action_runner = ActionRunner(
+            self._supervisor, self._on_action_failed, self._resolve_args, on_finished=self._on_action_finished
+        )
+        self._variable_warned: set[str] = set()
         self._foreign_warned: set[str] = set()
         self._drive_warned: set[str] = set()
         self._render_warned: set[str] = set()
@@ -407,12 +413,36 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         """Run an action call in the background; a failure is announced as an ``action_failed`` event."""
         self._action_runner.run(call)
 
-    def _resolve_args(self, spec: ActionSpec, args: Mapping[str, Any], device: str | None) -> dict[str, Any]:
-        if device is not None:
-            layout = self._device_layout(device)
-            return deliver_settings(spec.settings, args, layout, self._expansion(page_variables(layout)))
-        names = {name: "" for name in CORE_VARIABLE_NAMES}
-        return deliver_settings(spec.settings, args, DeviceLayout(), VariableChain(names, self.variables.view()))
+    def _resolve_args(self, spec: ActionSpec, args: Mapping[str, Any], call: ActionCall) -> dict[str, Any]:
+        if call.device is not None:
+            layout = self._device_layout(call.device)
+            variables = self._expansion(page_variables(layout))
+        else:
+            layout = DeviceLayout()
+            variables = VariableChain({name: "" for name in CORE_VARIABLE_NAMES}, self.variables.view())
+        if call.ref is not None:
+            card = self.card_variables.view(call.ref.context, self._declared_names(call.ref.context))
+            variables = card if variables is None else VariableChain(card, variables)
+        return deliver_settings(spec.settings, args, layout, variables)
+
+    def _declared_names(self, context: str) -> dict[str, frozenset[str]]:
+        """For each binding of a live card, the variable names its current action declares."""
+        with self._lock:
+            live = self._live.get(context)
+        result: dict[str, frozenset[str]] = {gesture: frozenset() for gesture in GESTURES}
+        for gesture, binding in (live.bindings if live is not None else {}).items():
+            spec = None if binding.is_nothing else self._action_runner.spec(binding.action)
+            if spec is not None:
+                result[gesture] = frozenset(variable.name for variable in spec.variables)
+        return result
+
+    def _on_action_finished(self, call: ActionCall, result: ActionResult) -> None:
+        if call.ref is not None:
+            self.card_variables.set_status(call.ref.context, call.ref.binding, result.ok, call.ref.slot)
+
+    def drop_card_variables(self, context_id: str) -> None:
+        """Forget a card's variables for good (it was removed or replaced)."""
+        self.card_variables.drop(context_id)
 
     def _on_action_failed(self, action_id: str, error: str) -> None:
         bus = self._event_bus
@@ -731,8 +761,13 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
     def set_bindings(self, target: CardTarget, stored: Mapping[str, Any]) -> None:
         """Remember a card instance's stored gesture bindings; a live instance re-registers and is told."""
         with self._lock:
+            before = self._binding_actions(target, self._stored_bindings.get(target.context_id, {}))
             self._stored_bindings[target.context_id] = dict(stored)
             live = self._live.get(target.context_id)
+        after = self._binding_actions(target, stored)
+        for gesture in GESTURES:
+            if before.get(gesture) != after.get(gesture):
+                self.card_variables.reset_binding(target.context_id, gesture)
         if live is None:
             return
         effective = self._effective(live)
@@ -741,6 +776,13 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
         live.bindings = effective
         self._send_context(live, "settings_changed", self._settings_payload(live, self._delivery(live)))
         self._recompose(live)
+
+    def _binding_actions(self, target: CardTarget, stored: Mapping[str, Any]) -> dict[str, str]:
+        spec = self._card_spec(target.plugin_uuid, target.card_uuid)
+        if spec is None:
+            return {}
+        merged = effective_bindings(spec.bindings, normalize_stored_bindings(stored))
+        return {gesture: binding.action for gesture, binding in merged.items()}
 
     def validate_card_settings(self, target: CardTarget, settings: Mapping[str, Any]) -> dict[str, str]:
         """Field key -> message for every setting that breaks the card's schema."""
@@ -806,6 +848,7 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             input=gesture.value,
             card=self._card_payload(live),
             device=live.target.device_id,
+            ref=BindingRef(live.target.context_id, gesture.value),
         )
         self._action_runner.run(call)
 
@@ -1121,6 +1164,8 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._action_runner.on_result(plugin_id, message.payload)
         elif event == "call_action":
             self._action_runner.on_plugin_call(plugin_id, message.payload)
+        elif event == "set_variable":
+            self._on_set_variable(plugin_id, message.payload)
         elif event == "get_image":
             self._on_get_image(plugin_id, message.payload)
         elif event == "get_deck_brightness":
@@ -1146,6 +1191,51 @@ class PluginManager(Manager):  # pylint: disable=too-many-instance-attributes,to
             self._switch_page(device_id, message.payload, plugin_id)
         else:
             self._switch_profile(device_id, message.payload, plugin_id)
+
+    def _on_set_variable(self, plugin_id: str, payload: dict[str, Any]) -> None:
+        ident = payload.get("id")
+        if not isinstance(ident, str):
+            logging.debug("[%s] dropped set_variable without a string id", plugin_id)
+            return
+        error = self._store_variable(plugin_id, payload)
+        reply: dict[str, Any] = {"id": ident, "ok": not error}
+        if error:
+            reply["error"] = error
+            if plugin_id in self._variable_warned:
+                logging.debug("[%s] set_variable refused: %s", plugin_id, error)
+            else:
+                self._variable_warned.add(plugin_id)
+                logging.warning("[%s] set_variable refused: %s", plugin_id, error)
+        self._supervisor.send(plugin_id, Message("set_variable_result", None, reply))
+
+    def _store_variable(self, plugin_id: str, payload: Mapping[str, Any]) -> str:
+        """Store a variable a running action set; the reason it was refused, or an empty string."""
+        target = self._action_runner.variable_target(plugin_id, payload.get("request"))
+        if target is None:
+            return "no running call to set a variable for"
+        call, spec = target
+        if call.ref is None:
+            return "this call is not attached to a card binding (give it a slot)"
+        name = payload.get("name")
+        if name == RESERVED_NAME:
+            return f"{RESERVED_NAME} is reserved"
+        if not isinstance(name, str) or name not in {variable.name for variable in spec.variables}:
+            return f"{str(name)[:80]!r} is not a variable of action {spec.id}"
+        problem = self._value_problem(payload.get("value"))
+        if problem:
+            return problem
+        self.card_variables.set(call.ref.context, call.ref.binding, name, payload.get("value"), call.ref.slot)
+        return ""
+
+    @staticmethod
+    def _value_problem(value: Any) -> str:
+        try:
+            encoded = json.dumps(value, allow_nan=False)
+        except (TypeError, ValueError, RecursionError):
+            return "value is not JSON (finite numbers only)"
+        if len(encoded.encode()) > MAX_VALUE_BYTES:
+            return f"value is larger than {MAX_VALUE_BYTES // 1024} KiB"
+        return ""
 
     def _warn_refused(self, plugin_id: str, text: str) -> None:
         if plugin_id in self._drive_warned:

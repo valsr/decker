@@ -120,3 +120,55 @@ def capped(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
         outcome = str(exc)
     elapsed = time.monotonic() - started
     Path(__file__).with_name("capped.log").write_text(f"{elapsed:.1f}|{outcome}", encoding="utf-8")
+
+
+def _log(name: str, text: str) -> None:
+    with Path(__file__).with_name(name).open("a", encoding="utf-8") as log:
+        log.write(text + "\n")
+
+
+@action("com.decker.acttest.setvar")
+def setvar(ctx: ActionCallContext) -> None:
+    value: Any = ctx.args["value"]
+    if ctx.args["big"]:
+        value = "x" * 70000
+    if ctx.args["nan"]:
+        value = float("nan")
+    try:
+        ctx.set_variable(ctx.args["name"], value)
+        _log("setvar.log", "ok")
+    except ActionError as exc:
+        _log("setvar.log", f"refused: {exc}")
+
+
+@action("com.decker.acttest.echo")
+def echo(ctx: ActionCallContext) -> None:
+    _log("echo.log", str(ctx.args["text"]))
+
+
+@action("com.decker.acttest.boom")
+def boom(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    raise ActionError("boom")
+
+
+@action("com.decker.acttest.inner")
+def inner(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    call_action("com.decker.acttest.setvar", {}, slot="deep")
+
+
+@action("com.decker.acttest.slots")
+def slots(ctx: ActionCallContext) -> None:  # pylint: disable=unused-argument
+    call_action("com.decker.acttest.setvar", {"value": "7"}, slot="step_1")
+    call_action("com.decker.acttest.echo", {"text": "saw {press.step_1.pid}"}, slot="step_2")
+    call_action("com.decker.acttest.setvar", {})  # no slot: refused in the child
+    for bad in ("status", "Bad", "x" * 33):
+        try:
+            call_action("com.decker.acttest.echo", {}, slot=bad)
+            _log("slots.log", "accepted")
+        except ActionError as exc:
+            _log("slots.log", f"{len(bad)}: {exc}")
+    try:
+        call_action("com.decker.acttest.boom", {}, slot="step_4")
+    except ActionError:
+        pass
+    call_action("com.decker.acttest.inner", {}, slot="step_5")
