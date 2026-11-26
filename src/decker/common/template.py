@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 TEMPLATE_VARIABLES: tuple[str, ...] = ("page_name", "page_index", "page_count", "current_profile", "profile_id")
 
-_TOKEN = re.compile(r"\{\{|\}\}|\{([a-z_][a-z0-9_]*)\}")
+_TOKEN = re.compile(r"\{\{|\}\}|\{([a-z_][a-z0-9_]*(?:\.[a-z][a-z0-9_-]*){0,2})\}")
 
 
 def expand_template(text: str, variables: Mapping[str, str]) -> str:
