@@ -61,3 +61,13 @@ def test_variable_names_are_published():
 
 def test_template_names() -> None:
     assert_that(template_names("a {x} {{y}} {z_1}")).is_equal_to(frozenset({"x", "z_1"}))
+
+
+def test_dotted_references_expand() -> None:
+    assert_that(expand_template("{press.pid}-{x}", {"press.pid": "42", "x": "a"})).is_equal_to("42-a")
+    assert_that(expand_template("{{press.pid}}", {"press.pid": "42"})).is_equal_to("{press.pid}")
+    assert_that(expand_template("{press.nope}", {})).is_equal_to("{press.nope}")
+
+
+def test_template_names_include_dotted() -> None:
+    assert_that(template_names("{press.step_1.pid} {a}")).is_equal_to({"press.step_1.pid", "a"})
