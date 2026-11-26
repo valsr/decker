@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-PROTOCOL_VERSION = 5
+PROTOCOL_VERSION = 6
 MAX_LINE_BYTES = 8 * 1024 * 1024
 MAX_VALUE_BYTES = 1024 * 1024
 
@@ -29,6 +29,7 @@ SERVER_EVENTS: frozenset[str] = frozenset(
         "run_action",
         "call_result",
         "image_result",
+        "set_variable_result",
     }
 )
 
@@ -57,6 +58,7 @@ PLUGIN_EVENTS: frozenset[str] = frozenset(
         "switch_profile",
         "get_deck_brightness",
         "set_deck_brightness",
+        "set_variable",
     }
 )
 

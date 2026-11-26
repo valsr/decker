@@ -188,6 +188,8 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             self._vars.changed(payload)
         elif event == "call_result":
             self._calls.deliver(payload)
+        elif event == "set_variable_result":
+            self._calls.deliver_set_variable(payload)
         elif event == "image_result":
             self._frames.deliver(payload)
         elif event == "deck_brightness":
@@ -258,6 +260,7 @@ class _Runtime:  # pylint: disable=too-many-instance-attributes
             "_depth": int(payload.get("depth") or 0),
             "device_id": device if isinstance(device, str) and device else None,
             "_emit": lambda event, body: self.send(event, None, body),
+            "_set_var": lambda name, value: self._calls.set_variable(request, name, value),
         }
         # last: nothing after this can fail and leave the proxy unclosed
         return ActionCallContext(card=self._card_proxy(payload.get("card"), request), **fields)

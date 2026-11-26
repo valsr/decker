@@ -69,7 +69,7 @@ def test_decode_rejects_oversized_line() -> None:
 
 
 def test_protocol_version() -> None:
-    assert_that(PROTOCOL_VERSION).is_equal_to(5)
+    assert_that(PROTOCOL_VERSION).is_equal_to(6)
     assert_that(MAX_VALUE_BYTES).is_equal_to(1024 * 1024)
 
 
@@ -96,6 +96,7 @@ def test_event_sets_match_spec() -> None:
                 "run_action",
                 "call_result",
                 "image_result",
+                "set_variable_result",
             }
         )
     )
@@ -125,6 +126,7 @@ def test_event_sets_match_spec() -> None:
                 "switch_profile",
                 "get_deck_brightness",
                 "set_deck_brightness",
+                "set_variable",
             }
         )
     )

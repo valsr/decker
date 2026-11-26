@@ -111,7 +111,7 @@ except ActionError as exc:   # refused, failed or timed out; the message says wh
 result = await call_action_async("com.example.hello.sendwave", {"times": 2})  # in async code
 ```
 
-`call_action(action_id, args=None, timeout=None, device=None)` blocks until the action returns its value and raises
+`call_action(action_id, args=None, timeout=None, device=None, slot=None)` (`slot` names the caller's variable slot, protocol 6; `ctx.set_variable(name, value)` sets a variable from an action and raises `ActionError` if refused) blocks until the action returns its value and raises
 `ActionError` when the call is refused (see [Action calls](protocol.md#action-calls) for who may call what), fails or
 times out; `timeout` is capped at 300 s. `timeout=None` (the default) lets the server use the called action's manifest
 `timeout` (1-300 s) and otherwise 30 s; an explicit `timeout` overrides it. A nested call is also capped by the time its

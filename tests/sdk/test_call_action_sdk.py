@@ -77,6 +77,31 @@ def _navigates(ctx: ActionCallContext) -> Any:
     return ctx.device_id
 
 
+def _sets_var(ctx: ActionCallContext) -> Any:
+    ctx.set_variable("pid", 7)
+    return "done"
+
+
+def _sets_var_refused(ctx: ActionCallContext) -> Any:
+    try:
+        ctx.set_variable("pid", 7)
+    except ActionError as exc:
+        return str(exc)
+    return "no error"
+
+
+def _sets_var_bad(ctx: ActionCallContext) -> Any:
+    try:
+        ctx.set_variable("pid", object())
+    except ActionError as exc:
+        return str(exc)
+    return "no error"
+
+
+def _slotted(_ctx: ActionCallContext) -> Any:
+    return call_action("t.target", slot="step_1")
+
+
 def _nested_nav(_ctx: ActionCallContext) -> Any:
     return call_action("t.target")
 
@@ -84,6 +109,10 @@ def _nested_nav(_ctx: ActionCallContext) -> Any:
 ACTIONS = {
     "t.navigates": _navigates,
     "t.nested": _nested_nav,
+    "t.setvar": _sets_var,
+    "t.setvar_refused": _sets_var_refused,
+    "t.setvar_bad": _sets_var_bad,
+    "t.slotted": _slotted,
     "t.refuses": _refuses,
     "t.crashes": _crashes,
     "t.value": _value,
@@ -459,5 +488,56 @@ def test_navigation_without_device_raises() -> None:
         host.run_action("t.navigates", "r1")
         result = host.recv_until("action_result")["payload"]
         assert_that(result).contains_entry({"ok": False}, {"error": "no device for this call"})
+    finally:
+        host.close()
+
+
+def test_set_variable_sends_event_and_returns_on_ok() -> None:
+    host = _host()
+    try:
+        host.run_action("t.setvar", "r1")
+        sent = host.recv_until("set_variable")["payload"]
+        assert_that([sent["request"], sent["name"], sent["value"]]).is_equal_to(["r1", "pid", 7])
+        host.send("set_variable_result", {"id": "unknown", "ok": True})  # ignored
+        host.send("set_variable_result", {"id": sent["id"], "ok": True})
+        assert_that(host.recv_until("action_result")["payload"]["value"]).is_equal_to("done")
+    finally:
+        host.close()
+
+
+def test_set_variable_refusal_raises_action_error() -> None:
+    host = _host()
+    try:
+        host.run_action("t.setvar_refused", "r1")
+        sent = host.recv_until("set_variable")["payload"]
+        host.send("set_variable_result", {"id": sent["id"], "ok": False, "error": "nope"})
+        assert_that(host.recv_until("action_result")["payload"]["value"]).is_equal_to("nope")
+    finally:
+        host.close()
+
+
+def test_set_variable_rejects_non_json_before_sending() -> None:
+    host = _host()
+    try:
+        host.run_action("t.setvar_bad", "r1")
+        message = host.recv_until("action_result")
+        assert_that(message["payload"]["value"]).is_equal_to("value is not JSON")
+    finally:
+        host.close()
+
+
+def test_call_action_slot_is_sent_only_when_given() -> None:
+    host = _host()
+    try:
+        host.run_action("t.slotted", "r1")
+        call = host.recv_until("call_action")["payload"]
+        assert_that(call["slot"]).is_equal_to("step_1")
+        host.send("call_result", {"request": call["request"], "ok": True})
+        host.recv_until("action_result")
+        host.run_action("t.caller", "r2", args={})
+        plain = host.recv_until("call_action")["payload"]
+        assert_that(plain).does_not_contain_key("slot")
+        host.send("call_result", {"request": plain["request"], "ok": True})
+        host.recv_until("action_result")
     finally:
         host.close()
