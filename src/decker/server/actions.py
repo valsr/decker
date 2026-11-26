@@ -262,19 +262,17 @@ class ActionRunner:
         return ""
 
     def _plugin_call(self, plugin_id: str, payload: Mapping[str, Any]) -> ActionResult:
-        problem = self._malformed(payload)
-        if problem:
-            return ActionResult(False, f"malformed call: {problem}")
-        action, chain, device, timeout = (payload.get(k) for k in ("action", "chain", "device", "timeout"))
-        refusal = self._refusal(plugin_id, str(action))
-        if refusal:
-            return ActionResult(False, refusal)
-        call_depth, inherited = self._derive(plugin_id, chain, payload.get("depth") or 0)
-        if call_depth > MAX_DEPTH:
-            return ActionResult(False, f"call depth limit ({MAX_DEPTH}) exceeded")
         slot = payload.get("slot")
         if slot is not None and not (isinstance(slot, str) and is_valid_slot(slot)):
             return ActionResult(False, "invalid slot")
+        parent = payload.get("parent")
+        ref = self._slot_ref(plugin_id, parent, slot) if isinstance(parent, str) else None
+        refused = self._refused_call(plugin_id, payload)
+        if refused is not None:
+            self._finished(ActionCall(str(payload.get("action")), {}, "plugin", ref=ref), refused)
+            return refused
+        action, chain, device, timeout = (payload.get(k) for k in ("action", "chain", "device", "timeout"))
+        call_depth, inherited = self._derive(plugin_id, chain, payload.get("depth") or 0)
         call = ActionCall(
             str(action),
             payload.get("args", {}),
@@ -284,12 +282,25 @@ class ActionRunner:
             depth=call_depth,
             device=device if device is not None else inherited,
             timeout=min(float(timeout), MAX_CALL_TIMEOUT_S) if timeout is not None else None,
-            parent=payload.get("parent"),
-            ref=self._slot_ref(plugin_id, payload.get("parent"), slot),
+            parent=parent,
+            ref=ref,
         )
         result = self._execute_safely(call)
         self._finished(call, result)
         return result
+
+    def _refused_call(self, plugin_id: str, payload: Mapping[str, Any]) -> ActionResult | None:
+        """Why a call cannot even start (malformed, refused action, too deep), or None."""
+        problem = self._malformed(payload)
+        if problem:
+            return ActionResult(False, f"malformed call: {problem}")
+        refusal = self._refusal(plugin_id, str(payload.get("action")))
+        if refusal:
+            return ActionResult(False, refusal)
+        depth, _ = self._derive(plugin_id, payload.get("chain"), payload.get("depth") or 0)
+        if depth > MAX_DEPTH:
+            return ActionResult(False, f"call depth limit ({MAX_DEPTH}) exceeded")
+        return None
 
     def _slot_ref(self, plugin_id: str, parent: Any, slot: str | None) -> BindingRef | None:
         """The binding a slotted call writes to: its parent's, when the parent is a gesture run of the caller."""
