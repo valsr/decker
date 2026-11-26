@@ -784,3 +784,8 @@ def test_action_without_variables_has_none() -> None:
 def test_invalid_action_variables_rejected(variables: Any) -> None:
     with pytest.raises(ManifestValidationError):
         PluginManifest.from_dict(_action_manifest(variables=variables))
+
+
+def test_action_variable_name_may_contain_a_hyphen() -> None:
+    manifest = PluginManifest.from_dict(_action_manifest(variables=[{"name": "my-var"}]))
+    assert_that(manifest.actions[0].variables).is_equal_to((ActionVariable("my-var"),))
