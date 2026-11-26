@@ -56,7 +56,8 @@ each get variables of their own, so step 2 can use what step 1 produced (`{press
   not when the card is saved, because values change between presses and between Sequence steps.
 - **Visibility.** The CLI can list a key's card variables: new RPC `key_variables(device_id, page_id, key_index)`.
 - **Editor.** Argument fields that accept templates already do; the editor gets no picker in this change. Core's HTTP
-  Request `url` and `body` fields opt in to templates.
+  Request `url` field opts in to templates; `body` does not, because `{{`/`}}` are template escapes and would corrupt
+  saved nested JSON bodies (`{"a": {"b": 1}}`).
 
 ## Left to the builder
 Where the template pass lives, exact event and error names beyond those above, test layout.
