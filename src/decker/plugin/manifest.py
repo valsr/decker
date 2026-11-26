@@ -9,8 +9,8 @@ from typing import Any, Literal, cast
 
 from packaging.requirements import InvalidRequirement, Requirement
 
+from decker.common import card_variables
 from decker.common.appearance_schema import APPEARANCE_KEYS
-from decker.common.card_variables import RESERVED_NAME, is_valid_name
 from decker.common.icon_ref import parse_icon_ref
 from decker.common.platforms import PlatformSpec, parse_platform_spec
 from decker.common.variables import (
@@ -479,7 +479,7 @@ def _parse_action_variables(value: Any, action_id: str) -> tuple[ActionVariable,
         if not isinstance(item, dict) or not isinstance(item.get("name"), str):
             raise ManifestValidationError(f"action {action_id} has an invalid variable entry: {item!r}")
         name = item["name"]
-        if not is_valid_name(name) or name == RESERVED_NAME:
+        if not card_variables.is_valid_name(name) or name == card_variables.RESERVED_NAME:
             raise ManifestValidationError(f"action {action_id} variable name {name!r} is invalid or reserved")
         if any(v.name == name for v in result):
             raise ManifestValidationError(f"action {action_id} declares variable {name!r} twice")
