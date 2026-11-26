@@ -76,7 +76,6 @@
             "key": "body",
             "type": "text",
             "label": "Body",
-            "template": true,
             "multiline": true
           },
           {

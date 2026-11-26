@@ -280,11 +280,11 @@ def test_steps_lists_set_steps_in_order_and_skips_empty() -> None:
     )  # pylint: disable=protected-access
 
 
-def test_http_request_url_and_body_are_template_fields() -> None:
+def test_http_request_url_is_a_template_field_and_body_is_not() -> None:
     fields = {field["key"]: field for field in _manifest_action(_HTTP)["settings"] if "key" in field}
 
     assert_that(fields["url"]).contains_entry({"template": True})
-    assert_that(fields["body"]).contains_entry({"template": True})
+    assert_that(fields["body"]).does_not_contain_key("template")
 
 
 @pytest.fixture(name="env")
@@ -339,3 +339,18 @@ class TestSequenceSlots:
 
         assert_that(binding["step_1"]["status"]).is_equal_to("FAILURE")
         assert_that(_wait(lambda: any(seen[1] == "/FAILURE" for seen in _Handler.seen))).is_true()
+
+    def test_a_json_body_is_sent_unchanged(self, env: _Env, server: str) -> None:
+        body = '{"a": {"b": "{press.step_1.status}"}, "c": [{{"d": 1}}]}'
+        _run_sequence(
+            env,
+            {
+                "step_1": _DELAY,
+                "step_1_params": {"seconds": 0},
+                "step_2": _HTTP,
+                "step_2_params": {"method": "POST", "url": f"{server}/post", "body": body},
+            },
+        )
+
+        assert_that(_wait(lambda: any(seen[1] == "/post" for seen in _Handler.seen))).is_true()
+        assert_that(next(seen[2] for seen in _Handler.seen if seen[1] == "/post")).is_equal_to(body.encode())
