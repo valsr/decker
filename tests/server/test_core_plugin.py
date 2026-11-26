@@ -5,6 +5,7 @@ import json
 import os
 import queue
 import random
+import sys
 import threading
 import time
 import urllib.request
@@ -18,6 +19,7 @@ from assertpy import assert_that
 
 from decker_plugin_sdk import run
 from decker_plugin_sdk._actions import encode_value
+from tests.server.test_actions_e2e import _TILE, _Env, _wait
 
 _PLUGIN = Path(__file__).parents[2] / "src" / "decker" / "builtin_plugins" / "com.decker.core" / "plugin.py"
 _HTTP = "com.decker.core.httprequest"
@@ -276,3 +278,64 @@ def test_steps_lists_set_steps_in_order_and_skips_empty() -> None:
     assert_that(module._steps(args)).is_equal_to(
         [(1, "a.b", {"x": 1}), (3, "c.d", {})]
     )  # pylint: disable=protected-access
+
+
+def test_http_request_url_and_body_are_template_fields() -> None:
+    fields = {field["key"]: field for field in _manifest_action(_HTTP)["settings"] if "key" in field}
+
+    assert_that(fields["url"]).contains_entry({"template": True})
+    assert_that(fields["body"]).contains_entry({"template": True})
+
+
+@pytest.fixture(name="env")
+def env_fixture(tmp_path: Path) -> Iterator[_Env]:
+    environment = _Env(tmp_path)
+    try:
+        yield environment
+    finally:
+        environment.close()
+
+
+def _press_vars(env: _Env) -> dict[str, Any]:
+    return env.manager.card_variables.snapshot(_TILE.context_id).get("press", {})
+
+
+def _run_sequence(env: _Env, args: dict[str, Any]) -> dict[str, Any]:
+    env.activate_tile()
+    env.manager.set_bindings(_TILE, {"press": {"action": "com.decker.core.sequence", "args": args}})
+    env.press(_TILE)
+    assert_that(_wait(lambda: "status" in _press_vars(env) and "step_2" in _press_vars(env))).is_true()
+    return _press_vars(env)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only: interpreter symlink")
+class TestSequenceSlots:
+    def test_each_step_gets_a_slot_status(self, env: _Env, server: str) -> None:
+        binding = _run_sequence(
+            env,
+            {
+                "step_1": _DELAY,
+                "step_1_params": {"seconds": 0},
+                "step_2": _HTTP,
+                "step_2_params": {"method": "GET", "url": f"{server}/ok"},
+            },
+        )
+
+        assert_that(_wait(lambda: _press_vars(env).get("status") == "SUCCESS")).is_true()
+        assert_that(binding["step_1"]["status"]).is_equal_to("SUCCESS")
+        assert_that(binding["step_2"]["status"]).is_equal_to("SUCCESS")
+
+    def test_a_later_step_reads_an_earlier_steps_status(self, env: _Env, server: str) -> None:
+        binding = _run_sequence(
+            env,
+            {
+                "step_1": _HTTP,
+                "step_1_params": {"method": "GET", "url": f"{server}/500"},
+                "step_2": _HTTP,
+                "step_2_params": {"method": "GET", "url": f"{server}/{{press.step_1.status}}"},
+                "stop_on_error": False,
+            },
+        )
+
+        assert_that(binding["step_1"]["status"]).is_equal_to("FAILURE")
+        assert_that(_wait(lambda: any(seen[1] == "/FAILURE" for seen in _Handler.seen))).is_true()
